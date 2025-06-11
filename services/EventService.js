@@ -51,7 +51,7 @@ export class EventService {
             read: false,
             screenshot: screenshot, // Store the base64 screenshot
             request: request,
-            response: response,
+            response: response, // Contains response data, error messages, or null for pending events
             status: status // 'pending' or 'completed'
         };
 
@@ -88,7 +88,7 @@ export class EventService {
         event.status = 'completed';
         event.httpStatus = httpStatus;
         event.error = error;
-        event.response = responseText;
+        event.response = responseText; // ALWAYS contains response data (JSON, text, or error message)
 
         // Update success flag based on HTTP status and error
         if (error) {

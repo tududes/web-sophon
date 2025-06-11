@@ -88,6 +88,11 @@ export class WebhookService {
             }, 300000); // 300 seconds
 
             let webhookResponse;
+            let responseText = '';
+            let responseData = null;
+            let parseError = null;
+            let finalError = null;
+
             try {
                 webhookResponse = await fetch(webhookUrl, {
                     method: 'POST',
@@ -96,61 +101,91 @@ export class WebhookService {
                 });
                 clearTimeout(timeoutId);
                 this.pendingRequests.delete(eventId); // Remove from pending when completed
+
+                console.log(`Webhook response status: ${webhookResponse.status}`);
+
+                // ALWAYS try to get response text, regardless of status code
+                try {
+                    responseText = await webhookResponse.text();
+                    console.log('Raw response text:', responseText);
+                } catch (textError) {
+                    console.log('Failed to read response text:', textError);
+                    responseText = `Failed to read response: ${textError.message}`;
+                }
+
+                // Log non-success status codes but still process the response
+                if (!webhookResponse.ok) {
+                    console.log(`Non-success status: ${webhookResponse.status}: ${webhookResponse.statusText}`);
+                    finalError = `HTTP ${webhookResponse.status}: ${webhookResponse.statusText}`;
+                }
+
+                // Try to parse response as JSON if we have text
+                if (responseText) {
+                    try {
+                        responseData = JSON.parse(responseText);
+                        console.log('Webhook response data:', responseData);
+                    } catch (e) {
+                        parseError = e.message;
+                        console.log('Response was not JSON or could not be parsed:', e);
+                        console.log('Raw response that failed to parse:', responseText);
+                        // responseText is preserved for non-JSON responses
+                    }
+                }
+
             } catch (fetchError) {
                 clearTimeout(timeoutId);
                 this.pendingRequests.delete(eventId); // Remove from pending on error
                 console.log('Fetch error occurred:', fetchError);
 
-                let errorMessage;
-                if (fetchError.name === 'AbortError') {
-                    // Check if it was user-cancelled or timeout
-                    errorMessage = this.pendingRequests.has(eventId) ? 'Request timed out after 5 minutes' : 'Request cancelled by user';
-                } else {
-                    errorMessage = fetchError.message;
+                // Try to extract any response text from the error if possible
+                let errorResponseText = '';
+                try {
+                    // Some fetch errors might still have response data
+                    if (fetchError.response) {
+                        errorResponseText = await fetchError.response.text();
+                    }
+                } catch (e) {
+                    // If we can't get response text, that's okay
+                    console.log('No response text available from fetch error');
                 }
 
+                // Determine error message and response text
+                if (fetchError.name === 'AbortError') {
+                    // Check if it was user-cancelled or timeout
+                    finalError = this.pendingRequests.has(eventId) ? 'Request timed out after 5 minutes' : 'Request cancelled by user';
+                    responseText = finalError; // Use error message as response for cancelled requests
+                } else {
+                    finalError = fetchError.message;
+                    // Use error response text if available, otherwise use error message
+                    responseText = errorResponseText || fetchError.message;
+                }
+
+                // Set httpStatus to indicate network/fetch error
+                webhookResponse = { status: null }; // Network error, no HTTP status
+
                 // Update the pending event with the error
-                this.eventService.updateEvent(eventId, null, null, errorMessage, null);
+                this.eventService.updateEvent(eventId, null, null, finalError, responseText);
 
                 // Send notification on manual capture
                 if (isManual) {
                     chrome.runtime.sendMessage({
                         action: 'captureComplete',
                         success: false,
-                        error: errorMessage
+                        error: finalError
                     });
                 }
 
-                return { success: false, error: errorMessage };
+                return { success: false, error: finalError };
             }
 
-            console.log(`Webhook response status: ${webhookResponse.status}`);
+            console.log(`Updating event ${eventId} with response. Status: ${webhookResponse.status}, Has data: ${!!responseData}, Response text length: ${responseText.length}`);
 
-            // Don't throw error for non-200 status codes, let them be processed
-            console.log(`Webhook response received with status: ${webhookResponse.status}`);
-            if (!webhookResponse.ok) {
-                console.log(`Non-success status: ${webhookResponse.status}: ${webhookResponse.statusText}`);
-            }
-
-            // Try to parse response for field results
-            let responseData = null;
-            let parseError = null;
-            let responseText = '';
-            try {
-                responseText = await webhookResponse.text();
-                console.log('Raw response text:', responseText);
-                responseData = JSON.parse(responseText);
-                console.log('Webhook response data:', responseData);
-            } catch (e) {
-                parseError = e.message;
-                console.log('Response was not JSON or could not be parsed:', e);
-                console.log('Raw response that failed to parse:', responseText);
-            }
-
-            console.log(`Updating event ${eventId} with response. Status: ${webhookResponse.status}, Has data: ${!!responseData}`);
-
-            // Update the existing event with the response data
-            this.eventService.updateEvent(eventId, responseData, webhookResponse.status, parseError, responseText);
+            // Update the existing event with ALL response data
+            // - responseData: parsed JSON if successful
+            // - webhookResponse.status: HTTP status code
+            // - finalError: error message if any
+            // - responseText: ALWAYS preserved (JSON, plain text, or error string)
+            this.eventService.updateEvent(eventId, responseData, webhookResponse.status, finalError, responseText);
 
             // Send results to popup if it contains field evaluations
             if (responseData && responseData.fields) {
@@ -175,15 +210,18 @@ export class WebhookService {
         } catch (error) {
             console.error('Error capturing/sending screenshot:', error);
 
+            // Create error response text from the error
+            const errorResponseText = error.message || 'Unknown error occurred';
+
             // If we have an eventId, update the existing event; otherwise create a new one
             if (typeof eventId !== 'undefined') {
-                this.eventService.updateEvent(eventId, null, null, error.message, null);
+                this.eventService.updateEvent(eventId, null, null, error.message, errorResponseText);
             } else {
                 // Track failed event (screenshot may be undefined if capture failed)
                 this.eventService.trackEvent(null, domain, tab ? tab.url : '', false, null, error.message,
                     typeof dataUrl !== 'undefined' ? dataUrl : null,
                     typeof requestData !== 'undefined' ? requestData : null,
-                    null, Date.now());
+                    errorResponseText, Date.now()); // Include error as response text
             }
 
             // Send error notification on manual capture
@@ -191,7 +229,8 @@ export class WebhookService {
                 chrome.runtime.sendMessage({
                     action: 'captureComplete',
                     success: false,
-                    error: error.message
+                    error: error.message,
+                    eventId: eventId // Include eventId for field status updates
                 });
             }
 
@@ -212,8 +251,9 @@ export class WebhookService {
             this.pendingRequests.delete(eventId);
             console.log(`Cancelled request for event ${eventId}`);
 
-            // Update the event as cancelled
-            this.eventService.updateEvent(eventId, null, null, 'Request cancelled by user', null);
+            // Update the event as cancelled with cancellation message as response
+            const cancellationMessage = 'Request cancelled by user';
+            this.eventService.updateEvent(eventId, null, null, cancellationMessage, cancellationMessage);
             return { success: true };
         } else {
             return { success: false, error: 'Request not found or already completed' };
