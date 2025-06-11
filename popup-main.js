@@ -60,7 +60,9 @@ class SimplePopupController {
             historyContainer: 'history-container',
             showTrueOnly: 'show-true-only',
             clearHistoryBtn: 'clear-history-btn',
-            testEventsBtn: 'test-events-btn'
+            testEventsBtn: 'test-events-btn',
+            // Field status
+            fieldStatus: 'field-status'
         };
 
         for (const [key, id] of Object.entries(elementMap)) {
@@ -312,7 +314,7 @@ class SimplePopupController {
         this.setupFieldWebhookListeners(fieldId);
         this.setupFieldRemoveListener(fieldId);
 
-        this.showStatus('Field added', 'success');
+        this.showFieldStatus('Field added', 'success');
     }
 
     savePreset() {
@@ -359,6 +361,15 @@ class SimplePopupController {
         }
 
         try {
+            // Set all fields to pending before sending
+            console.log('Setting fields to pending:', fields);
+            fields.forEach(field => {
+                this.updateFieldStatus(field.name, 'pending', null);
+            });
+
+            // Save state to ensure pending status persists
+            await this.saveFieldsState();
+
             // Send to background script
             const response = await this.sendMessageToBackground({
                 action: 'captureNow',
@@ -370,8 +381,20 @@ class SimplePopupController {
 
             if (response && response.success) {
                 this.showStatus('Screenshot captured and sent!', 'success');
+
+                // Store event ID with fields if available
+                if (response.eventId) {
+                    fields.forEach(field => {
+                        this.updateFieldStatus(field.name, 'pending', response.eventId);
+                    });
+                }
             } else {
                 this.showStatus(`Capture failed: ${response?.error || 'Unknown error'}`, 'error');
+
+                // Set fields to error state
+                fields.forEach(field => {
+                    this.updateFieldStatus(field.name, 'error', null);
+                });
             }
         } catch (error) {
             console.error('Capture error:', error);
@@ -439,6 +462,17 @@ class SimplePopupController {
 
     showError(message) {
         this.showStatus(message, 'error');
+    }
+
+    showFieldStatus(message, type) {
+        if (this.elements.fieldStatus) {
+            this.elements.fieldStatus.textContent = message;
+            this.elements.fieldStatus.className = `status-message ${type}`;
+            setTimeout(() => {
+                this.elements.fieldStatus.className = 'status-message';
+            }, 3000);
+        }
+        console.log(`Field Status: ${type} - ${message}`);
     }
 
     // Theme system
@@ -625,12 +659,16 @@ class SimplePopupController {
 
         if (interval === 'manual' || !webhookUrl) return;
 
+        // Get current fields to include with automatic capture
+        const fields = this.getFieldsFromDOM();
+
         this.sendMessageToBackground({
             action: 'startCapture',
             domain: this.currentDomain,
             tabId: this.currentTabId,
             interval: parseInt(interval),
-            webhookUrl: webhookUrl
+            webhookUrl: webhookUrl,
+            fields: fields
         });
     }
 
@@ -698,7 +736,7 @@ class SimplePopupController {
                 console.log('Removing field:', fieldId);
                 fieldElement.remove();
                 this.saveFieldsState();
-                this.showStatus('Field removed', 'info');
+                this.showFieldStatus('Field removed', 'info');
             });
         }
     }
@@ -719,13 +757,35 @@ class SimplePopupController {
                 const webhookPayloadInput = item.querySelector('.webhook-payload-input');
 
                 if (nameInput && descriptionInput) {
-                    // Get last result if available
-                    const lastResultElement = item.querySelector('.field-last-result .result-text');
+                    // Get last result and event ID if available
+                    const lastResultContainer = item.querySelector('.field-last-result');
+                    const lastResultElement = lastResultContainer?.querySelector('.result-text');
                     let lastResult = null;
+                    let eventId = null;
+
                     if (lastResultElement && lastResultElement.innerHTML !== 'No results yet') {
-                        // Extract result data from the display (simplified for persistence)
-                        const isTrueResult = lastResultElement.innerHTML.includes('TRUE');
-                        lastResult = { result: isTrueResult };
+                        // Extract result data from the display
+                        if (lastResultElement.innerHTML.includes('Pending')) {
+                            lastResult = { status: 'pending' };
+                        } else if (lastResultElement.innerHTML.includes('Error')) {
+                            lastResult = { status: 'error' };
+                        } else if (lastResultElement.innerHTML.includes('TRUE')) {
+                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
+                            lastResult = {
+                                result: true,
+                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
+                            };
+                        } else if (lastResultElement.innerHTML.includes('FALSE')) {
+                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
+                            lastResult = {
+                                result: false,
+                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
+                            };
+                        }
+                    }
+
+                    if (lastResultContainer && lastResultContainer.dataset.eventId) {
+                        eventId = lastResultContainer.dataset.eventId;
                     }
 
                     fieldsData.push({
@@ -735,7 +795,8 @@ class SimplePopupController {
                         webhookEnabled: webhookToggle ? webhookToggle.checked : false,
                         webhookUrl: webhookUrlInput ? webhookUrlInput.value : '',
                         webhookPayload: webhookPayloadInput ? webhookPayloadInput.value : '',
-                        lastResult: lastResult
+                        lastResult: lastResult,
+                        eventId: eventId
                     });
                 }
             });
@@ -818,6 +879,29 @@ class SimplePopupController {
         // Add event listeners for the recreated field
         this.setupFieldWebhookListeners(fieldData.id);
         this.setupFieldRemoveListener(fieldData.id);
+
+        // Restore event ID and make clickable if present
+        if (fieldData.eventId) {
+            const resultContainer = document.querySelector(`#last-result-${fieldData.id}`);
+            if (resultContainer) {
+                resultContainer.dataset.eventId = fieldData.eventId;
+                resultContainer.style.cursor = 'pointer';
+                resultContainer.onclick = () => {
+                    if (this.historyManager) {
+                        console.log('Scrolling to event:', fieldData.eventId);
+                        this.historyManager.scrollToEvent(
+                            fieldData.eventId,
+                            this.elements.showTrueOnly?.checked || false,
+                            (showTrueOnly) => {
+                                if (this.elements.showTrueOnly) {
+                                    this.elements.showTrueOnly.checked = showTrueOnly;
+                                }
+                            }
+                        );
+                    }
+                };
+            }
+        }
     }
 
     formatLastResult(result) {
@@ -854,12 +938,17 @@ class SimplePopupController {
                         // Update status display
                         if (status === 'pending') {
                             resultText.innerHTML = this.formatLastResult({ status: 'pending' });
+                        } else if (status === 'error') {
+                            resultText.innerHTML = this.formatLastResult({ status: 'error' });
                         }
 
                         // Store event ID for clicking
                         if (eventId) {
                             resultContainer.dataset.eventId = eventId;
                         }
+
+                        // Save the field state immediately
+                        this.saveFieldsState();
 
                         // Make clickable if not already
                         if (!resultContainer.onclick) {
@@ -903,10 +992,32 @@ class SimplePopupController {
 
                 if (sanitizedFieldValue === fieldName) {
                     found = true;
-                    const resultContainer = item.querySelector('.field-last-result .result-text');
-                    if (resultContainer) {
-                        resultContainer.innerHTML = this.formatLastResult(result);
+                    const resultContainer = item.querySelector('.field-last-result');
+                    const resultText = resultContainer?.querySelector('.result-text');
+
+                    if (resultContainer && resultText) {
+                        resultText.innerHTML = this.formatLastResult(result);
                         console.log(`Updated field "${fieldValue}" with result`);
+
+                        // Make container clickable
+                        if (!resultContainer.onclick && resultContainer.dataset.eventId) {
+                            resultContainer.style.cursor = 'pointer';
+                            resultContainer.onclick = () => {
+                                const storedEventId = resultContainer.dataset.eventId;
+                                if (storedEventId && this.historyManager) {
+                                    console.log('Scrolling to event:', storedEventId);
+                                    this.historyManager.scrollToEvent(
+                                        storedEventId,
+                                        this.elements.showTrueOnly?.checked || false,
+                                        (showTrueOnly) => {
+                                            if (this.elements.showTrueOnly) {
+                                                this.elements.showTrueOnly.checked = showTrueOnly;
+                                            }
+                                        }
+                                    );
+                                }
+                            };
+                        }
 
                         // Also save the field state with the last result
                         this.saveFieldsState();

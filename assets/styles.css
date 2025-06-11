@@ -698,6 +698,16 @@ input:checked+.slider:before {
     background-color: var(--danger);
 }
 
+.result-indicator.pending {
+    background-color: var(--warning);
+    animation: pulse 1.5s infinite;
+}
+
+.field-last-result:hover {
+    background-color: var(--bg-hover);
+    transform: scale(1.02);
+}
+
 /* Field Description */
 .field-description {
     width: 100%;
@@ -905,6 +915,27 @@ input:checked+.slider:before {
     color: white;
 }
 
+.history-item.highlight {
+    animation: highlightPulse 2s ease-out;
+}
+
+@keyframes highlightPulse {
+    0% {
+        background-color: var(--accent-primary);
+        transform: scale(1.02);
+    }
+
+    50% {
+        background-color: var(--accent-hover);
+        transform: scale(1.01);
+    }
+
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+    }
+}
+
 .history-item.expanded {
     background-color: var(--bg-tertiary);
 }
@@ -1053,7 +1084,7 @@ input:checked+.slider:before {
 /* Status Messages */
 .status-message {
     padding: 12px 16px;
-    margin: 16px 20px;
+    margin: 16px 0;
     border-radius: var(--radius-md);
     font-size: 13px;
     font-weight: 500;

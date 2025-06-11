@@ -109,7 +109,7 @@ export class HistoryManager {
             return;
         }
 
-        const eventIndex = this.recentEvents.findIndex(e => e.id == eventId);
+        const eventIndex = this.recentEvents.findIndex(e => e.id == eventId || e.id == parseInt(eventId));
         if (eventIndex !== -1) {
             this.isScrolling = true;
 
