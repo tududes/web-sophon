@@ -27,11 +27,26 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 
 ### Event History & Notifications (v2.2)
 - **Badge Notifications**: Shows count of unread TRUE events on extension icon
-- **Event History**: View last 100 capture events with field results
+- **Complete Event History**: View ALL capture attempts (success, failure, errors)
+- **Expandable Event Details**: Click events to see full details including URLs and errors
 - **Smart Filtering**: Toggle to show only events with TRUE results
 - **Unread Indicators**: Highlights new TRUE events until viewed
 - **Time-based Display**: Shows human-readable timestamps ("5 minutes ago")
 - **Clear History**: Option to clear all stored events
+
+### Domain Management (v2.3)
+- **Domain-Specific Settings**: Each domain maintains its own fields and configuration
+- **Known Domains Section**: View all domains with saved configurations
+- **Quick Domain Access**: Click to open any configured domain in a new tab
+- **Domain Cleanup**: Delete all settings for a domain with one click
+
+### Enhanced Debugging (v2.4)
+- **Field Last Results**: Each field shows its last evaluation result with timestamp
+- **Click to History**: Click any field's last result to jump to that event in history
+- **Screenshot Storage**: Captured screenshots are stored with events for review
+- **Request/Response Logs**: Full request and response data available for debugging
+- **Visual Zoom**: Click screenshots in history to zoom in for detail
+- **Smart Highlighting**: Events are highlighted when accessed from field results
 
 ### Developer Features
 - **Clean, modern UI**: Intuitive interface for field management
@@ -138,6 +153,19 @@ You can use any image editor or online tool to create these icons.
 - **"Please enter a webhook URL first"**: Make sure to enter a valid webhook URL before enabling capture
 - **Screenshots not sending**: Check the browser console for errors and verify your webhook URL is accessible
 - **Capture stops unexpectedly**: This happens when navigating to a different domain or closing the tab
+- **No events showing in history**: 
+  - All capture attempts are now logged (success or failure)
+  - Check that you have fields configured for the domain
+  - Use the test page `test-events.html` to verify event logging
+  - Open Chrome DevTools and check the console for error messages
+- **Settings appear on wrong domain**: Settings are now domain-specific, check the "Known Domains" section
+- **Debugging failed captures**:
+  - Click on any event in history to see full details
+  - View the stored screenshot to verify what was captured
+  - Check Request Data to see what was sent to the webhook
+  - Check Response Data to see what the webhook returned
+  - Each field shows its last result - click to jump to that event
+- **Storage quota exceeded**: The extension automatically removes old screenshots if storage is full
 
 ## Development
 

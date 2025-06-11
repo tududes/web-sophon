@@ -80,17 +80,35 @@ function startCapture(settings) {
     // Store settings
     captureSettings.set(tabId, { domain, webhookUrl });
 
-    // Capture immediately
-    captureAndSend(tabId, domain, webhookUrl);
+    // Get domain-specific fields for automatic captures
+    chrome.storage.sync.get([`fields_${domain}`], (data) => {
+        const domainFields = data[`fields_${domain}`] || [];
+        const fields = domainFields.map(f => ({
+            name: sanitizeFieldName(f.friendlyName || f.name),
+            criteria: escapeJsonString(f.description)
+        }));
 
-    // Set up interval
-    const intervalId = setInterval(() => {
-        captureAndSend(tabId, domain, webhookUrl);
-    }, interval * 1000);
+        console.log(`Starting capture with fields for ${domain}:`, fields);
 
-    captureIntervals.set(tabId, intervalId);
+        // Capture immediately
+        captureAndSend(tabId, domain, webhookUrl, false, fields);
 
-    console.log(`Started capture for tab ${tabId} on domain ${domain} every ${interval} seconds`);
+        // Set up interval
+        const intervalId = setInterval(() => {
+            // Re-fetch fields each time in case they've changed
+            chrome.storage.sync.get([`fields_${domain}`], (data) => {
+                const currentFields = data[`fields_${domain}`] || [];
+                const apiFields = currentFields.map(f => ({
+                    name: sanitizeFieldName(f.friendlyName || f.name),
+                    criteria: escapeJsonString(f.description)
+                }));
+                captureAndSend(tabId, domain, webhookUrl, false, apiFields);
+            });
+        }, interval * 1000);
+
+        captureIntervals.set(tabId, intervalId);
+        console.log(`Started capture for tab ${tabId} on domain ${domain} every ${interval} seconds`);
+    });
 }
 
 // Stop capturing screenshots
@@ -137,11 +155,21 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
 
         // For automatic captures, get fields from storage
         if (!fields && !isManual) {
-            const storage = await chrome.storage.sync.get(['fields']);
-            fields = storage.fields ? storage.fields.map(f => ({
-                name: f.name,
-                criteria: f.description
-            })) : [];
+            const domainKey = `fields_${domain}`;
+            const storage = await chrome.storage.sync.get([domainKey]);
+            const domainFields = storage[domainKey] || [];
+
+            console.log(`Loading fields for domain ${domain}:`, domainFields);
+
+            fields = domainFields.map(f => ({
+                name: sanitizeFieldName(f.friendlyName || f.name),
+                criteria: escapeJsonString(f.description)
+            }));
+
+            // If no fields configured, still track the event
+            if (fields.length === 0) {
+                console.log('No fields configured for domain:', domain);
+            }
         }
 
         // Check if tab still exists
@@ -202,6 +230,16 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
             formData.append('fields', JSON.stringify(fields));
         }
 
+        // Store request data for history
+        const requestData = {
+            domain: domain,
+            timestamp: new Date().toISOString(),
+            tabId: tabId.toString(),
+            url: tab.url,
+            isManual: isManual.toString(),
+            fields: fields
+        };
+
         console.log(`Sending to webhook: ${webhookUrl}`);
 
         // Send to webhook
@@ -219,8 +257,9 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
         // Try to parse response for field results
         let responseData = null;
         let parseError = null;
+        let responseText = '';
         try {
-            const responseText = await webhookResponse.text();
+            responseText = await webhookResponse.text();
             responseData = JSON.parse(responseText);
             console.log('Webhook response data:', responseData);
         } catch (e) {
@@ -228,14 +267,18 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
             console.log('Response was not JSON or could not be parsed:', e);
         }
 
+        // Generate event ID
+        const eventId = Date.now();
+
         // Always track the event, regardless of success
-        trackEvent(responseData, domain, tab.url, true, webhookResponse.status, parseError);
+        trackEvent(responseData, domain, tab.url, true, webhookResponse.status, parseError, dataUrl, requestData, responseText, eventId);
 
         // Send results to popup if it contains field evaluations
         if (responseData && responseData.fields) {
             chrome.runtime.sendMessage({
                 action: 'captureResults',
-                results: responseData
+                results: responseData,
+                eventId: eventId // Send event ID for linking
             });
         }
 
@@ -253,8 +296,11 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
     } catch (error) {
         console.error('Error capturing/sending screenshot:', error);
 
-        // Track failed event
-        trackEvent(null, domain, tab ? tab.url : '', false, null, error.message);
+        // Track failed event (screenshot may be undefined if capture failed)
+        trackEvent(null, domain, tab ? tab.url : '', false, null, error.message,
+            typeof dataUrl !== 'undefined' ? dataUrl : null,
+            typeof requestData !== 'undefined' ? requestData : null,
+            null, Date.now());
 
         // Send error notification on manual capture
         if (isManual) {
@@ -288,7 +334,7 @@ chrome.windows.onRemoved.addListener(() => {
 });
 
 // Track capture event
-function trackEvent(results, domain, url, success = true, httpStatus = null, error = null) {
+function trackEvent(results, domain, url, success = true, httpStatus = null, error = null, screenshot = null, request = null, response = null, eventId = null) {
     // Check if any field evaluated to true
     let hasTrueResult = false;
     const fieldResults = [];
@@ -308,7 +354,7 @@ function trackEvent(results, domain, url, success = true, httpStatus = null, err
 
     // Create event record
     const event = {
-        id: Date.now(),
+        id: eventId || Date.now(),
         timestamp: new Date().toISOString(),
         domain: domain,
         url: url,
@@ -318,7 +364,10 @@ function trackEvent(results, domain, url, success = true, httpStatus = null, err
         fields: fieldResults,
         reason: results ? (results.reason || '') : '',
         hasTrueResult: hasTrueResult,
-        read: false
+        read: false,
+        screenshot: screenshot, // Store the base64 screenshot
+        request: request,
+        response: response
     };
 
     console.log('Tracking event:', event);
@@ -335,8 +384,16 @@ function trackEvent(results, domain, url, success = true, httpStatus = null, err
         updateBadge();
     }
 
-    // Save to storage
-    chrome.storage.local.set({ recentEvents: recentEvents });
+    // Save to storage (note: screenshots can be large, may need to handle storage limits)
+    chrome.storage.local.set({ recentEvents: recentEvents }).catch(err => {
+        console.error('Error saving events to storage:', err);
+        // If storage fails due to size, try removing screenshots from older events
+        if (err.message && err.message.includes('QUOTA_BYTES')) {
+            console.log('Storage quota exceeded, removing old screenshots...');
+            recentEvents.slice(50).forEach(e => delete e.screenshot);
+            chrome.storage.local.set({ recentEvents: recentEvents });
+        }
+    });
 }
 
 // Update extension badge
@@ -357,4 +414,23 @@ chrome.storage.local.get(['recentEvents'], (data) => {
         unreadTrueCount = recentEvents.filter(e => e.hasTrueResult && !e.read).length;
         updateBadge();
     }
-}); 
+});
+
+// Helper functions for field processing
+function sanitizeFieldName(friendlyName) {
+    if (!friendlyName) return 'unnamed_field';
+    return friendlyName.toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .replace(/_+/g, '_') || 'unnamed_field';
+}
+
+function escapeJsonString(str) {
+    if (!str) return '';
+    return str
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+} 

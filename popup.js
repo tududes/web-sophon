@@ -97,7 +97,7 @@ class FieldManager {
     }
 
     // Update field results
-    updateResults(results) {
+    updateResults(results, eventId = null) {
         if (!results || !results.fields) return;
 
         this.fields.forEach(field => {
@@ -106,6 +106,8 @@ class FieldManager {
             if (result) {
                 field.result = result.boolean;
                 field.probability = result.probability;
+                field.lastEventId = eventId; // Store event ID for linking to history
+                field.lastResultTime = new Date().toISOString();
             }
         });
 
@@ -207,17 +209,31 @@ class FieldManager {
 
     // Save to storage
     async saveToStorage() {
+        await this.saveDomainFields();
         await chrome.storage.sync.set({
-            fields: this.fields,
             presets: this.presets
         });
     }
 
     // Load from storage
     async loadFromStorage() {
-        const data = await chrome.storage.sync.get(['fields', 'presets']);
-        if (data.fields) this.fields = data.fields;
+        // Load domain-specific fields
+        const domainKey = `fields_${this.currentDomain}`;
+        const data = await chrome.storage.sync.get([domainKey, 'presets']);
+        if (data[domainKey]) {
+            this.fields = data[domainKey];
+        } else {
+            this.fields = [];
+        }
         if (data.presets) this.presets = data.presets;
+    }
+
+    // Save domain-specific fields
+    async saveDomainFields() {
+        const domainKey = `fields_${this.currentDomain}`;
+        const saveData = {};
+        saveData[domainKey] = this.fields;
+        await chrome.storage.sync.set(saveData);
     }
 }
 
@@ -247,7 +263,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultsContainer: document.getElementById('results-container'),
         historyContainer: document.getElementById('history-container'),
         showTrueOnlyCheckbox: document.getElementById('show-true-only'),
-        clearHistoryBtn: document.getElementById('clear-history-btn')
+        clearHistoryBtn: document.getElementById('clear-history-btn'),
+        domainsContainer: document.getElementById('domains-container')
     };
 
     // Test background script communication
@@ -287,6 +304,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load and display history
     loadHistory();
+
+    // Load known domains
+    loadKnownDomains();
 
     // Event listeners
     setupEventListeners();
@@ -405,7 +425,7 @@ function setupEventListeners() {
             }
         } else if (message.action === 'captureResults') {
             // Handle results from n8n
-            fieldManager.updateResults(message.results);
+            fieldManager.updateResults(message.results, message.eventId);
             renderFields();
             displayResults(message.results);
             // Reload history to show new event
@@ -505,12 +525,23 @@ function renderFieldItem(field) {
     // Show full URL if toggled to show OR if it hasn't been saved yet
     const displayWebhookUrl = (field.showWebhookUrl || !field.webhookUrlSaved) ? field.webhookUrl : fieldManager.maskWebhookUrl(field.webhookUrl);
 
+    // Format last result display
+    let lastResultHtml = '';
+    if (field.lastResultTime) {
+        const timeAgo = getTimeAgo(new Date(field.lastResultTime));
+        lastResultHtml = `
+            <div class="field-last-result ${field.result === true ? 'true' : field.result === false ? 'false' : ''}" 
+                 data-event-id="${field.lastEventId || ''}"
+                 title="Click to view in history">
+                <span class="last-result-indicator ${field.result === true ? 'true' : 'false'}"></span>
+                <span class="last-result-text">Last: ${field.result === true ? 'TRUE' : 'FALSE'} ${timeAgo}</span>
+                ${field.probability !== null ? `<span class="last-result-probability">(${(field.probability * 100).toFixed(0)}%)</span>` : ''}
+            </div>
+        `;
+    }
+
     fieldEl.innerHTML = `
-    <div class="field-result" style="${field.result === null ? 'display: none;' : ''}">
-      <span class="result-indicator ${field.result === true ? 'true' : field.result === false ? 'false' : 'pending'}"></span>
-      <span class="result-text">${field.result === true ? 'TRUE' : field.result === false ? 'FALSE' : ''}</span>
-      ${field.probability !== null ? `<span class="result-probability">(${(field.probability * 100).toFixed(1)}%)</span>` : ''}
-    </div>
+    ${lastResultHtml}
     
     <div class="field-header">
       <input type="text" 
@@ -584,6 +615,44 @@ function renderFieldItem(field) {
     const viewLogsBtn = fieldEl.querySelector('.view-logs-btn');
     const webhookLogs = fieldEl.querySelector('.webhook-logs');
     const closeLogsBtn = fieldEl.querySelector('.close-logs-btn');
+    const lastResultEl = fieldEl.querySelector('.field-last-result');
+
+    // Click last result to view in history
+    if (lastResultEl) {
+        lastResultEl.addEventListener('click', () => {
+            const eventId = lastResultEl.dataset.eventId;
+            if (eventId) {
+                // Find event in history and scroll to it
+                const eventIndex = recentEvents.findIndex(e => e.id == eventId);
+                if (eventIndex !== -1) {
+                    // Show all events if needed
+                    if (showTrueOnly && !recentEvents[eventIndex].hasTrueResult) {
+                        elements.showTrueOnlyCheckbox.checked = false;
+                        showTrueOnly = false;
+                        renderHistory();
+                    }
+
+                    // Scroll to history section
+                    const historySection = Array.from(document.querySelectorAll('.section')).find(
+                        section => section.querySelector('#history-container')
+                    );
+                    if (historySection) {
+                        historySection.scrollIntoView({ behavior: 'smooth' });
+                    }
+
+                    // Highlight and expand the event
+                    setTimeout(() => {
+                        const historyItem = document.querySelector(`[data-event-id="${eventId}"]`);
+                        if (historyItem) {
+                            historyItem.classList.add('highlight');
+                            historyItem.click(); // Expand it
+                            setTimeout(() => historyItem.classList.remove('highlight'), 2000);
+                        }
+                    }, 500);
+                }
+            }
+        });
+    }
 
     // Update field name
     nameInput.addEventListener('input', () => {
@@ -776,28 +845,107 @@ function renderHistory() {
         return;
     }
 
-    elements.historyContainer.innerHTML = filteredEvents.map(event => {
+    elements.historyContainer.innerHTML = filteredEvents.map((event, index) => {
         const timeAgo = getTimeAgo(new Date(event.timestamp));
         const unreadClass = event.hasTrueResult && !event.read ? 'unread' : '';
+        const errorClass = !event.success ? 'error' : '';
 
-        const fieldsHtml = event.fields.map(field => `
+        // Handle different types of events
+        let statusHtml = '';
+        if (!event.success) {
+            statusHtml = `<span class="history-status error">❌ Failed: ${event.error || 'Unknown error'}</span>`;
+        } else if (event.httpStatus && event.httpStatus !== 200) {
+            statusHtml = `<span class="history-status warning">⚠️ HTTP ${event.httpStatus}</span>`;
+        } else if (event.fields && event.fields.length > 0) {
+            statusHtml = `<span class="history-status success">✓ Evaluated</span>`;
+        } else {
+            statusHtml = `<span class="history-status">📸 Captured</span>`;
+        }
+
+        const fieldsHtml = event.fields && event.fields.length > 0 ? event.fields.map(field => `
       <div class="history-field ${field.result ? 'true' : 'false'}">
         <span class="history-field-indicator ${field.result ? 'true' : 'false'}"></span>
-        <span>${field.name}: ${field.result ? 'TRUE' : 'FALSE'} (${(field.probability * 100).toFixed(0)}%)</span>
+        <span>${field.name}: ${field.result ? 'TRUE' : 'FALSE'} ${field.probability ? `(${(field.probability * 100).toFixed(0)}%)` : ''}</span>
       </div>
-    `).join('');
+    `).join('') : '<div class="history-no-fields">No field evaluations</div>';
 
         return `
-      <div class="history-item ${unreadClass}">
+      <div class="history-item ${unreadClass} ${errorClass}" data-event-index="${index}" data-event-id="${event.id}">
         <div class="history-header">
           <div class="history-domain">${event.domain}</div>
           <div class="history-time">${timeAgo}</div>
         </div>
+        ${statusHtml}
         <div class="history-fields">${fieldsHtml}</div>
         ${event.reason ? `<div class="history-reason">${event.reason}</div>` : ''}
+        <div class="history-details" style="display: none;">
+          <div class="detail-item"><strong>URL:</strong> ${event.url}</div>
+          <div class="detail-item"><strong>Time:</strong> ${new Date(event.timestamp).toLocaleString()}</div>
+          ${event.httpStatus ? `<div class="detail-item"><strong>HTTP Status:</strong> ${event.httpStatus}</div>` : ''}
+          ${event.error ? `<div class="detail-item"><strong>Error:</strong> ${event.error}</div>` : ''}
+          
+          ${event.screenshot ? `
+            <div class="detail-item">
+              <strong>Screenshot:</strong>
+              <div class="screenshot-container">
+                <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot">
+              </div>
+            </div>
+          ` : ''}
+          
+          ${event.request ? `
+            <details class="request-response-details">
+              <summary><strong>Request Data</strong></summary>
+              <pre class="json-display">${JSON.stringify(event.request, null, 2)}</pre>
+            </details>
+          ` : ''}
+          
+          ${event.response ? `
+            <details class="request-response-details">
+              <summary><strong>Response Data</strong></summary>
+              <pre class="json-display">${event.response}</pre>
+            </details>
+          ` : ''}
+        </div>
       </div>
     `;
     }).join('');
+
+    // Add click handlers for expanding details
+    document.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', function (e) {
+            // Don't collapse if clicking on interactive elements
+            if (e.target.closest('.history-screenshot') ||
+                e.target.closest('.request-response-details') ||
+                e.target.closest('.json-display') ||
+                e.target.closest('details') ||
+                e.target.closest('summary')) {
+                return;
+            }
+
+            const details = this.querySelector('.history-details');
+            if (details.style.display === 'none') {
+                details.style.display = 'block';
+                this.classList.add('expanded');
+            } else {
+                details.style.display = 'none';
+                this.classList.remove('expanded');
+            }
+        });
+    });
+
+    // Prevent propagation on interactive elements
+    document.querySelectorAll('.history-screenshot').forEach(img => {
+        img.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    });
+
+    document.querySelectorAll('.request-response-details').forEach(details => {
+        details.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    });
 }
 
 // Get human-readable time ago
@@ -821,6 +969,78 @@ function getTimeAgo(date) {
     }
 
     return 'just now';
+}
+
+// Load and display known domains
+async function loadKnownDomains() {
+    // Get all stored data
+    const allData = await chrome.storage.sync.get(null);
+    const domains = new Set();
+
+    // Find all domain-specific field keys
+    Object.keys(allData).forEach(key => {
+        if (key.startsWith('fields_')) {
+            const domain = key.replace('fields_', '');
+            if (allData[key] && allData[key].length > 0) {
+                domains.add(domain);
+            }
+        }
+    });
+
+    // Also check local storage for domain-specific settings
+    const localData = await chrome.storage.local.get(null);
+    Object.keys(localData).forEach(key => {
+        if (key.startsWith('consent_') || key.startsWith('interval_')) {
+            const domain = key.split('_').slice(1).join('_');
+            if (domain) domains.add(domain);
+        }
+    });
+
+    if (domains.size === 0) {
+        elements.domainsContainer.innerHTML = '<div class="domains-empty">No domain configurations saved yet</div>';
+        return;
+    }
+
+    // Filter out current domain and render others
+    const otherDomains = Array.from(domains).filter(d => d !== fieldManager.currentDomain);
+
+    if (otherDomains.length === 0) {
+        elements.domainsContainer.innerHTML = '<div class="domains-empty">No other domain configurations saved</div>';
+        return;
+    }
+
+    // Render domains
+    elements.domainsContainer.innerHTML = otherDomains.map(domain => `
+    <div class="domain-item" data-domain="${domain}">
+      <div class="domain-name">${domain}</div>
+      <div class="domain-actions">
+        <button class="small-button open-domain" data-domain="${domain}">Open</button>
+        <button class="small-button danger delete-domain" data-domain="${domain}">Delete</button>
+      </div>
+    </div>
+  `).join('');
+
+    // Add click handlers
+    document.querySelectorAll('.open-domain').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const domain = btn.dataset.domain;
+            chrome.tabs.create({ url: `https://${domain}` });
+        });
+    });
+
+    document.querySelectorAll('.delete-domain').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const domain = btn.dataset.domain;
+            if (confirm(`Delete all settings for ${domain}?`)) {
+                // Remove domain-specific data
+                await chrome.storage.sync.remove([`fields_${domain}`]);
+                await chrome.storage.local.remove([`consent_${domain}`, `interval_${domain}`]);
+                loadKnownDomains(); // Refresh
+            }
+        });
+    });
 }
 
 // Check if capture is currently active
