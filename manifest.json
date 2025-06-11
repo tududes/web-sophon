@@ -14,7 +14,8 @@
         "https://*/*"
     ],
     "background": {
-        "service_worker": "background.js"
+        "service_worker": "background-main.js",
+        "type": "module"
     },
     "action": {
         "default_popup": "popup.html",

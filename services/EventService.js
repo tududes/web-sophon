@@ -1,0 +1,232 @@
+// Event tracking and management service
+export class EventService {
+    constructor() {
+        this.recentEvents = []; // Store recent capture events
+        this.unreadTrueCount = 0; // Count of unread TRUE events
+        this.loadEventsFromStorage();
+    }
+
+    // Load recent events from storage on startup
+    async loadEventsFromStorage() {
+        const data = await chrome.storage.local.get(['recentEvents']);
+        if (data.recentEvents) {
+            this.recentEvents = data.recentEvents;
+            // Count unread TRUE events
+            this.unreadTrueCount = this.recentEvents.filter(e => e.hasTrueResult && !e.read).length;
+            this.updateBadge();
+        }
+    }
+
+    // Track capture event
+    trackEvent(results, domain, url, success = true, httpStatus = null, error = null, screenshot = null, request = null, response = null, eventId = null, status = 'completed') {
+        // Check if any field evaluated to true
+        let hasTrueResult = false;
+        const fieldResults = [];
+
+        if (results && results.fields) {
+            for (const [fieldName, result] of Object.entries(results.fields)) {
+                fieldResults.push({
+                    name: fieldName,
+                    result: result.boolean,
+                    probability: result.probability
+                });
+                if (result.boolean === true) {
+                    hasTrueResult = true;
+                }
+            }
+        }
+
+        // Create event record
+        const event = {
+            id: eventId || Date.now(),
+            timestamp: new Date().toISOString(),
+            domain: domain,
+            url: url,
+            success: success,
+            httpStatus: httpStatus,
+            error: error,
+            fields: fieldResults,
+            reason: results ? (results.reason || '') : '',
+            hasTrueResult: hasTrueResult,
+            read: false,
+            screenshot: screenshot, // Store the base64 screenshot
+            request: request,
+            response: response,
+            status: status // 'pending' or 'completed'
+        };
+
+        console.log('Tracking event:', event);
+
+        // Add to recent events (keep last 100)
+        this.recentEvents.unshift(event);
+        if (this.recentEvents.length > 100) {
+            this.recentEvents = this.recentEvents.slice(0, 100);
+        }
+
+        // Update unread count if has true result
+        if (hasTrueResult) {
+            this.unreadTrueCount++;
+            this.updateBadge();
+        }
+
+        // Save to storage (note: screenshots can be large, may need to handle storage limits)
+        this.saveEventsToStorage();
+    }
+
+    // Update an existing event with response data
+    updateEvent(eventId, results, httpStatus, error, responseText) {
+        // Find the event
+        const eventIndex = this.recentEvents.findIndex(e => e.id === eventId);
+        if (eventIndex === -1) {
+            console.error('Event not found for update:', eventId);
+            return;
+        }
+
+        const event = this.recentEvents[eventIndex];
+
+        // Update event data
+        event.status = 'completed';
+        event.httpStatus = httpStatus;
+        event.error = error;
+        event.response = responseText;
+
+        // Update success flag based on HTTP status and error
+        if (error) {
+            event.success = false;
+        } else if (httpStatus) {
+            event.success = httpStatus >= 200 && httpStatus < 300;
+        }
+
+        // Process results if available
+        if (results && results.fields) {
+            event.fields = [];
+            let hasTrueResult = false;
+
+            for (const [fieldName, result] of Object.entries(results.fields)) {
+                event.fields.push({
+                    name: fieldName,
+                    result: result.boolean,
+                    probability: result.probability
+                });
+                if (result.boolean === true) {
+                    hasTrueResult = true;
+                }
+            }
+
+            event.hasTrueResult = hasTrueResult;
+            event.reason = results.reason || '';
+
+            // Update unread count if has true result
+            if (hasTrueResult && !event.read) {
+                this.unreadTrueCount++;
+                this.updateBadge();
+            }
+        }
+
+        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}`);
+
+        // Save updated events
+        this.saveEventsToStorage();
+
+        // Notify all tabs and popups of the update
+        this.notifyEventUpdate(eventId, event);
+    }
+
+    // Notify about event updates
+    notifyEventUpdate(eventId, event) {
+        // First try runtime message (for popup)
+        chrome.runtime.sendMessage({
+            action: 'eventUpdated',
+            eventId: eventId,
+            event: event
+        }, (response) => {
+            // Log if message was received
+            if (chrome.runtime.lastError) {
+                console.log('No popup listening for event update:', chrome.runtime.lastError.message);
+            } else {
+                console.log('Event update sent to popup for event:', eventId);
+            }
+        });
+
+        // Also send to all tabs in case multiple popups are open
+        chrome.tabs.query({}, (tabs) => {
+            tabs.forEach(tab => {
+                chrome.tabs.sendMessage(tab.id, {
+                    action: 'eventUpdated',
+                    eventId: eventId,
+                    event: event
+                }, () => {
+                    // Ignore errors for tabs that don't have our content script
+                    if (chrome.runtime.lastError) {
+                        // This is expected for most tabs
+                    }
+                });
+            });
+        });
+    }
+
+    // Get recent events
+    getRecentEvents() {
+        return {
+            events: this.recentEvents,
+            unreadCount: this.unreadTrueCount
+        };
+    }
+
+    // Mark events as read
+    markEventsRead() {
+        this.unreadTrueCount = 0;
+        this.updateBadge();
+        return { success: true };
+    }
+
+    // Clear all events
+    clearHistory() {
+        this.recentEvents = [];
+        this.unreadTrueCount = 0;
+        this.updateBadge();
+        // Clear from storage as well
+        chrome.storage.local.set({ recentEvents: [] });
+        return { success: true };
+    }
+
+    // Save events to storage
+    async saveEventsToStorage() {
+        try {
+            await chrome.storage.local.set({ recentEvents: this.recentEvents });
+        } catch (err) {
+            console.error('Error saving events to storage:', err);
+            // If storage fails due to size, try removing screenshots from older events
+            if (err.message && err.message.includes('QUOTA_BYTES')) {
+                console.log('Storage quota exceeded, removing old screenshots...');
+                this.recentEvents.slice(50).forEach(e => delete e.screenshot);
+                await chrome.storage.local.set({ recentEvents: this.recentEvents });
+            }
+        }
+    }
+
+    // Update extension badge
+    updateBadge() {
+        if (this.unreadTrueCount > 0) {
+            chrome.action.setBadgeText({ text: this.unreadTrueCount.toString() });
+            chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+        } else {
+            chrome.action.setBadgeText({ text: '' });
+        }
+    }
+
+    // Get event by ID
+    getEventById(eventId) {
+        return this.recentEvents.find(e => e.id === eventId);
+    }
+
+    // Get events count
+    getEventsCount() {
+        return this.recentEvents.length;
+    }
+
+    // Get unread true count
+    getUnreadTrueCount() {
+        return this.unreadTrueCount;
+    }
+} 
