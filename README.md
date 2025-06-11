@@ -84,6 +84,19 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 3. Select your desired capture interval
 4. Toggle the switch to enable capture for the current domain
 
+## Documentation
+
+📁 **[Complete Documentation](docs/)** - All guides, examples, and technical documentation have been organized in the `docs/` directory:
+
+- **[Setup Guide](docs/SETUP_GUIDE.md)** - Complete installation and configuration instructions
+- **[Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md)** - Comprehensive guide for creating effective evaluation criteria
+- **[Interaction Guide](docs/INTERACTION_GUIDE.md)** - User interface and workflow guide
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Debug Steps](docs/DEBUG_STEPS.md)** - Developer debugging procedures
+- **[Modular Architecture](docs/MODULAR_ARCHITECTURE.md)** - Technical architecture documentation
+- **[N8N Workflow Examples](docs/)** - Sample workflows for integration
+- **[Icon Generation](docs/ICON_GENERATION_PROMPT.md)** - Creating extension icons
+
 ## Usage
 
 - **Start capturing**: Toggle the switch ON after entering a webhook URL
@@ -145,7 +158,7 @@ fields: [JSON string] - Array of field definitions (v2.0+)
    - Receive screenshot and field definitions
    - Use GPT-4 Vision to evaluate each field
    - Return results in the expected JSON format
-4. See [FIELD_EVALUATION_GUIDE.md](FIELD_EVALUATION_GUIDE.md) for detailed instructions
+4. See [Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md) for detailed instructions
 
 ## Icon Generation
 

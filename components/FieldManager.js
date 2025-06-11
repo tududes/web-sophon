@@ -1,11 +1,12 @@
 // Field management and preset functionality
 export class FieldManager {
-    constructor() {
+    constructor(eventService = null) {
         this.fields = [];
         this.presets = {};
         this.currentDomain = '';
         this.currentTabId = null;
         this.lastResults = null;
+        this.eventService = eventService; // For recording field webhook events
     }
 
     // Generate unique field ID
@@ -144,6 +145,8 @@ export class FieldManager {
         if (!field.webhookUrl) return;
 
         const startTime = Date.now();
+        const eventId = Date.now() + Math.random(); // Unique ID for field webhook event
+
         let logEntry = {
             fieldName: field.friendlyName,
             success: false,
@@ -151,15 +154,67 @@ export class FieldManager {
             duration: 0
         };
 
+        let finalError = null;
+        let responseText = '';
+        let responseData = null;
+        let httpStatus = null;
+
         try {
             let payload = {};
             try {
                 payload = JSON.parse(field.webhookPayload);
             } catch (e) {
                 logEntry.error = 'Invalid JSON payload';
+                finalError = 'Invalid JSON payload';
+                responseText = finalError;
                 this.addWebhookLog(field.id, logEntry);
+
+                // Record in main event history if EventService is available
+                if (this.eventService) {
+                    this.eventService.trackEvent(
+                        null, // No response data
+                        this.currentDomain,
+                        `Field Webhook: ${field.friendlyName}`,
+                        false, // Not successful
+                        finalError,
+                        null, // No error (this is validation error)
+                        null, // No screenshot for field webhooks
+                        {
+                            fieldName: field.friendlyName,
+                            webhookUrl: this.maskWebhookUrl(field.webhookUrl),
+                            payload: field.webhookPayload,
+                            type: 'field_webhook'
+                        },
+                        responseText,
+                        eventId,
+                        'error'
+                    );
+                }
+
                 console.error('Invalid JSON payload for field:', field.friendlyName);
                 return;
+            }
+
+            // Record the pending field webhook event
+            if (this.eventService) {
+                this.eventService.trackEvent(
+                    null, // No response data yet
+                    this.currentDomain,
+                    `Field Webhook: ${field.friendlyName}`,
+                    false, // Not successful yet
+                    null,
+                    null,
+                    null, // No screenshot for field webhooks
+                    {
+                        fieldName: field.friendlyName,
+                        webhookUrl: this.maskWebhookUrl(field.webhookUrl),
+                        payload: payload,
+                        type: 'field_webhook'
+                    },
+                    null, // No response yet
+                    eventId,
+                    'pending'
+                );
             }
 
             const response = await fetch(field.webhookUrl, {
@@ -173,19 +228,48 @@ export class FieldManager {
             logEntry.duration = Date.now() - startTime;
             logEntry.success = response.ok;
             logEntry.status = response.status;
+            httpStatus = response.status;
+
+            // ALWAYS try to get response text, regardless of status code
+            try {
+                responseText = await response.text();
+                console.log(`Field webhook response text for ${field.friendlyName}:`, responseText);
+            } catch (textError) {
+                console.log(`Failed to read response text for field ${field.friendlyName}:`, textError);
+                responseText = `Failed to read response: ${textError.message}`;
+            }
+
+            // Try to parse response as JSON if we have text
+            if (responseText) {
+                try {
+                    responseData = JSON.parse(responseText);
+                    console.log(`Field webhook parsed response for ${field.friendlyName}:`, responseData);
+                } catch (e) {
+                    console.log(`Field webhook response was not JSON for ${field.friendlyName}:`, e);
+                    // responseText is preserved for non-JSON responses
+                }
+            }
 
             if (!response.ok) {
-                logEntry.error = `HTTP ${response.status}: ${response.statusText}`;
+                finalError = `HTTP ${response.status}: ${response.statusText}`;
+                logEntry.error = finalError;
             }
 
             console.log(`Webhook fired for field ${field.friendlyName}: ${response.status}`);
         } catch (error) {
             logEntry.duration = Date.now() - startTime;
             logEntry.error = error.message;
+            finalError = error.message;
+            responseText = error.message; // Use error message as response for fetch errors
             console.error('Error firing webhook:', error);
         }
 
         this.addWebhookLog(field.id, logEntry);
+
+        // Update the field webhook event in main history if EventService is available
+        if (this.eventService) {
+            this.eventService.updateEvent(eventId, responseData, httpStatus, finalError, responseText);
+        }
     }
 
     // Save current fields as preset

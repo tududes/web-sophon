@@ -3,9 +3,11 @@ import { FieldManager } from './components/FieldManager.js';
 import { HistoryManager } from './components/HistoryManager.js';
 import { UIManager } from './components/UIManager.js';
 import { DomainManager } from './components/DomainManager.js';
+import { EventService } from './services/EventService.js';
 
-// Initialize managers
-const fieldManager = new FieldManager();
+// Initialize services and managers
+const eventService = new EventService();
+const fieldManager = new FieldManager(eventService);
 const historyManager = new HistoryManager();
 const uiManager = new UIManager(fieldManager);
 const domainManager = new DomainManager();
