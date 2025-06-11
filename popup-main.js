@@ -1,500 +1,702 @@
-// Main popup entry point
-import { FieldManager } from './components/FieldManager.js';
-import { HistoryManager } from './components/HistoryManager.js';
-import { UIManager } from './components/UIManager.js';
-import { DomainManager } from './components/DomainManager.js';
-import { EventService } from './services/EventService.js';
+// Simplified WebSophon Popup - Basic functionality first
+console.log('Starting WebSophon popup...');
 
-// Initialize services and managers
-const eventService = new EventService();
-const fieldManager = new FieldManager(eventService);
-const historyManager = new HistoryManager();
-const uiManager = new UIManager(fieldManager);
-const domainManager = new DomainManager();
-
-// DOM elements
-let elements = {};
-
-// Initialize popup when DOM is loaded
-document.addEventListener('DOMContentLoaded', async () => {
-    // Get all DOM elements
-    elements = {
-        domainDisplay: document.getElementById('current-domain'),
-        webhookUrlInput: document.getElementById('webhook-url'),
-        intervalSelect: document.getElementById('capture-interval'),
-        consentToggle: document.getElementById('consent-toggle'),
-        statusDiv: document.getElementById('status'),
-        captureButton: document.getElementById('capture-now'),
-        fieldsContainer: document.getElementById('fields-container'),
-        addFieldBtn: document.getElementById('add-field-btn'),
-        presetSelector: document.getElementById('preset-selector'),
-        savePresetBtn: document.getElementById('save-preset-btn'),
-        deletePresetBtn: document.getElementById('delete-preset-btn'),
-        resultsContainer: document.getElementById('results-container'),
-        historyContainer: document.getElementById('history-container'),
-        showTrueOnlyCheckbox: document.getElementById('show-true-only'),
-        clearHistoryBtn: document.getElementById('clear-history-btn'),
-        domainsContainer: document.getElementById('domains-container'),
-        testEventsBtn: document.getElementById('test-events-btn'),
-        headerLink: document.getElementById('header-link'),
-        themeToggle: document.getElementById('theme-toggle')
-    };
-
-    // Initialize theme system
-    initializeTheme();
-
-    // Set elements in all managers
-    uiManager.setElements(elements);
-    historyManager.setElements(elements);
-    domainManager.setElements(elements);
-
-    // Show test button if in development mode
-    if (window.location.href.includes('test') ||
-        window.location.href.includes('localhost') ||
-        localStorage.getItem('websophon-debug') === 'true') {
-        elements.testEventsBtn.style.display = '';
-        console.log('Debug mode enabled - showing test events button');
+// Basic popup functionality without complex architecture
+class SimplePopupController {
+    constructor() {
+        this.elements = {};
+        this.currentDomain = null;
+        this.currentTabId = null;
     }
 
-    // Test background script communication
-    try {
-        chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error('Background script not responding:', chrome.runtime.lastError);
-            } else {
-                console.log('Background script is responsive');
-            }
-        });
-    } catch (e) {
-        console.error('Failed to communicate with background script:', e);
-    }
+    async initialize() {
+        try {
+            console.log('Initializing simple popup...');
 
-    // Get current tab information
-    try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab && tab.url) {
-            const url = new URL(tab.url);
-            fieldManager.currentDomain = url.hostname;
-            fieldManager.currentTabId = tab.id;
-            elements.domainDisplay.textContent = fieldManager.currentDomain;
+            // Get DOM elements
+            this.getDOMElements();
+
+            // Initialize theme
+            this.initializeTheme();
+
+            // Get current tab
+            await this.getCurrentTab();
+
+            // Setup basic event listeners
+            this.setupEventListeners();
+
+            // Load basic settings
+            await this.loadBasicSettings();
+
+            console.log('Simple popup initialized successfully');
+        } catch (error) {
+            console.error('Popup initialization failed:', error);
+            this.showError('Failed to initialize extension');
         }
-    } catch (error) {
-        elements.domainDisplay.textContent = 'Unable to detect domain';
-        console.error('Error getting current tab:', error);
     }
 
-    // Load saved data
-    await loadSettings();
-    await fieldManager.loadFromStorage();
+    getDOMElements() {
+        const elementMap = {
+            currentDomain: 'current-domain',
+            webhookUrl: 'webhook-url',
+            captureInterval: 'capture-interval',
+            consentToggle: 'consent-toggle',
+            status: 'status',
+            captureNow: 'capture-now',
+            themeToggle: 'theme-toggle',
+            addFieldBtn: 'add-field-btn',
+            fieldsContainer: 'fields-container',
+            presetSelector: 'preset-selector',
+            savePresetBtn: 'save-preset-btn',
+            deletePresetBtn: 'delete-preset-btn'
+        };
 
-    // Render UI
-    uiManager.renderFields();
-    uiManager.updatePresetSelector();
-
-    // Load and display history
-    historyManager.loadHistory();
-
-    // Load known domains
-    domainManager.loadKnownDomains(fieldManager.currentDomain);
-
-    // Set up last result click handler
-    uiManager.setLastResultClickHandler((eventId) => {
-        historyManager.scrollToEvent(eventId, historyManager.showTrueOnly, (showTrueOnly) => {
-            elements.showTrueOnlyCheckbox.checked = showTrueOnly;
-        });
-    });
-
-    // Set up cancel request handler
-    uiManager.setCancelRequestHandler((eventId) => {
-        console.log(`Cancelling request ${eventId}`);
-        chrome.runtime.sendMessage({
-            action: 'cancelRequest',
-            eventId: eventId
-        }, (response) => {
-            if (response && response.success) {
-                console.log(`Request ${eventId} cancelled successfully`);
-                fieldManager.markFieldsCancelled(eventId);
-                fieldManager.saveToStorage();
-                uiManager.renderFields();
-                // Reload history to show the cancelled event
-                historyManager.loadHistory();
-                uiManager.showStatus('Request cancelled', 'info');
+        for (const [key, id] of Object.entries(elementMap)) {
+            const element = document.getElementById(id);
+            if (element) {
+                this.elements[key] = element;
+                console.log(`Found element: ${key} (${id})`);
             } else {
-                console.error(`Failed to cancel request ${eventId}:`, response);
-                uiManager.showStatus(`Failed to cancel request: ${response?.error || 'Unknown error'}`, 'error');
+                console.warn(`Element not found: ${key} (${id})`);
             }
-        });
-    });
-
-    // Event listeners
-    setupEventListeners();
-
-    // Mark events as read
-    chrome.runtime.sendMessage({ action: 'markEventsRead' });
-});
-
-// Setup all event listeners
-function setupEventListeners() {
-    // Save webhook URL when changed
-    elements.webhookUrlInput.addEventListener('change', async () => {
-        const webhookUrl = elements.webhookUrlInput.value.trim();
-        if (webhookUrl) {
-            await chrome.storage.local.set({ webhookUrl });
-            uiManager.showStatus('Webhook URL saved', 'success');
         }
-    });
+    }
 
-    // Save interval when changed
-    elements.intervalSelect.addEventListener('change', async () => {
-        const interval = elements.intervalSelect.value;
-        await chrome.storage.local.set({ [`interval_${fieldManager.currentDomain}`]: interval });
+    async getCurrentTab() {
+        try {
+            console.log('Getting current tab...');
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-        // If capture is active, update the interval
-        if (elements.consentToggle.checked) {
-            chrome.runtime.sendMessage({
-                action: 'updateInterval',
-                domain: fieldManager.currentDomain,
-                interval: parseInt(interval),
-                tabId: fieldManager.currentTabId
+            if (tab && tab.url) {
+                const url = new URL(tab.url);
+                this.currentDomain = url.hostname;
+                this.currentTabId = tab.id;
+
+                console.log('Current domain:', this.currentDomain);
+
+                if (this.elements.currentDomain) {
+                    this.elements.currentDomain.textContent = this.currentDomain;
+                }
+            } else {
+                throw new Error('No tab found');
+            }
+        } catch (error) {
+            console.error('Failed to get current tab:', error);
+            if (this.elements.currentDomain) {
+                this.elements.currentDomain.textContent = 'Unable to detect domain';
+            }
+        }
+    }
+
+    setupEventListeners() {
+        console.log('Setting up event listeners...');
+
+        // Theme toggle
+        if (this.elements.themeToggle) {
+            this.elements.themeToggle.addEventListener('click', () => {
+                console.log('Theme toggle clicked');
+                this.toggleTheme();
+            });
+            console.log('Theme toggle listener added');
+        }
+
+        // Webhook URL
+        if (this.elements.webhookUrl) {
+            this.elements.webhookUrl.addEventListener('change', async () => {
+                const webhookUrl = this.elements.webhookUrl.value.trim();
+                if (webhookUrl) {
+                    await this.saveWebhookUrl(webhookUrl);
+                    this.showStatus('Webhook URL saved', 'success');
+                }
             });
         }
 
-        uiManager.showStatus('Interval updated', 'success');
-    });
+        // Interval change
+        if (this.elements.captureInterval) {
+            this.elements.captureInterval.addEventListener('change', async () => {
+                const interval = this.elements.captureInterval.value;
+                await this.saveInterval(interval);
 
-    // Handle consent toggle
-    elements.consentToggle.addEventListener('change', async () => {
-        const isEnabled = elements.consentToggle.checked;
-        const webhookUrl = elements.webhookUrlInput.value.trim();
+                // Update UI based on manual mode
+                this.updateManualModeUI();
 
-        if (isEnabled && !webhookUrl) {
-            uiManager.showStatus('Please enter a webhook URL first', 'error');
-            elements.consentToggle.checked = false;
+                if (interval === 'manual') {
+                    this.showStatus('Manual only mode enabled', 'info');
+                    // Stop automatic capture but keep domain enabled
+                    this.stopAutomaticCapture();
+                } else {
+                    this.showStatus(`Interval updated to ${interval} seconds`, 'success');
+                    // If domain is enabled, start automatic capture with new interval
+                    if (this.elements.consentToggle && this.elements.consentToggle.checked) {
+                        this.startAutomaticCapture();
+                    }
+                }
+            });
+        }
+
+        // Consent toggle - now enables WebSophon for domain (both manual and automatic)
+        if (this.elements.consentToggle) {
+            this.elements.consentToggle.addEventListener('change', async () => {
+                const isEnabled = this.elements.consentToggle.checked;
+                const interval = this.elements.captureInterval.value;
+
+                await this.saveConsent(isEnabled);
+
+                if (isEnabled) {
+                    if (interval === 'manual') {
+                        this.showStatus('WebSophon enabled for manual captures', 'success');
+                    } else {
+                        this.showStatus(`WebSophon enabled with ${interval}s interval`, 'success');
+                        // Start automatic capture if interval is set
+                        this.startAutomaticCapture();
+                    }
+                } else {
+                    this.showStatus('WebSophon disabled for this domain', 'info');
+                    // Stop any automatic capture
+                    this.stopAutomaticCapture();
+                }
+            });
+        }
+
+        // Add field button
+        if (this.elements.addFieldBtn) {
+            this.elements.addFieldBtn.addEventListener('click', () => {
+                this.addBasicField();
+            });
+        }
+
+        // Manual capture
+        if (this.elements.captureNow) {
+            this.elements.captureNow.addEventListener('click', () => {
+                this.handleManualCapture();
+            });
+        }
+
+        // Preset buttons
+        if (this.elements.savePresetBtn) {
+            this.elements.savePresetBtn.addEventListener('click', () => {
+                this.savePreset();
+            });
+        }
+
+        if (this.elements.deletePresetBtn) {
+            this.elements.deletePresetBtn.addEventListener('click', () => {
+                this.deletePreset();
+            });
+        }
+    }
+
+    async loadBasicSettings() {
+        try {
+            if (!this.currentDomain) return;
+
+            const keys = [
+                'webhookUrl',
+                `consent_${this.currentDomain}`,
+                `interval_${this.currentDomain}`,
+                `fields_${this.currentDomain}`
+            ];
+
+            const data = await chrome.storage.local.get(keys);
+
+            if (data.webhookUrl && this.elements.webhookUrl) {
+                this.elements.webhookUrl.value = data.webhookUrl;
+            }
+
+            if (data[`consent_${this.currentDomain}`] !== undefined && this.elements.consentToggle) {
+                this.elements.consentToggle.checked = data[`consent_${this.currentDomain}`];
+            }
+
+            if (data[`interval_${this.currentDomain}`] && this.elements.captureInterval) {
+                this.elements.captureInterval.value = data[`interval_${this.currentDomain}`];
+            }
+
+            // Load saved fields
+            await this.loadFieldsState();
+
+            // Update UI based on manual mode
+            this.updateManualModeUI();
+
+            console.log('Settings loaded:', data);
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+        }
+    }
+
+    async saveWebhookUrl(url) {
+        try {
+            await chrome.storage.local.set({ webhookUrl: url });
+            console.log('Webhook URL saved:', url);
+        } catch (error) {
+            console.error('Failed to save webhook URL:', error);
+        }
+    }
+
+    async saveInterval(interval) {
+        try {
+            if (!this.currentDomain) return;
+            await chrome.storage.local.set({ [`interval_${this.currentDomain}`]: interval });
+            console.log('Interval saved:', interval);
+        } catch (error) {
+            console.error('Failed to save interval:', error);
+        }
+    }
+
+    async saveConsent(enabled) {
+        try {
+            if (!this.currentDomain) return;
+            await chrome.storage.local.set({ [`consent_${this.currentDomain}`]: enabled });
+            console.log('Consent saved:', enabled);
+        } catch (error) {
+            console.error('Failed to save consent:', error);
+        }
+    }
+
+    addBasicField() {
+        if (!this.elements.fieldsContainer) return;
+
+        const fieldId = Date.now();
+        const fieldHtml = `
+            <div class="field-item" data-field-id="${fieldId}">
+                <div class="field-header">
+                    <input type="text" class="field-name-input" placeholder="Field Name">
+                    <button class="remove-field-btn" onclick="this.parentElement.parentElement.remove()">✕</button>
+                </div>
+                <textarea class="field-description" placeholder="Describe what to evaluate..."></textarea>
+                <div class="field-webhook-config">
+                    <div class="webhook-toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" class="webhook-toggle">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Fire webhook on TRUE result</span>
+                    </div>
+                    
+                    <div class="webhook-url-group" style="display: none;">
+                        <label>Webhook URL:</label>
+                        <div class="webhook-url-input-group">
+                            <input type="url" class="webhook-url-input" placeholder="https://webhook.url/endpoint">
+                            <button class="toggle-url-visibility" title="Show/Hide URL" style="display: none;">👁️</button>
+                        </div>
+                    </div>
+                    
+                    <div class="webhook-payload-group" style="display: none;">
+                        <label>Custom Payload (JSON):</label>
+                        <textarea class="webhook-payload-input" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+
+        // Add event listeners for the new field
+        this.setupFieldWebhookListeners(fieldId);
+
+        this.showStatus('Field added', 'success');
+    }
+
+    savePreset() {
+        const name = prompt('Enter preset name:');
+        if (name) {
+            this.showStatus(`Preset "${name}" saved (functionality coming soon)`, 'info');
+        }
+    }
+
+    deletePreset() {
+        const presetName = this.elements.presetSelector?.value;
+        if (presetName) {
+            this.showStatus(`Preset "${presetName}" deleted (functionality coming soon)`, 'info');
+        }
+    }
+
+    async handleManualCapture() {
+        // Check if domain is enabled
+        if (!this.elements.consentToggle?.checked) {
+            this.showStatus('Please enable WebSophon for this domain first', 'error');
             return;
         }
 
-        // Save consent state
-        await chrome.storage.local.set({ [`consent_${fieldManager.currentDomain}`]: isEnabled });
-
-        // Send message to background script
-        chrome.runtime.sendMessage({
-            action: isEnabled ? 'startCapture' : 'stopCapture',
-            domain: fieldManager.currentDomain,
-            tabId: fieldManager.currentTabId,
-            interval: parseInt(elements.intervalSelect.value),
-            webhookUrl: webhookUrl
-        });
-
-        uiManager.showStatus(
-            isEnabled ? 'Screenshot capture enabled' : 'Screenshot capture disabled',
-            isEnabled ? 'success' : 'info'
-        );
-    });
-
-    // Handle manual capture button
-    elements.captureButton.addEventListener('click', handleManualCapture);
-
-    // Add field button
-    elements.addFieldBtn.addEventListener('click', () => {
-        const field = fieldManager.addField();
-        uiManager.renderFieldItem(field);
-        fieldManager.saveToStorage();
-    });
-
-    // Preset selector
-    elements.presetSelector.addEventListener('change', () => {
-        const presetName = elements.presetSelector.value;
-        if (presetName) {
-            fieldManager.loadPreset(presetName);
-            uiManager.renderFields();
-            uiManager.showStatus(`Loaded preset: ${presetName}`, 'success');
+        const webhookUrl = this.elements.webhookUrl?.value.trim();
+        if (!webhookUrl) {
+            this.showStatus('Please enter a webhook URL first', 'error');
+            return;
         }
-    });
 
-    // Save preset button
-    elements.savePresetBtn.addEventListener('click', () => {
-        const name = prompt('Enter preset name:');
-        if (name) {
-            fieldManager.savePreset(name);
-            fieldManager.saveToStorage();
-            uiManager.updatePresetSelector();
-            uiManager.showStatus(`Saved preset: ${name}`, 'success');
+        // Get fields and save them before capture
+        const fields = this.getFieldsFromDOM();
+        if (fields.length === 0) {
+            this.showStatus('Please add at least one field', 'error');
+            return;
         }
-    });
 
-    // Delete preset button
-    elements.deletePresetBtn.addEventListener('click', () => {
-        const presetName = elements.presetSelector.value;
-        if (presetName && confirm(`Delete preset "${presetName}"?`)) {
-            fieldManager.deletePreset(presetName);
-            fieldManager.saveToStorage();
-            uiManager.updatePresetSelector();
-            uiManager.showStatus(`Deleted preset: ${presetName}`, 'info');
+        // Save current field state
+        await this.saveFieldsState();
+
+        // Update button state
+        if (this.elements.captureNow) {
+            this.elements.captureNow.disabled = true;
+            this.elements.captureNow.textContent = '⏳ Capturing...';
         }
-    });
 
-    // Listen for capture complete messages
-    chrome.runtime.onMessage.addListener((message) => {
-        if (message.action === 'captureComplete') {
-            if (message.success) {
-                uiManager.showStatus('Screenshot sent successfully!', 'success');
-            } else {
-                uiManager.showStatus(`Failed: ${message.error}`, 'error');
-                // Mark fields with error if available
-                if (message.eventId) {
-                    fieldManager.markFieldsError(message.error, null, message.eventId);
-                    fieldManager.saveToStorage();
-                    uiManager.renderFields();
-                }
-            }
-        } else if (message.action === 'captureStarted') {
-            // A new capture has started
-            uiManager.showStatus('Sending to webhook...', 'info');
-            // Mark fields as pending
-            fieldManager.markFieldsPending(message.eventId);
-            fieldManager.saveToStorage();
-            uiManager.renderFields();
-            // Reload history to show pending event
-            historyManager.loadHistory();
-        } else if (message.action === 'captureResults') {
-            // Handle results from n8n
-            fieldManager.updateResults(message.results, message.eventId);
-            fieldManager.saveToStorage();
-            uiManager.renderFields();
-            uiManager.displayResults(message.results);
-            // Reload history to show new event
-            historyManager.loadHistory();
-        } else if (message.action === 'eventUpdated') {
-            // An event has been updated with response data
-            historyManager.updateEvent(message.eventId, message.event);
-
-            // If it's a field result update, update fields too
-            if (message.event.fields && message.event.fields.length > 0) {
-                // Convert field array back to object format expected by updateResults
-                const fieldsObject = {};
-                message.event.fields.forEach(field => {
-                    fieldsObject[field.name] = {
-                        boolean: field.result,
-                        probability: field.probability
-                    };
-                });
-
-                fieldManager.updateResults({
-                    fields: fieldsObject,
-                    reason: message.event.reason
-                }, message.eventId);
-                fieldManager.saveToStorage();
-                uiManager.renderFields();
-
-                // Update the popup status to show completion
-                if (message.event.error) {
-                    uiManager.showStatus(`Request failed: ${message.event.error}`, 'error');
-                } else if (message.event.status === 'completed') {
-                    uiManager.showStatus('Webhook response received!', 'success');
-                }
-            } else if (message.event.status === 'completed' && message.event.error) {
-                // No fields but there was an error
-                fieldManager.markFieldsError(message.event.error, message.event.httpStatus, message.eventId);
-                fieldManager.saveToStorage();
-                uiManager.renderFields();
-                uiManager.showStatus(`Request completed with error: ${message.event.error}`, 'error');
-            } else if (message.event.httpStatus && message.event.httpStatus !== 200) {
-                // Update with HTTP status for non-200 responses
-                fieldManager.updateFieldsHttpStatus(message.event.httpStatus, message.eventId);
-                fieldManager.saveToStorage();
-                uiManager.renderFields();
-            }
-        }
-    });
-
-    // History controls
-    elements.showTrueOnlyCheckbox.addEventListener('change', () => {
-        historyManager.setShowTrueOnly(elements.showTrueOnlyCheckbox.checked);
-        historyManager.renderHistory();
-    });
-
-    elements.clearHistoryBtn.addEventListener('click', () => {
-        const result = historyManager.clearHistory();
-        if (result && result.success) {
-            uiManager.showStatus(result.message, 'info');
-        }
-    });
-
-    // Test events button (for debugging)
-    if (elements.testEventsBtn) {
-        elements.testEventsBtn.addEventListener('click', () => {
-            const result = historyManager.createTestEvents(fieldManager.currentDomain);
-            if (result && result.success) {
-                uiManager.showStatus(result.message, 'info');
-            }
-        });
-    }
-
-    // Header link to GitHub
-    if (elements.headerLink) {
-        elements.headerLink.addEventListener('click', () => {
-            chrome.tabs.create({ url: 'https://github.com/tududes/web-sophon' });
-        });
-    }
-
-    // Theme toggle
-    if (elements.themeToggle) {
-        elements.themeToggle.addEventListener('click', toggleTheme);
-    }
-}
-
-// Handle manual capture
-async function handleManualCapture() {
-    const webhookUrl = elements.webhookUrlInput.value.trim();
-
-    if (!webhookUrl) {
-        uiManager.showStatus('Please enter a webhook URL first', 'error');
-        return;
-    }
-
-    // Prepare fields data
-    const fields = fieldManager.getFieldsForAPI();
-    if (fields.length === 0) {
-        uiManager.showStatus('Please add at least one field', 'error');
-        return;
-    }
-
-    // Disable button temporarily
-    elements.captureButton.disabled = true;
-    elements.captureButton.textContent = '⏳ Capturing...';
-
-    try {
-        const response = await new Promise((resolve, reject) => {
-            // Much longer timeout for background script communication (60 seconds)
-            const timeout = setTimeout(() => {
-                reject(new Error('Background script not responding'));
-            }, 60000);
-
-            chrome.runtime.sendMessage({
+        try {
+            // Send to background script
+            const response = await this.sendMessageToBackground({
                 action: 'captureNow',
-                domain: fieldManager.currentDomain,
-                tabId: fieldManager.currentTabId,
+                domain: this.currentDomain,
+                tabId: this.currentTabId,
                 webhookUrl: webhookUrl,
                 fields: fields
-            }, (response) => {
+            });
+
+            if (response && response.success) {
+                this.showStatus('Screenshot captured and sent!', 'success');
+            } else {
+                this.showStatus(`Capture failed: ${response?.error || 'Unknown error'}`, 'error');
+            }
+        } catch (error) {
+            console.error('Capture error:', error);
+            this.showStatus(`Error: ${error.message}`, 'error');
+        } finally {
+            // Restore button
+            if (this.elements.captureNow) {
+                this.elements.captureNow.disabled = false;
+                this.elements.captureNow.textContent = '📸 Capture Screenshot Now';
+            }
+        }
+    }
+
+    getFieldsFromDOM() {
+        const fields = [];
+        const fieldItems = document.querySelectorAll('.field-item');
+
+        fieldItems.forEach(item => {
+            const nameInput = item.querySelector('.field-name-input');
+            const descriptionTextarea = item.querySelector('.field-description');
+
+            if (nameInput && descriptionTextarea) {
+                const name = nameInput.value.trim();
+                const description = descriptionTextarea.value.trim();
+
+                if (name && description) {
+                    fields.push({
+                        name: name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
+                        criteria: description
+                    });
+                }
+            }
+        });
+
+        return fields;
+    }
+
+    async sendMessageToBackground(message) {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Background script timeout'));
+            }, 30000);
+
+            chrome.runtime.sendMessage(message, (response) => {
                 clearTimeout(timeout);
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message));
                 } else {
-                    resolve(response || { success: false, error: 'No response' });
+                    resolve(response);
                 }
             });
         });
+    }
 
-        if (response.success) {
-            uiManager.showStatus('Screenshot captured and sent!', 'success');
-        } else {
-            uiManager.showStatus(`Capture failed: ${response.error || 'Unknown error'}`, 'error');
+    showStatus(message, type) {
+        if (this.elements.status) {
+            this.elements.status.textContent = message;
+            this.elements.status.className = `status-message ${type}`;
+            setTimeout(() => {
+                this.elements.status.className = 'status-message';
+            }, 3000);
         }
-    } catch (error) {
-        uiManager.showStatus(`Error: ${error.message}`, 'error');
-        console.error('Capture error:', error);
-    } finally {
-        // Re-enable button
-        elements.captureButton.disabled = false;
-        elements.captureButton.textContent = '📸 Capture Screenshot Now';
+        console.log(`Status: ${type} - ${message}`);
+    }
+
+    showError(message) {
+        this.showStatus(message, 'error');
+    }
+
+    // Theme system
+    initializeTheme() {
+        console.log('Initializing theme...');
+
+        chrome.storage.local.get(['themePreference'], (result) => {
+            let theme = result.themePreference;
+            if (!theme) {
+                theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            this.applyTheme(theme);
+            this.updateThemeIcon(theme);
+            console.log(`Initial theme: ${theme}`);
+        });
+
+        // Listen for system theme changes
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        mediaQuery.addListener((e) => {
+            chrome.storage.local.get(['themePreference'], (result) => {
+                if (!result.themePreference) {
+                    const theme = e.matches ? 'dark' : 'light';
+                    this.applyTheme(theme);
+                    this.updateThemeIcon(theme);
+                    console.log(`System theme changed to: ${theme}`);
+                }
+            });
+        });
+    }
+
+    toggleTheme() {
+        console.log('Toggling theme...');
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+        this.applyTheme(newTheme);
+        this.updateThemeIcon(newTheme);
+
+        // Save preference
+        chrome.storage.local.set({ themePreference: newTheme });
+        console.log(`Theme switched to: ${newTheme}`);
+        this.showStatus(`Switched to ${newTheme} theme`, 'success');
+    }
+
+    applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        console.log(`Applied theme: ${theme}`);
+    }
+
+    updateThemeIcon(theme) {
+        const themeIcon = this.elements.themeToggle?.querySelector('.theme-icon');
+        if (themeIcon) {
+            themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
+            console.log(`Updated theme icon for ${theme} theme`);
+        }
+    }
+
+    updateManualModeUI() {
+        const isManualMode = this.elements.captureInterval?.value === 'manual';
+        const consentLabel = document.querySelector('.consent-label');
+
+        if (consentLabel) {
+            if (isManualMode) {
+                consentLabel.textContent = 'Enable WebSophon for this domain (Manual captures only)';
+            } else {
+                const interval = this.elements.captureInterval?.value;
+                if (interval && interval !== 'manual') {
+                    consentLabel.textContent = `Enable WebSophon for this domain (${interval}s automatic + manual)`;
+                } else {
+                    consentLabel.textContent = 'Enable WebSophon for this domain';
+                }
+            }
+        }
+    }
+
+    startAutomaticCapture() {
+        const interval = this.elements.captureInterval?.value;
+        const webhookUrl = this.elements.webhookUrl?.value.trim();
+
+        if (interval === 'manual' || !webhookUrl) return;
+
+        this.sendMessageToBackground({
+            action: 'startCapture',
+            domain: this.currentDomain,
+            tabId: this.currentTabId,
+            interval: parseInt(interval),
+            webhookUrl: webhookUrl
+        });
+    }
+
+    stopAutomaticCapture() {
+        this.sendMessageToBackground({
+            action: 'stopCapture',
+            domain: this.currentDomain,
+            tabId: this.currentTabId
+        });
+    }
+
+    setupFieldWebhookListeners(fieldId) {
+        const fieldElement = document.querySelector(`[data-field-id="${fieldId}"]`);
+        if (!fieldElement) return;
+
+        const webhookToggle = fieldElement.querySelector('.webhook-toggle');
+        const webhookUrlGroup = fieldElement.querySelector('.webhook-url-group');
+        const webhookPayloadGroup = fieldElement.querySelector('.webhook-payload-group');
+        const urlInput = fieldElement.querySelector('.webhook-url-input');
+        const payloadInput = fieldElement.querySelector('.webhook-payload-input');
+        const nameInput = fieldElement.querySelector('.field-name-input');
+        const descriptionInput = fieldElement.querySelector('.field-description');
+
+        if (webhookToggle) {
+            webhookToggle.addEventListener('change', () => {
+                const isEnabled = webhookToggle.checked;
+
+                if (webhookUrlGroup) {
+                    webhookUrlGroup.style.display = isEnabled ? 'block' : 'none';
+                }
+                if (webhookPayloadGroup) {
+                    webhookPayloadGroup.style.display = isEnabled ? 'block' : 'none';
+                }
+
+                // Auto-save when webhook settings change
+                this.saveFieldsState();
+                console.log(`Webhook toggle for field ${fieldId}:`, isEnabled);
+            });
+        }
+
+        // Add change listeners to save field state
+        if (nameInput) {
+            nameInput.addEventListener('input', () => this.saveFieldsState());
+        }
+        if (descriptionInput) {
+            descriptionInput.addEventListener('input', () => this.saveFieldsState());
+        }
+        if (urlInput) {
+            urlInput.addEventListener('input', () => this.saveFieldsState());
+        }
+        if (payloadInput) {
+            payloadInput.addEventListener('input', () => this.saveFieldsState());
+        }
+
+        // Set default payload when enabled
+        if (payloadInput && !payloadInput.value.trim()) {
+            payloadInput.value = '{"key": "value"}';
+        }
+    }
+
+    async saveFieldsState() {
+        try {
+            if (!this.currentDomain) return;
+
+            const fieldsData = [];
+            const fieldItems = document.querySelectorAll('.field-item');
+
+            fieldItems.forEach(item => {
+                const fieldId = item.dataset.fieldId;
+                const nameInput = item.querySelector('.field-name-input');
+                const descriptionInput = item.querySelector('.field-description');
+                const webhookToggle = item.querySelector('.webhook-toggle');
+                const webhookUrlInput = item.querySelector('.webhook-url-input');
+                const webhookPayloadInput = item.querySelector('.webhook-payload-input');
+
+                if (nameInput && descriptionInput) {
+                    fieldsData.push({
+                        id: fieldId,
+                        name: nameInput.value || '',
+                        description: descriptionInput.value || '',
+                        webhookEnabled: webhookToggle ? webhookToggle.checked : false,
+                        webhookUrl: webhookUrlInput ? webhookUrlInput.value : '',
+                        webhookPayload: webhookPayloadInput ? webhookPayloadInput.value : '{"key": "value"}'
+                    });
+                }
+            });
+
+            await chrome.storage.local.set({
+                [`fields_${this.currentDomain}`]: fieldsData
+            });
+
+            console.log('Fields state saved for', this.currentDomain, fieldsData);
+        } catch (error) {
+            console.error('Failed to save fields state:', error);
+        }
+    }
+
+    async loadFieldsState() {
+        try {
+            if (!this.currentDomain) return;
+
+            const data = await chrome.storage.local.get([`fields_${this.currentDomain}`]);
+            const fieldsData = data[`fields_${this.currentDomain}`];
+
+            if (fieldsData && fieldsData.length > 0) {
+                // Clear existing fields
+                if (this.elements.fieldsContainer) {
+                    this.elements.fieldsContainer.innerHTML = '';
+                }
+
+                // Recreate fields from saved data
+                fieldsData.forEach(fieldData => {
+                    this.createFieldFromData(fieldData);
+                });
+
+                console.log('Fields state loaded for', this.currentDomain, fieldsData);
+            }
+        } catch (error) {
+            console.error('Failed to load fields state:', error);
+        }
+    }
+
+    createFieldFromData(fieldData) {
+        if (!this.elements.fieldsContainer) return;
+
+        const fieldHtml = `
+            <div class="field-item" data-field-id="${fieldData.id}">
+                <div class="field-header">
+                    <input type="text" class="field-name-input" placeholder="Field Name" value="${fieldData.name || ''}">
+                    <button class="remove-field-btn" onclick="this.parentElement.parentElement.remove(); window.popupController.saveFieldsState();">✕</button>
+                </div>
+                <textarea class="field-description" placeholder="Describe what to evaluate...">${fieldData.description || ''}</textarea>
+                <div class="field-webhook-config">
+                    <div class="webhook-toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" class="webhook-toggle" ${fieldData.webhookEnabled ? 'checked' : ''}>
+                            <span class="slider"></span>
+                        </label>
+                        <span>Fire webhook on TRUE result</span>
+                    </div>
+                    
+                    <div class="webhook-url-group" style="display: ${fieldData.webhookEnabled ? 'block' : 'none'};">
+                        <label>Webhook URL:</label>
+                        <div class="webhook-url-input-group">
+                            <input type="url" class="webhook-url-input" placeholder="https://webhook.url/endpoint" value="${fieldData.webhookUrl || ''}">
+                            <button class="toggle-url-visibility" title="Show/Hide URL" style="display: none;">👁️</button>
+                        </div>
+                    </div>
+                    
+                    <div class="webhook-payload-group" style="display: ${fieldData.webhookEnabled ? 'block' : 'none'};">
+                        <label>Custom Payload (JSON):</label>
+                        <textarea class="webhook-payload-input" placeholder='{"key": "value"}'>${fieldData.webhookPayload || '{"key": "value"}'}</textarea>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+
+        // Add event listeners for the recreated field
+        this.setupFieldWebhookListeners(fieldData.id);
     }
 }
 
-// Load saved settings
-async function loadSettings() {
-    try {
-        const settings = await chrome.storage.local.get([
-            'webhookUrl',
-            `consent_${fieldManager.currentDomain}`,
-            `interval_${fieldManager.currentDomain}`
-        ]);
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM loaded, starting popup...');
+    const popup = new SimplePopupController();
+    window.popupController = popup;
+    await popup.initialize();
+});
 
-        if (settings.webhookUrl) {
-            elements.webhookUrlInput.value = settings.webhookUrl;
+// Listen for Chrome runtime messages
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('Received message:', message);
+
+    if (window.popupController) {
+        switch (message.action) {
+            case 'captureComplete':
+                if (message.success) {
+                    window.popupController.showStatus('Screenshot sent successfully!', 'success');
+                } else {
+                    window.popupController.showStatus(`Failed: ${message.error}`, 'error');
+                }
+                break;
+            case 'captureStarted':
+                window.popupController.showStatus('Sending to webhook...', 'info');
+                break;
         }
-
-        if (settings[`consent_${fieldManager.currentDomain}`]) {
-            elements.consentToggle.checked = settings[`consent_${fieldManager.currentDomain}`];
-        }
-
-        if (settings[`interval_${fieldManager.currentDomain}`]) {
-            elements.intervalSelect.value = settings[`interval_${fieldManager.currentDomain}`];
-        }
-    } catch (error) {
-        console.error('Error loading settings:', error);
-    }
-}
-
-// Check if capture is currently active
-chrome.runtime.sendMessage({
-    action: 'checkStatus',
-    domain: fieldManager.currentDomain,
-    tabId: fieldManager.currentTabId
-}, (response) => {
-    if (response && response.isActive) {
-        uiManager.showStatus('Capture is currently active', 'info');
     }
 });
 
-// Theme Management Functions
-function initializeTheme() {
-    // Check for saved theme preference, otherwise use system preference
-    chrome.storage.local.get(['themePreference'], (result) => {
-        let theme = result.themePreference;
-
-        // If no saved preference, detect system preference
-        if (!theme) {
-            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        }
-
-        applyTheme(theme);
-        updateThemeToggleIcon(theme);
-    });
-
-    // Listen for system theme changes (only if user hasn't set preference)
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    mediaQuery.addListener((e) => {
-        chrome.storage.local.get(['themePreference'], (result) => {
-            // Only auto-update if user hasn't manually set a preference
-            if (!result.themePreference) {
-                const theme = e.matches ? 'dark' : 'light';
-                applyTheme(theme);
-                updateThemeToggleIcon(theme);
-            }
-        });
-    });
-}
-
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-
-    applyTheme(newTheme);
-    updateThemeToggleIcon(newTheme);
-
-    // Save user preference
-    chrome.storage.local.set({ themePreference: newTheme });
-
-    console.log(`Theme switched to: ${newTheme}`);
-}
-
-function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-
-    // Add smooth transition class for theme changes
-    document.body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
-
-    // Remove transition after animation completes
-    setTimeout(() => {
-        document.body.style.transition = '';
-    }, 300);
-}
-
-function updateThemeToggleIcon(theme) {
-    const themeIcon = elements.themeToggle?.querySelector('.theme-icon');
-    if (themeIcon) {
-        themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
-        elements.themeToggle.title = `Switch to ${theme === 'light' ? 'dark' : 'light'} theme`;
-    }
-} 
+console.log('WebSophon popup script loaded'); 

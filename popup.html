@@ -22,6 +22,13 @@
 
         <div class="section">
             <h2>Current Domain</h2>
+            <div class="domain-consent-group">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="consent-toggle">
+                    <span class="slider"></span>
+                </label>
+                <span class="consent-label">Enable WebSophon for this domain</span>
+            </div>
             <div id="current-domain" class="domain-display">Loading...</div>
         </div>
 
@@ -36,9 +43,10 @@
             <div class="form-group">
                 <label for="capture-interval">Capture Interval:</label>
                 <select id="capture-interval">
+                    <option value="manual" selected>Manual Only</option>
                     <option value="10">Every 10 seconds</option>
                     <option value="15">Every 15 seconds</option>
-                    <option value="30" selected>Every 30 seconds</option>
+                    <option value="30">Every 30 seconds</option>
                     <option value="60">Every 1 minute</option>
                     <option value="300">Every 5 minutes</option>
                     <option value="600">Every 10 minutes</option>
@@ -57,11 +65,15 @@
             <h2>Evaluation Fields</h2>
 
             <div class="preset-controls">
-                <select id="preset-selector">
-                    <option value="">Select a preset...</option>
-                </select>
-                <button id="save-preset-btn" class="small-button">💾 Save as Preset</button>
-                <button id="delete-preset-btn" class="small-button danger">🗑️ Delete</button>
+                <div class="preset-dropdown-group">
+                    <select id="preset-selector">
+                        <option value="">Select a preset...</option>
+                    </select>
+                </div>
+                <div class="preset-buttons-group">
+                    <button id="save-preset-btn" class="small-button">💾 Save</button>
+                    <button id="delete-preset-btn" class="small-button danger">🗑️ Delete</button>
+                </div>
             </div>
 
             <div id="fields-container" class="fields-container">
@@ -75,14 +87,6 @@
 
         <div class="section">
             <h2>Capture Control</h2>
-
-            <div class="consent-group">
-                <label class="toggle-switch">
-                    <input type="checkbox" id="consent-toggle">
-                    <span class="slider"></span>
-                </label>
-                <span class="consent-label">Enable screenshot capture for this domain</span>
-            </div>
 
             <button id="capture-now" class="capture-button">
                 📸 Capture Screenshot Now

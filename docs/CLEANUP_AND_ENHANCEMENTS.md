@@ -75,7 +75,8 @@ WebSophon/
 │   ├── debug-storage.js
 │   ├── test-field-webhook-history.html
 │   ├── test-cancellation-fix.html
-│   └── test-dark-theme.html
+│   ├── test-dark-theme.html
+│   └── test-performance-fix.html
 ├── tools/                     # Development utilities
 │   └── generate_icons.py
 └── backup/                    # Original monolithic files
@@ -275,11 +276,35 @@ WebSophon now features a completely modernized interface with professional brand
 
 ### Files Enhanced
 - `popup.html`: Added header section with icon and theme toggle
-- `assets/styles.css`: Complete CSS rewrite with variable-based theming
+- `assets/styles.css`: Complete CSS rewrite with variable-based theming + performance optimization
 - `popup-main.js`: Added theme management and GitHub link functionality
 - `manifest.json`: Updated icon paths to use assets directory
+- `utils/formatters.js`: Optimized image zoom with throttling and GPU acceleration
 - `test/test-dark-theme.html`: Comprehensive testing and demonstration guide
+- `test/test-performance-fix.html`: Performance optimization verification guide
+
+## 🚀 Performance Optimization & Jittering Fix
+
+### Critical Issue Resolved
+The extension popup was experiencing severe jittering and continuous resizing due to CSS layout thrashing and performance-heavy interactions.
+
+### Performance Fixes Applied
+- **🎯 CSS Transition Optimization**: Replaced expensive `transition: all` with specific property transitions
+- **🚫 Layout-Affecting Transforms Removed**: Eliminated `transform: translateY(-1px)` hover effects that caused layout recalculation
+- **📦 Box-Shadow Optimization**: Removed box-shadow changes on hover to prevent expensive repaints
+- **🎬 Animation Performance**: Enhanced pulse animation with `will-change: opacity` for GPU acceleration
+- **🖱️ Mouse Event Throttling**: Image zoom mousemove events throttled to 60fps (~16ms intervals)
+- **🎨 Will-Change Optimization**: Added GPU acceleration hints for frequently changed properties
+- **🔄 Theme Switch Prevention**: Prevent unnecessary theme applications with change detection
+- **📏 Container Size Lock**: Fixed container dimensions (min/max width) to prevent unexpected resizing
+
+### Technical Optimizations
+- Specific property transitions: `background-color`, `border-color`, `opacity`
+- GPU-accelerated animations with `will-change` properties
+- Throttled event handlers for performance-critical interactions
+- Fixed container dimensions to prevent layout shifts
+- Eliminated all layout-affecting hover effects
 
 ## ✅ Enhancement Status: COMPLETE
 
-WebSophon now includes: field webhook history recording, reliable request cancellation, organized assets structure, modern dark/light theme system, professional branding with GitHub integration, and comprehensive UI overhaul - all while maintaining 100% backward compatibility and functionality. 
+WebSophon now includes: field webhook history recording, reliable request cancellation, organized assets structure, modern dark/light theme system, professional branding with GitHub integration, comprehensive UI overhaul, AND optimized performance with jittering completely resolved - all while maintaining 100% backward compatibility and functionality. 

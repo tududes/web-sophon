@@ -63,9 +63,29 @@ export function downloadScreenshot(screenshotData, timestamp) {
     }
 }
 
-// Handle image zoom with mouse position
-export function handleImageZoom(e) {
+// Throttle function for performance
+function throttle(func, limit) {
+    let inThrottle;
+    return function () {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+// Handle image zoom with mouse position (throttled for performance)
+export const handleImageZoom = throttle(function (e) {
     const img = e.target;
+
+    // Add will-change for performance if not already set
+    if (!img.style.willChange) {
+        img.style.willChange = 'transform';
+    }
+
     const rect = img.getBoundingClientRect();
 
     // Calculate mouse position relative to image
@@ -77,7 +97,7 @@ export function handleImageZoom(e) {
     img.style.transform = 'scale(4)'; // 4x zoom when hovering
     img.style.zIndex = '1000';
     img.style.position = 'relative';
-}
+}, 16); // ~60fps throttling
 
 // Reset image zoom
 export function resetImageZoom(e) {
@@ -86,4 +106,5 @@ export function resetImageZoom(e) {
     img.style.zIndex = '';
     img.style.position = '';
     img.style.transformOrigin = 'center';
+    img.style.willChange = ''; // Remove will-change when not needed
 } 

@@ -1,0 +1,288 @@
+// Simplified WebSophon Popup - Basic functionality first
+console.log('Starting WebSophon popup...');
+
+// Basic popup functionality without complex architecture
+class SimplePopupController {
+    constructor() {
+        this.elements = {};
+        this.currentDomain = null;
+        this.currentTabId = null;
+    }
+
+    async initialize() {
+        try {
+            console.log('Initializing simple popup...');
+
+            // Get DOM elements
+            this.getDOMElements();
+
+            // Initialize theme
+            this.initializeTheme();
+
+            // Get current tab
+            await this.getCurrentTab();
+
+            // Setup basic event listeners
+            this.setupEventListeners();
+
+            // Load basic settings
+            await this.loadBasicSettings();
+
+            console.log('Simple popup initialized successfully');
+        } catch (error) {
+            console.error('Popup initialization failed:', error);
+            this.showError('Failed to initialize extension');
+        }
+    }
+
+    getDOMElements() {
+        const elementMap = {
+            currentDomain: 'current-domain',
+            webhookUrl: 'webhook-url',
+            captureInterval: 'capture-interval',
+            consentToggle: 'consent-toggle',
+            status: 'status',
+            captureNow: 'capture-now',
+            themeToggle: 'theme-toggle',
+            addFieldBtn: 'add-field-btn',
+            fieldsContainer: 'fields-container'
+        };
+
+        for (const [key, id] of Object.entries(elementMap)) {
+            const element = document.getElementById(id);
+            if (element) {
+                this.elements[key] = element;
+                console.log(`Found element: ${key} (${id})`);
+            } else {
+                console.warn(`Element not found: ${key} (${id})`);
+            }
+        }
+    }
+
+    async getCurrentTab() {
+        try {
+            console.log('Getting current tab...');
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+            if (tab && tab.url) {
+                const url = new URL(tab.url);
+                this.currentDomain = url.hostname;
+                this.currentTabId = tab.id;
+
+                console.log('Current domain:', this.currentDomain);
+
+                if (this.elements.currentDomain) {
+                    this.elements.currentDomain.textContent = this.currentDomain;
+                }
+            } else {
+                throw new Error('No tab found');
+            }
+        } catch (error) {
+            console.error('Failed to get current tab:', error);
+            if (this.elements.currentDomain) {
+                this.elements.currentDomain.textContent = 'Unable to detect domain';
+            }
+        }
+    }
+
+    setupEventListeners() {
+        console.log('Setting up event listeners...');
+
+        // Theme toggle
+        if (this.elements.themeToggle) {
+            this.elements.themeToggle.addEventListener('click', () => {
+                console.log('Theme toggle clicked');
+                this.toggleTheme();
+            });
+            console.log('Theme toggle listener added');
+        }
+
+        // Webhook URL
+        if (this.elements.webhookUrl) {
+            this.elements.webhookUrl.addEventListener('change', async () => {
+                const webhookUrl = this.elements.webhookUrl.value.trim();
+                if (webhookUrl) {
+                    await this.saveWebhookUrl(webhookUrl);
+                    this.showStatus('Webhook URL saved', 'success');
+                }
+            });
+        }
+
+        // Consent toggle
+        if (this.elements.consentToggle) {
+            this.elements.consentToggle.addEventListener('change', () => {
+                const isEnabled = this.elements.consentToggle.checked;
+                this.showStatus(
+                    isEnabled ? 'Capture enabled' : 'Capture disabled',
+                    'info'
+                );
+            });
+        }
+
+        // Add field button
+        if (this.elements.addFieldBtn) {
+            this.elements.addFieldBtn.addEventListener('click', () => {
+                this.addBasicField();
+            });
+        }
+
+        // Manual capture
+        if (this.elements.captureNow) {
+            this.elements.captureNow.addEventListener('click', () => {
+                this.showStatus('Manual capture functionality coming soon', 'info');
+            });
+        }
+    }
+
+    async loadBasicSettings() {
+        try {
+            if (!this.currentDomain) return;
+
+            const keys = [
+                'webhookUrl',
+                `consent_${this.currentDomain}`,
+                `interval_${this.currentDomain}`
+            ];
+
+            const data = await chrome.storage.local.get(keys);
+
+            if (data.webhookUrl && this.elements.webhookUrl) {
+                this.elements.webhookUrl.value = data.webhookUrl;
+            }
+
+            if (data[`consent_${this.currentDomain}`] && this.elements.consentToggle) {
+                this.elements.consentToggle.checked = data[`consent_${this.currentDomain}`];
+            }
+
+            if (data[`interval_${this.currentDomain}`] && this.elements.captureInterval) {
+                this.elements.captureInterval.value = data[`interval_${this.currentDomain}`];
+            }
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+        }
+    }
+
+    async saveWebhookUrl(url) {
+        try {
+            await chrome.storage.local.set({ webhookUrl: url });
+        } catch (error) {
+            console.error('Failed to save webhook URL:', error);
+        }
+    }
+
+    addBasicField() {
+        if (!this.elements.fieldsContainer) return;
+
+        const fieldId = Date.now();
+        const fieldHtml = `
+            <div class="field-item" data-field-id="${fieldId}">
+                <div class="field-header">
+                    <input type="text" class="field-name-input" placeholder="Field Name" value="Field ${fieldId}">
+                    <button class="remove-field-btn" onclick="this.parentElement.parentElement.remove()">✕</button>
+                </div>
+                <textarea class="field-description" placeholder="Describe what to evaluate..."></textarea>
+            </div>
+        `;
+
+        this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+        this.showStatus('Field added', 'success');
+    }
+
+    showStatus(message, type) {
+        if (this.elements.status) {
+            this.elements.status.textContent = message;
+            this.elements.status.className = `status-message ${type}`;
+            setTimeout(() => {
+                this.elements.status.className = 'status-message';
+            }, 3000);
+        }
+    }
+
+    showError(message) {
+        this.showStatus(message, 'error');
+    }
+
+    // Theme system
+    initializeTheme() {
+        console.log('Initializing theme...');
+
+        chrome.storage.local.get(['themePreference'], (result) => {
+            let theme = result.themePreference;
+            if (!theme) {
+                theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            this.applyTheme(theme);
+            this.updateThemeIcon(theme);
+        });
+
+        // Listen for system theme changes
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        mediaQuery.addListener((e) => {
+            chrome.storage.local.get(['themePreference'], (result) => {
+                if (!result.themePreference) {
+                    const theme = e.matches ? 'dark' : 'light';
+                    this.applyTheme(theme);
+                    this.updateThemeIcon(theme);
+                }
+            });
+        });
+    }
+
+    toggleTheme() {
+        console.log('Toggling theme...');
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+        this.applyTheme(newTheme);
+        this.updateThemeIcon(newTheme);
+
+        // Save preference
+        chrome.storage.local.set({ themePreference: newTheme });
+        console.log(`Theme switched to: ${newTheme}`);
+        this.showStatus(`Switched to ${newTheme} theme`, 'success');
+    }
+
+    applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        console.log(`Applied theme: ${theme}`);
+    }
+
+    updateThemeIcon(theme) {
+        const themeIcon = this.elements.themeToggle?.querySelector('.theme-icon');
+        if (themeIcon) {
+            themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
+            console.log(`Updated theme icon for ${theme} theme`);
+        }
+    }
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM loaded, starting popup...');
+    const popup = new SimplePopupController();
+    window.popupController = popup;
+    await popup.initialize();
+});
+
+// Also try to import the complex managers as fallback for full functionality
+// This will fail gracefully if there are issues
+setTimeout(async () => {
+    try {
+        console.log('Attempting to load complex managers...');
+
+        const { FieldManager } = await import('./components/FieldManager.js');
+        const { HistoryManager } = await import('./components/HistoryManager.js');
+        const { UIManager } = await import('./components/UIManager.js');
+        const { DomainManager } = await import('./components/DomainManager.js');
+        const { EventService } = await import('./services/EventService.js');
+        const { StateManager } = await import('./services/StateManager.js');
+        const { ErrorBoundary } = await import('./services/ErrorBoundary.js');
+
+        console.log('Complex managers loaded successfully - full functionality available');
+
+        // TODO: Enhance the simple popup with full functionality
+
+    } catch (error) {
+        console.warn('Complex managers not available, using basic functionality:', error);
+    }
+}, 1000); 
