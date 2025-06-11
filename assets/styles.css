@@ -1429,3 +1429,64 @@ input:checked+.slider:before {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* Field webhook styles */
+.field-webhook {
+    margin-top: 15px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-secondary);
+    border-radius: 4px;
+}
+
+.field-webhook .data-header {
+    background-color: var(--bg-primary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.webhook-status {
+    font-size: 0.85em;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: normal;
+}
+
+.webhook-status.success {
+    color: var(--success);
+    background-color: rgba(76, 175, 80, 0.1);
+}
+
+.webhook-status.error {
+    color: var(--error);
+    background-color: rgba(244, 67, 54, 0.1);
+}
+
+.webhook-request,
+.webhook-response {
+    margin-bottom: 15px;
+    position: relative;
+}
+
+.webhook-request strong,
+.webhook-response strong {
+    display: inline-block;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.webhook-request .copy-data-btn,
+.webhook-response .copy-data-btn {
+    position: absolute;
+    right: 0;
+    top: 0;
+}
+
+.response-display {
+    margin-top: 8px;
+}
+
+/* Ensure proper spacing between sections */
+.data-section+.field-webhook {
+    margin-top: 10px;
+}

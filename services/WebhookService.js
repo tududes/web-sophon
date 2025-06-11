@@ -200,7 +200,7 @@ export class WebhookService {
             // - responseData: parsed JSON if successful
             // - webhookResponse.status: HTTP status code
             // - finalError: error message if any
-            // - responseText: ALWAYS preserved (JSON, plain text, or error string)
+            // - responseText: ALWAYS preserved (JSON, text, or error string)
             this.eventService.updateEvent(eventId, responseData, webhookResponse.status, finalError, responseText);
 
             // Send results to popup if response contains field evaluations
@@ -216,6 +216,11 @@ export class WebhookService {
                     results: responseData,
                     eventId: eventId // Send event ID for linking
                 });
+            }
+
+            // Fire field-level webhooks for TRUE results
+            if (hasFields && responseData) {
+                await this.fireFieldWebhooks(eventId, domain, responseData);
             }
 
             console.log(`Screenshot sent successfully to webhook`);
@@ -264,6 +269,158 @@ export class WebhookService {
             }
 
             return { success: false, error: error.message };
+        }
+    }
+
+    // Fire webhooks for individual fields that evaluated to TRUE
+    async fireFieldWebhooks(eventId, domain, mainResponseData) {
+        console.log('Checking for field webhooks to fire...');
+
+        // Get field configurations from storage
+        const storage = await chrome.storage.local.get([`fields_${domain}`]);
+        const fieldConfigs = storage[`fields_${domain}`] || [];
+
+        console.log('Field configurations from storage:', fieldConfigs);
+
+        // Create a map of sanitized field names to configs for easy lookup
+        const fieldConfigMap = {};
+        fieldConfigs.forEach(field => {
+            if (field.name) {
+                // Sanitize the stored field name the same way as response field names
+                const sanitizedName = field.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                fieldConfigMap[sanitizedName] = field;
+                console.log(`Mapped sanitized field name: "${sanitizedName}" -> "${field.name}"`);
+            }
+        });
+
+        // Process field results from the main response
+        const fieldWebhooks = [];
+
+        // Check each field in the response
+        for (const [fieldName, fieldData] of Object.entries(mainResponseData)) {
+            if (fieldData && typeof fieldData === 'object' && fieldName !== 'reason') {
+                // Get the field result
+                let result = null;
+                if ('result' in fieldData) {
+                    result = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                } else if ('boolean' in fieldData) {
+                    result = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                }
+
+                console.log(`Field "${fieldName}" result:`, result);
+
+                // If field evaluated to TRUE and has a webhook configured
+                const fieldConfig = fieldConfigMap[fieldName];
+                if (result === true && fieldConfig && fieldConfig.webhookEnabled && fieldConfig.webhookUrl) {
+                    console.log(`Field "${fieldName}" evaluated to TRUE and has webhook configured:`, fieldConfig.webhookUrl);
+
+                    try {
+                        const fieldWebhookResult = await this.fireFieldWebhook(
+                            fieldConfig.name, // Use the original field name for display
+                            fieldConfig.webhookUrl,
+                            fieldConfig.webhookPayload,
+                            fieldData
+                        );
+
+                        fieldWebhooks.push({
+                            fieldName: fieldConfig.name, // Use the original field name for display
+                            ...fieldWebhookResult
+                        });
+                    } catch (error) {
+                        console.error(`Failed to fire webhook for field "${fieldConfig.name}":`, error);
+                        fieldWebhooks.push({
+                            fieldName: fieldConfig.name, // Use the original field name for display
+                            request: {
+                                url: fieldConfig.webhookUrl,
+                                method: fieldConfig.webhookPayload ? 'POST' : 'GET',
+                                payload: fieldConfig.webhookPayload
+                            },
+                            response: `Error: ${error.message}`,
+                            error: error.message,
+                            success: false,
+                            httpStatus: null
+                        });
+                    }
+                }
+            }
+        }
+
+        // Update the event with field webhook results if any were fired
+        if (fieldWebhooks.length > 0) {
+            console.log(`Fired ${fieldWebhooks.length} field webhooks`);
+            this.eventService.addFieldWebhooksToEvent(eventId, fieldWebhooks);
+        } else {
+            console.log('No field webhooks to fire');
+        }
+    }
+
+    // Fire a single field webhook
+    async fireFieldWebhook(fieldName, webhookUrl, customPayload, fieldResult) {
+        console.log(`Firing webhook for field "${fieldName}" to ${webhookUrl}`);
+
+        const requestData = {
+            url: webhookUrl,
+            method: customPayload ? 'POST' : 'GET',
+            payload: customPayload,
+            timestamp: new Date().toISOString()
+        };
+
+        try {
+            let response;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+            if (customPayload) {
+                // POST request with custom JSON payload
+                let parsedPayload;
+                try {
+                    parsedPayload = JSON.parse(customPayload);
+                } catch (e) {
+                    parsedPayload = { error: 'Invalid JSON payload', raw: customPayload };
+                }
+
+                response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(parsedPayload),
+                    signal: controller.signal
+                });
+            } else {
+                // GET request
+                response = await fetch(webhookUrl, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+            }
+
+            clearTimeout(timeoutId);
+
+            // Get response text
+            let responseText = '';
+            try {
+                responseText = await response.text();
+            } catch (e) {
+                responseText = `Failed to read response: ${e.message}`;
+            }
+
+            return {
+                request: requestData,
+                response: responseText,
+                httpStatus: response.status,
+                success: response.ok,
+                error: response.ok ? null : `HTTP ${response.status}: ${response.statusText}`
+            };
+
+        } catch (error) {
+            return {
+                request: requestData,
+                response: error.message,
+                httpStatus: null,
+                success: false,
+                error: error.message
+            };
         }
     }
 

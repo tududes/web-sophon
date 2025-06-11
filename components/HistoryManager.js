@@ -349,6 +349,31 @@ export class HistoryManager {
                       </div>
                     </details>
                   ` : ''}
+                  
+                  ${event.fieldWebhooks && event.fieldWebhooks.length > 0 ? event.fieldWebhooks.map(webhook => `
+                    <details class="data-section field-webhook">
+                      <summary class="data-header">
+                        <strong>Field Webhook: ${webhook.fieldName}</strong>
+                        <span class="webhook-status ${webhook.success ? 'success' : 'error'}">
+                          ${webhook.success ? `✓ ${webhook.httpStatus}` : `❌ ${webhook.error || 'Failed'}`}
+                        </span>
+                      </summary>
+                      <div class="data-content">
+                        <div class="webhook-request">
+                          <strong>Request:</strong>
+                          <button class="copy-data-btn small-button" data-content="${encodeURIComponent(JSON.stringify(webhook.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
+                          <pre class="json-display">${JSON.stringify(webhook.request, null, 2)}</pre>
+                        </div>
+                        <div class="webhook-response">
+                          <strong>Response:</strong>
+                          <button class="copy-data-btn small-button" data-content="${encodeURIComponent(webhook.response)}" title="Copy to clipboard">📋 Copy</button>
+                          <div class="response-display">
+                            ${formatResponseData(webhook.response)}
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  `).join('') : ''}
                 </div>
               </div>
             `;

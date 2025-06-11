@@ -23,15 +23,50 @@ export class EventService {
         let hasTrueResult = false;
         const fieldResults = [];
 
-        if (results && results.fields) {
-            for (const [fieldName, result] of Object.entries(results.fields)) {
-                fieldResults.push({
-                    name: fieldName,
-                    result: result.boolean,
-                    probability: result.probability
-                });
-                if (result.boolean === true) {
-                    hasTrueResult = true;
+        if (results) {
+            // Handle old format (results.fields) and new format (direct fields)
+            if (results.fields && typeof results.fields === 'object') {
+                // Old format: results.fields.fieldName.boolean
+                for (const [fieldName, result] of Object.entries(results.fields)) {
+                    fieldResults.push({
+                        name: fieldName,
+                        result: result.boolean,
+                        probability: result.probability
+                    });
+                    if (result.boolean === true) {
+                        hasTrueResult = true;
+                    }
+                }
+            } else {
+                // New format: results.fieldName.result or results.fieldName.boolean
+                for (const [fieldName, fieldData] of Object.entries(results)) {
+                    if (fieldData && typeof fieldData === 'object' && fieldName !== 'reason') {
+                        let resultValue = null;
+                        let probabilityValue = null;
+
+                        // Check for 'result' or 'boolean' property
+                        if ('result' in fieldData) {
+                            resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                        } else if ('boolean' in fieldData) {
+                            resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                        }
+
+                        // Get probability
+                        if ('probability' in fieldData) {
+                            probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
+                        }
+
+                        if (resultValue !== null) {
+                            fieldResults.push({
+                                name: fieldName,
+                                result: resultValue,
+                                probability: probabilityValue
+                            });
+                            if (resultValue === true) {
+                                hasTrueResult = true;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -98,18 +133,53 @@ export class EventService {
         }
 
         // Process results if available
-        if (results && results.fields) {
+        if (results) {
             event.fields = [];
             let hasTrueResult = false;
 
-            for (const [fieldName, result] of Object.entries(results.fields)) {
-                event.fields.push({
-                    name: fieldName,
-                    result: result.boolean,
-                    probability: result.probability
-                });
-                if (result.boolean === true) {
-                    hasTrueResult = true;
+            // Handle old format (results.fields) and new format (direct fields)
+            if (results.fields && typeof results.fields === 'object') {
+                // Old format: results.fields.fieldName.boolean
+                for (const [fieldName, result] of Object.entries(results.fields)) {
+                    event.fields.push({
+                        name: fieldName,
+                        result: result.boolean,
+                        probability: result.probability
+                    });
+                    if (result.boolean === true) {
+                        hasTrueResult = true;
+                    }
+                }
+            } else {
+                // New format: results.fieldName.result or results.fieldName.boolean
+                for (const [fieldName, fieldData] of Object.entries(results)) {
+                    if (fieldData && typeof fieldData === 'object' && fieldName !== 'reason') {
+                        let resultValue = null;
+                        let probabilityValue = null;
+
+                        // Check for 'result' or 'boolean' property
+                        if ('result' in fieldData) {
+                            resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                        } else if ('boolean' in fieldData) {
+                            resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                        }
+
+                        // Get probability
+                        if ('probability' in fieldData) {
+                            probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
+                        }
+
+                        if (resultValue !== null) {
+                            event.fields.push({
+                                name: fieldName,
+                                result: resultValue,
+                                probability: probabilityValue
+                            });
+                            if (resultValue === true) {
+                                hasTrueResult = true;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -124,6 +194,29 @@ export class EventService {
         }
 
         console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}`);
+
+        // Save updated events
+        this.saveEventsToStorage();
+
+        // Notify all tabs and popups of the update
+        this.notifyEventUpdate(eventId, event);
+    }
+
+    // Add field webhook results to an existing event
+    addFieldWebhooksToEvent(eventId, fieldWebhooks) {
+        // Find the event
+        const eventIndex = this.recentEvents.findIndex(e => e.id === eventId);
+        if (eventIndex === -1) {
+            console.error('Event not found for field webhook update:', eventId);
+            return;
+        }
+
+        const event = this.recentEvents[eventIndex];
+
+        // Add field webhooks array to the event
+        event.fieldWebhooks = fieldWebhooks;
+
+        console.log(`Added ${fieldWebhooks.length} field webhook results to event ${eventId}`);
 
         // Save updated events
         this.saveEventsToStorage();
