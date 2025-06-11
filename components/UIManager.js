@@ -66,23 +66,71 @@ export class UIManager {
         // Show full URL if toggled to show OR if it hasn't been saved yet
         const displayWebhookUrl = (field.showWebhookUrl || !field.webhookUrlSaved) ? field.webhookUrl : this.fieldManager.maskWebhookUrl(field.webhookUrl);
 
-        // Format last result display
-        let lastResultHtml = '';
-        if (field.lastResultTime) {
-            const timeAgo = getTimeAgo(new Date(field.lastResultTime));
-            lastResultHtml = `
-                <div class="field-last-result ${field.result === true ? 'true' : field.result === false ? 'false' : ''}" 
+        // Format enhanced status display
+        let statusDisplayHtml = '';
+        if (field.lastRequestTime || field.lastStatus) {
+            const statusClass = field.isPending ? 'pending' : field.lastStatus || 'unknown';
+            let statusText = '';
+            let statusIcon = '';
+            let detailsText = '';
+
+            if (field.isPending) {
+                statusIcon = '⏳';
+                statusText = 'Request pending...';
+                if (field.lastRequestTime) {
+                    const timeAgo = getTimeAgo(new Date(field.lastRequestTime));
+                    detailsText = `Started ${timeAgo}`;
+                }
+            } else if (field.lastStatus === 'success' && field.result !== null) {
+                statusIcon = field.result ? '✅' : '❌';
+                statusText = field.result ? 'TRUE' : 'FALSE';
+                if (field.probability !== null) {
+                    detailsText = `${(field.probability * 100).toFixed(0)}% confidence`;
+                }
+                if (field.lastResponseTime) {
+                    const timeAgo = getTimeAgo(new Date(field.lastResponseTime));
+                    detailsText += detailsText ? ` • ${timeAgo}` : timeAgo;
+                }
+            } else if (field.lastStatus === 'error') {
+                statusIcon = '🚫';
+                statusText = 'Request failed';
+                if (field.lastHttpStatus) {
+                    detailsText = `HTTP ${field.lastHttpStatus}`;
+                }
+                if (field.lastError) {
+                    detailsText += detailsText ? ` • ${field.lastError}` : field.lastError;
+                }
+                if (field.lastResponseTime) {
+                    const timeAgo = getTimeAgo(new Date(field.lastResponseTime));
+                    detailsText += detailsText ? ` • ${timeAgo}` : timeAgo;
+                }
+            } else if (field.lastStatus === 'cancelled') {
+                statusIcon = '🛑';
+                statusText = 'Cancelled';
+                if (field.lastResponseTime) {
+                    const timeAgo = getTimeAgo(new Date(field.lastResponseTime));
+                    detailsText = timeAgo;
+                }
+            }
+
+            statusDisplayHtml = `
+                <div class="field-status-display ${statusClass} ${field.isPending ? 'animated-pulse' : ''}" 
                      data-event-id="${field.lastEventId || ''}"
                      title="Click to view in history">
-                    <span class="last-result-indicator ${field.result === true ? 'true' : 'false'}"></span>
-                    <span class="last-result-text">Last: ${field.result === true ? 'TRUE' : 'FALSE'} ${timeAgo}</span>
-                    ${field.probability !== null ? `<span class="last-result-probability">(${(field.probability * 100).toFixed(0)}%)</span>` : ''}
+                    <div class="status-main">
+                        <span class="status-icon">${statusIcon}</span>
+                        <span class="status-text">${statusText}</span>
+                    </div>
+                    ${detailsText ? `<div class="status-details">${detailsText}</div>` : ''}
+                    ${field.isPending ? `<div class="status-cancel">
+                        <button class="cancel-field-request" data-event-id="${field.lastEventId}">Cancel</button>
+                    </div>` : ''}
                 </div>
             `;
         }
 
         fieldEl.innerHTML = `
-        ${lastResultHtml}
+        ${statusDisplayHtml}
         
         <div class="field-header">
           <input type="text" 
@@ -163,14 +211,29 @@ export class UIManager {
         const viewLogsBtn = fieldEl.querySelector('.view-logs-btn');
         const webhookLogs = fieldEl.querySelector('.webhook-logs');
         const closeLogsBtn = fieldEl.querySelector('.close-logs-btn');
-        const lastResultEl = fieldEl.querySelector('.field-last-result');
+        const statusDisplayEl = fieldEl.querySelector('.field-status-display');
+        const cancelBtn = fieldEl.querySelector('.cancel-field-request');
 
-        // Click last result to view in history (callback will be provided by main popup)
-        if (lastResultEl) {
-            lastResultEl.addEventListener('click', () => {
-                const eventId = lastResultEl.dataset.eventId;
+        // Click status display to view in history
+        if (statusDisplayEl) {
+            statusDisplayEl.addEventListener('click', (e) => {
+                // Don't trigger if clicking the cancel button
+                if (e.target.closest('.cancel-field-request')) return;
+
+                const eventId = statusDisplayEl.dataset.eventId;
                 if (eventId && this.onLastResultClick) {
                     this.onLastResultClick(eventId);
+                }
+            });
+        }
+
+        // Handle cancel button for pending requests
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const eventId = cancelBtn.dataset.eventId;
+                if (eventId && this.onCancelRequest) {
+                    this.onCancelRequest(parseInt(eventId));
                 }
             });
         }
@@ -282,5 +345,10 @@ export class UIManager {
     // Set callback for last result click (to be provided by main popup)
     setLastResultClickHandler(callback) {
         this.onLastResultClick = callback;
+    }
+
+    // Set callback for cancel request (to be provided by main popup)
+    setCancelRequestHandler(callback) {
+        this.onCancelRequest = callback;
     }
 } 

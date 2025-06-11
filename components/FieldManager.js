@@ -27,7 +27,14 @@ export class FieldManager {
             webhookLogs: data.webhookLogs || [],
             showWebhookUrl: data.showWebhookUrl !== undefined ? data.showWebhookUrl : !data.webhookUrlSaved, // Show by default if not saved
             result: null,
-            probability: null
+            probability: null,
+            // Enhanced tracking fields
+            lastStatus: null, // 'success', 'error', 'pending', 'cancelled'
+            lastError: null, // Store last error message
+            lastHttpStatus: null, // Store HTTP status code
+            lastRequestTime: null, // When the request was initiated
+            lastResponseTime: null, // When the response was received
+            isPending: false // Track if currently pending
         };
         this.fields.push(field);
         return field;
@@ -108,6 +115,10 @@ export class FieldManager {
                 field.probability = result.probability;
                 field.lastEventId = eventId; // Store event ID for linking to history
                 field.lastResultTime = new Date().toISOString();
+                field.lastResponseTime = new Date().toISOString();
+                field.lastStatus = 'success';
+                field.lastError = null;
+                field.isPending = false;
             }
         });
 
@@ -234,5 +245,62 @@ export class FieldManager {
         const saveData = {};
         saveData[domainKey] = this.fields;
         await chrome.storage.sync.set(saveData);
+    }
+
+    // Mark fields as pending when a request starts
+    markFieldsPending(eventId = null) {
+        this.fields.forEach(field => {
+            field.isPending = true;
+            field.lastStatus = 'pending';
+            field.lastRequestTime = new Date().toISOString();
+            field.lastEventId = eventId;
+            field.lastError = null;
+        });
+    }
+
+    // Mark fields with error when request fails
+    markFieldsError(error, httpStatus = null, eventId = null) {
+        this.fields.forEach(field => {
+            field.isPending = false;
+            field.lastStatus = 'error';
+            field.lastError = error;
+            field.lastHttpStatus = httpStatus;
+            field.lastResponseTime = new Date().toISOString();
+            field.lastEventId = eventId;
+            // Clear previous results on error
+            field.result = null;
+            field.probability = null;
+        });
+    }
+
+    // Mark fields as cancelled
+    markFieldsCancelled(eventId = null) {
+        this.fields.forEach(field => {
+            if (field.isPending && field.lastEventId === eventId) {
+                field.isPending = false;
+                field.lastStatus = 'cancelled';
+                field.lastResponseTime = new Date().toISOString();
+                field.lastError = 'Request cancelled by user';
+                // Clear previous results on cancellation
+                field.result = null;
+                field.probability = null;
+            }
+        });
+    }
+
+    // Update fields with HTTP status (for non-200 responses)
+    updateFieldsHttpStatus(httpStatus, eventId = null) {
+        this.fields.forEach(field => {
+            if (field.lastEventId === eventId) {
+                field.lastHttpStatus = httpStatus;
+                field.lastResponseTime = new Date().toISOString();
+                field.isPending = false;
+                if (httpStatus >= 400) {
+                    field.lastStatus = 'error';
+                } else if (httpStatus >= 200 && httpStatus < 300) {
+                    field.lastStatus = 'success';
+                }
+            }
+        });
     }
 } 

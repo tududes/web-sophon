@@ -97,6 +97,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    // Set up cancel request handler
+    uiManager.setCancelRequestHandler((eventId) => {
+        chrome.runtime.sendMessage({
+            action: 'cancelRequest',
+            eventId: eventId
+        }, (response) => {
+            if (response && response.success) {
+                fieldManager.markFieldsCancelled(eventId);
+                fieldManager.saveToStorage();
+                uiManager.renderFields();
+                uiManager.showStatus('Request cancelled', 'info');
+            } else {
+                uiManager.showStatus('Failed to cancel request', 'error');
+            }
+        });
+    });
+
     // Event listeners
     setupEventListeners();
 
@@ -211,15 +228,26 @@ function setupEventListeners() {
                 uiManager.showStatus('Screenshot sent successfully!', 'success');
             } else {
                 uiManager.showStatus(`Failed: ${message.error}`, 'error');
+                // Mark fields with error if available
+                if (message.eventId) {
+                    fieldManager.markFieldsError(message.error, null, message.eventId);
+                    fieldManager.saveToStorage();
+                    uiManager.renderFields();
+                }
             }
         } else if (message.action === 'captureStarted') {
             // A new capture has started
             uiManager.showStatus('Sending to webhook...', 'info');
+            // Mark fields as pending
+            fieldManager.markFieldsPending(message.eventId);
+            fieldManager.saveToStorage();
+            uiManager.renderFields();
             // Reload history to show pending event
             historyManager.loadHistory();
         } else if (message.action === 'captureResults') {
             // Handle results from n8n
             fieldManager.updateResults(message.results, message.eventId);
+            fieldManager.saveToStorage();
             uiManager.renderFields();
             uiManager.displayResults(message.results);
             // Reload history to show new event
@@ -243,6 +271,7 @@ function setupEventListeners() {
                     fields: fieldsObject,
                     reason: message.event.reason
                 }, message.eventId);
+                fieldManager.saveToStorage();
                 uiManager.renderFields();
 
                 // Update the popup status to show completion
@@ -253,7 +282,15 @@ function setupEventListeners() {
                 }
             } else if (message.event.status === 'completed' && message.event.error) {
                 // No fields but there was an error
+                fieldManager.markFieldsError(message.event.error, message.event.httpStatus, message.eventId);
+                fieldManager.saveToStorage();
+                uiManager.renderFields();
                 uiManager.showStatus(`Request completed with error: ${message.event.error}`, 'error');
+            } else if (message.event.httpStatus && message.event.httpStatus !== 200) {
+                // Update with HTTP status for non-200 responses
+                fieldManager.updateFieldsHttpStatus(message.event.httpStatus, message.eventId);
+                fieldManager.saveToStorage();
+                uiManager.renderFields();
             }
         }
     });

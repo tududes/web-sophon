@@ -1105,3 +1105,115 @@ input:checked+.slider:before {
         box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
     }
 }
+
+/* Enhanced field status display */
+.field-status-display {
+    display: block;
+    padding: 10px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #dee2e6;
+    border-left: 4px solid #6c757d;
+}
+
+.field-status-display:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.field-status-display.success {
+    background: #d4edda;
+    border-left-color: #28a745;
+}
+
+.field-status-display.error {
+    background: #f8d7da;
+    border-left-color: #dc3545;
+}
+
+.field-status-display.pending {
+    background: #e3f2fd;
+    border-left-color: #007bff;
+}
+
+.field-status-display.cancelled {
+    background: #fff3cd;
+    border-left-color: #ffc107;
+}
+
+.field-status-display.animated-pulse {
+    animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+.status-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.status-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.status-text {
+    font-weight: 600;
+    font-size: 13px;
+    color: #333;
+}
+
+.status-details {
+    font-size: 11px;
+    color: #6c757d;
+    margin-left: 24px;
+    margin-bottom: 6px;
+}
+
+.status-cancel {
+    margin-left: 24px;
+    margin-top: 6px;
+}
+
+.cancel-field-request {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.cancel-field-request:hover {
+    background: #c82333;
+}
+
+.cancel-field-request:active {
+    transform: translateY(1px);
+}
+
+/* Override hover for pending status with cancel button */
+.field-status-display.pending:hover {
+    background: #d1ecf1;
+}

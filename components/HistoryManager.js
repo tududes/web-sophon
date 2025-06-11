@@ -6,6 +6,7 @@ export class HistoryManager {
         this.recentEvents = [];
         this.showTrueOnly = false;
         this.elements = {};
+        this.isScrolling = false; // Prevent multiple scroll operations
     }
 
     // Set DOM element references
@@ -79,8 +80,16 @@ export class HistoryManager {
 
     // Find event by ID and scroll to it
     scrollToEvent(eventId, showTrueOnly, onToggleFilter) {
+        // Prevent multiple simultaneous scroll operations
+        if (this.isScrolling) {
+            console.log('Scroll operation already in progress, ignoring');
+            return;
+        }
+
         const eventIndex = this.recentEvents.findIndex(e => e.id == eventId);
         if (eventIndex !== -1) {
+            this.isScrolling = true;
+
             // Show all events if needed
             if (showTrueOnly && !this.recentEvents[eventIndex].hasTrueResult) {
                 onToggleFilter(false);
@@ -88,23 +97,43 @@ export class HistoryManager {
                 this.renderHistory();
             }
 
-            // Scroll to history section
+            // Scroll to history section with instant behavior to avoid conflicts
             const historySection = Array.from(document.querySelectorAll('.section')).find(
                 section => section.querySelector('#history-container')
             );
             if (historySection) {
-                historySection.scrollIntoView({ behavior: 'smooth' });
+                // Use instant scroll to prevent fighting with user scrolling
+                historySection.scrollIntoView({ behavior: 'auto', block: 'start' });
             }
 
-            // Highlight and expand the event
+            // Highlight and expand the event with a shorter delay
             setTimeout(() => {
                 const historyItem = document.querySelector(`[data-event-id="${eventId}"]`);
                 if (historyItem) {
+                    // Add highlight class
                     historyItem.classList.add('highlight');
-                    historyItem.click(); // Expand it
-                    setTimeout(() => historyItem.classList.remove('highlight'), 2000);
+
+                    // Expand the item by directly manipulating the details instead of clicking
+                    const details = historyItem.querySelector('.history-details');
+                    if (details && details.style.display === 'none') {
+                        details.style.display = 'block';
+                        historyItem.classList.add('expanded');
+                    }
+
+                    // Scroll the specific item into view without smooth behavior
+                    historyItem.scrollIntoView({ behavior: 'auto', block: 'center' });
+
+                    // Remove highlight after animation
+                    setTimeout(() => {
+                        historyItem.classList.remove('highlight');
+                        // Reset scroll flag after animation completes
+                        this.isScrolling = false;
+                    }, 2000);
+                } else {
+                    // Reset flag if item not found
+                    this.isScrolling = false;
                 }
-            }, 500);
+            }, 200); // Reduced delay
         }
     }
 
