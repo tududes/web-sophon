@@ -11,17 +11,25 @@
   - Any text that can be selected/copied
 
 ### Screenshot Interactions
-- **Hover** over screenshots to see the "🔍 Click to zoom" hint
-- **Click and hold** to zoom in 2x
-- Screenshots won't collapse the parent event when clicked
-- Zoomed view includes a shadow effect for better visibility
+- **Download** screenshots using the 💾 Download button above each image
+- **Hover** over screenshots to zoom in 2x with mouse-following magnification
+- **Move mouse** around while hovering to explore all areas of the zoomed image
+- Screenshots won't collapse the parent event when interacted with
+- Filenames include timestamp: `websophon-screenshot-YYYY-MM-DD-HH-MM-SS.png`
 
 ### Request/Response Debugging
 - **Click the section headers** to expand/collapse request or response data
 - **Section headers** have a colored background that changes on hover
-- **JSON data** is displayed in a monospace font for readability
-- **Text is selectable** for easy copying
+- **JSON responses** are automatically formatted with proper indentation
+- **Non-JSON responses** show as raw text with a warning indicator
+- **All text is selectable** for easy copying to clipboard
 - These sections are independent - won't affect the parent event state
+
+### Request Cancellation
+- **Pending requests** show a red "Cancel Request" button
+- **Click Cancel** to abort webhook requests that are taking too long
+- **Cancelled requests** are marked in history as "Request cancelled by user"
+- **Multiple pending requests** can be cancelled independently
 
 ### Field Last Results
 - Each field shows its **last evaluation** with time ago (e.g., "Last: TRUE 5 minutes ago")
@@ -57,11 +65,12 @@
 
 1. **Start from Fields**: Click a field's last result to quickly find its event
 2. **Monitor Pending**: Watch for events updating in real-time
-3. **Examine Screenshots**: Verify what the AI actually saw immediately
-4. **Check Request Data**: Confirm the correct fields were sent
-5. **Review Response**: See exactly what the webhook returned when ready
-6. **Compare Events**: Keep multiple events expanded to compare results
-7. **Handle Slow Webhooks**: Don't worry about timeouts - requests have 5 minutes
+3. **Download Screenshots**: Save images locally for detailed analysis
+4. **Zoom and Explore**: Hover over screenshots and move mouse to examine all areas
+5. **Check Request Data**: Confirm the correct fields were sent
+6. **Review Response**: JSON formatted nicely, raw text shown for errors
+7. **Cancel if Needed**: Don't wait for slow webhooks - cancel and retry
+8. **Compare Events**: Keep multiple events expanded to compare results
 
 ## Keyboard Shortcuts (Future Feature)
 - `Esc` - Collapse all expanded events

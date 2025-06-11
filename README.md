@@ -56,6 +56,13 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Progressive Loading**: See screenshots and request data immediately, response data when ready
 - **Resilient Design**: Failed requests properly update pending events with error details
 
+### Enhanced User Control (v2.6)
+- **Request Cancellation**: Cancel pending webhook requests mid-flight with cancel button
+- **Smart Response Display**: JSON responses formatted properly, raw text shown for non-JSON
+- **Screenshot Downloads**: Download any captured screenshot with timestamped filename
+- **Advanced Image Zoom**: Mouse-following 2x zoom to explore all areas of screenshots
+- **Cancelled Request Tracking**: Cancelled requests properly logged in history with status
+
 ### Developer Features
 - **Clean, modern UI**: Intuitive interface for field management
 - **Webhook integration**: Sends screenshots and fields to n8n workflows
@@ -171,9 +178,12 @@ You can use any image editor or online tool to create these icons.
 - **Debugging failed captures**:
   - Click on any event in history to see full details
   - View the stored screenshot to verify what was captured
+  - Download screenshots with the 💾 Download button
+  - Hover over screenshots to zoom in with mouse-following 2x magnification
   - Check Request Data to see what was sent to the webhook
-  - Check Response Data to see what the webhook returned
+  - Check Response Data - properly formatted JSON or raw text for failed responses
   - Each field shows its last result - click to jump to that event
+  - Cancel long-running requests with the Cancel Request button
 - **Storage quota exceeded**: The extension automatically removes old screenshots if storage is full
 - **History not clearing permanently**: Fixed - now clears both memory and storage
 - **Responses not updating events**: Fixed - events now update in real-time when webhook responses arrive

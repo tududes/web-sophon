@@ -3,6 +3,7 @@ let captureIntervals = new Map(); // Map of tabId to interval ID
 let captureSettings = new Map(); // Map of tabId to capture settings
 let recentEvents = []; // Store recent capture events
 let unreadTrueCount = 0; // Count of unread TRUE events
+let pendingRequests = new Map(); // Map of eventId to AbortController for cancellation
 
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -61,6 +62,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             // Clear from storage as well
             chrome.storage.local.set({ recentEvents: [] });
             sendResponse({ success: true });
+            break;
+
+        case 'cancelRequest':
+            // Cancel a pending request
+            const eventId = request.eventId;
+            if (pendingRequests.has(eventId)) {
+                const controller = pendingRequests.get(eventId);
+                controller.abort();
+                pendingRequests.delete(eventId);
+                console.log(`Cancelled request for event ${eventId}`);
+
+                // Update the event as cancelled
+                updateEvent(eventId, null, null, 'Request cancelled by user', null);
+                sendResponse({ success: true });
+            } else {
+                sendResponse({ success: false, error: 'Request not found or already completed' });
+            }
             break;
 
         case 'captureNow':
@@ -267,7 +285,12 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
 
         // Send to webhook with very long timeout (300 seconds)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 seconds
+        pendingRequests.set(eventId, controller); // Store for potential cancellation
+
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+            pendingRequests.delete(eventId);
+        }, 300000); // 300 seconds
 
         let webhookResponse;
         try {
@@ -277,13 +300,16 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
+            pendingRequests.delete(eventId); // Remove from pending when completed
         } catch (fetchError) {
             clearTimeout(timeoutId);
+            pendingRequests.delete(eventId); // Remove from pending on error
             console.log('Fetch error occurred:', fetchError);
 
             let errorMessage;
             if (fetchError.name === 'AbortError') {
-                errorMessage = 'Request timed out after 5 minutes';
+                // Check if it was user-cancelled or timeout
+                errorMessage = pendingRequests.has(eventId) ? 'Request timed out after 5 minutes' : 'Request cancelled by user';
             } else {
                 errorMessage = fetchError.message;
             }
