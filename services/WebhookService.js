@@ -76,7 +76,8 @@ export class WebhookService {
             chrome.runtime.sendMessage({
                 action: 'captureStarted',
                 eventId: eventId,
-                domain: domain
+                domain: domain,
+                fields: fields // Include fields so popup can update their status
             });
 
             // Send to webhook with very long timeout (300 seconds)
@@ -202,8 +203,14 @@ export class WebhookService {
             // - responseText: ALWAYS preserved (JSON, plain text, or error string)
             this.eventService.updateEvent(eventId, responseData, webhookResponse.status, finalError, responseText);
 
-            // Send results to popup if it contains field evaluations
-            if (responseData && responseData.fields) {
+            // Send results to popup if response contains field evaluations
+            // Check if fields are in responseData.fields or at the top level
+            const hasFields = responseData && (
+                responseData.fields ||
+                Object.keys(responseData).some(key => key !== 'reason' && typeof responseData[key] === 'object')
+            );
+
+            if (hasFields) {
                 chrome.runtime.sendMessage({
                     action: 'captureResults',
                     results: responseData,
@@ -217,11 +224,13 @@ export class WebhookService {
             if (isManual) {
                 chrome.runtime.sendMessage({
                     action: 'captureComplete',
-                    success: true
+                    success: true,
+                    eventId: eventId,
+                    results: responseData // Include results if available
                 });
             }
 
-            return { success: true };
+            return { success: true, eventId: eventId };
         } catch (error) {
             console.error('Error capturing/sending screenshot:', error);
 

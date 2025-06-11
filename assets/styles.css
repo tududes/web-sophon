@@ -479,6 +479,10 @@ input:checked+.slider:before {
     padding: var(--space-sm) var(--space-md);
     font-size: var(--text-xs);
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
 }
 
 .fields-container {

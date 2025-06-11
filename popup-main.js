@@ -948,7 +948,8 @@ class SimplePopupController {
                         }
 
                         // Save the field state immediately
-                        this.saveFieldsState();
+                        // Delay save slightly to ensure DOM is updated
+                        setTimeout(() => this.saveFieldsState(), 50);
 
                         // Make clickable if not already
                         if (!resultContainer.onclick) {
@@ -1019,8 +1020,9 @@ class SimplePopupController {
                             };
                         }
 
-                        // Also save the field state with the last result
-                        this.saveFieldsState();
+                        // Also save the field state with the last result  
+                        // Delay save to ensure DOM is updated
+                        setTimeout(() => this.saveFieldsState(), 100);
                     }
                 }
             }
@@ -1060,28 +1062,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (window.popupController) {
         switch (message.action) {
             case 'captureComplete':
+                console.log('captureComplete message received:', message);
                 if (message.success) {
                     window.popupController.showStatus('Screenshot sent successfully!', 'success');
 
                     // Update field results if available
                     if (message.results) {
                         console.log('Capture complete with results:', message.results);
+                        console.log('Results type:', typeof message.results);
+                        console.log('Results keys:', Object.keys(message.results));
 
                         // Handle the response structure where fields are directly in results
                         const fields = message.results;
                         Object.entries(fields).forEach(([fieldName, fieldData]) => {
-                            if (fieldData && typeof fieldData === 'object' && ('boolean' in fieldData || 'probability' in fieldData)) {
-                                // Handle both array and non-array formats
-                                const processedResult = {
-                                    result: Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean,
-                                    probability: Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability
-                                };
-                                console.log(`Updating field ${fieldName} with result:`, processedResult);
-                                window.popupController.updateFieldLastResult(fieldName, processedResult);
+                            if (fieldData && typeof fieldData === 'object') {
+                                // Handle both 'boolean' and 'result' property names
+                                let resultValue = null;
+                                let probabilityValue = null;
 
-                                // Store event ID if available
-                                if (message.eventId) {
-                                    window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
+                                // Check for 'result' or 'boolean' property
+                                if ('result' in fieldData) {
+                                    resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                                } else if ('boolean' in fieldData) {
+                                    resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                                }
+
+                                // Get probability
+                                if ('probability' in fieldData) {
+                                    probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
+                                }
+
+                                // Only update if we have a result
+                                if (resultValue !== null) {
+                                    const processedResult = {
+                                        result: resultValue,
+                                        probability: probabilityValue
+                                    };
+                                    console.log(`Updating field ${fieldName} with result:`, processedResult);
+                                    window.popupController.updateFieldLastResult(fieldName, processedResult);
+
+                                    // Store event ID if available
+                                    if (message.eventId) {
+                                        window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
+                                    }
                                 }
                             }
                         });
@@ -1111,6 +1134,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             case 'eventUpdated':
                 console.log('Event updated:', message.eventId);
+                console.log('Event data:', message.event);
+                console.log('Event results:', message.event?.results);
+                console.log('Event fields:', message.event?.fields);
+
                 if (window.popupController.historyManager && window.popupController.historyManager.updateEvent) {
                     window.popupController.historyManager.updateEvent(message.eventId, message.event);
                 }
@@ -1125,12 +1152,80 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         window.popupController.updateFieldLastResult(field.name, result);
                         window.popupController.updateFieldStatus(field.name, 'complete', message.eventId);
                     });
+                } else if (message.event && message.results) {
+                    // Handle the new response format where results contain field data directly
+                    Object.entries(message.results).forEach(([fieldName, fieldData]) => {
+                        if (fieldData && typeof fieldData === 'object') {
+                            // Check for 'result' or 'boolean' property
+                            let resultValue = null;
+                            if ('result' in fieldData) {
+                                resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                            } else if ('boolean' in fieldData) {
+                                resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                            }
+
+                            const probabilityValue = fieldData.probability !== undefined ?
+                                (Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability) : null;
+
+                            if (resultValue !== null) {
+                                const result = {
+                                    result: resultValue,
+                                    probability: probabilityValue
+                                };
+                                window.popupController.updateFieldLastResult(fieldName, result);
+                                window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
+                            }
+                        }
+                    });
                 }
                 break;
             case 'historyReloaded':
                 console.log('History reloaded');
                 if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
                     window.popupController.historyManager.loadHistory();
+                }
+                break;
+            case 'captureResults':
+                console.log('captureResults message received:', message);
+                if (message.results) {
+                    console.log('Capture results:', message.results);
+
+                    // Handle the response structure where fields are directly in results
+                    const fields = message.results;
+                    Object.entries(fields).forEach(([fieldName, fieldData]) => {
+                        if (fieldData && typeof fieldData === 'object') {
+                            // Handle both 'boolean' and 'result' property names
+                            let resultValue = null;
+                            let probabilityValue = null;
+
+                            // Check for 'result' or 'boolean' property
+                            if ('result' in fieldData) {
+                                resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                            } else if ('boolean' in fieldData) {
+                                resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                            }
+
+                            // Get probability
+                            if ('probability' in fieldData) {
+                                probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
+                            }
+
+                            // Only update if we have a result
+                            if (resultValue !== null) {
+                                const processedResult = {
+                                    result: resultValue,
+                                    probability: probabilityValue
+                                };
+                                console.log(`Updating field ${fieldName} with result:`, processedResult);
+                                window.popupController.updateFieldLastResult(fieldName, processedResult);
+
+                                // Store event ID if available
+                                if (message.eventId) {
+                                    window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
+                                }
+                            }
+                        }
+                    });
                 }
                 break;
         }
