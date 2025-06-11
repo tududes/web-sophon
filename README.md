@@ -48,6 +48,14 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Visual Zoom**: Click screenshots in history to zoom in for detail
 - **Smart Highlighting**: Events are highlighted when accessed from field results
 
+### Long-Running Request Support (v2.5)
+- **No Timeouts**: Webhook requests can run for up to 5 minutes (300 seconds)
+- **Pending Status**: Events show "⏳ Waiting for response..." while webhook processes
+- **Real-time Updates**: Events update automatically when responses arrive
+- **Concurrent Requests**: Multiple captures can run simultaneously without blocking
+- **Progressive Loading**: See screenshots and request data immediately, response data when ready
+- **Resilient Design**: Failed requests properly update pending events with error details
+
 ### Developer Features
 - **Clean, modern UI**: Intuitive interface for field management
 - **Webhook integration**: Sends screenshots and fields to n8n workflows

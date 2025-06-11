@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSophon Slow Webhook Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .test-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        h2 {
+            color: #666;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .webhook-url {
+            background: #e8f5e9;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+
+        .test-info {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ffeaa7;
+            margin: 15px 0;
+        }
+
+        code {
+            background: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🐌 WebSophon Slow Webhook Test</h1>
+
+    <div class="test-section">
+        <h2>Testing Long-Running Webhooks</h2>
+        <p>This page helps you test WebSophon's ability to handle slow webhook responses.</p>
+
+        <div class="test-info">
+            <strong>⚠️ Note:</strong> WebSophon now supports webhook requests up to <strong>5 minutes (300
+                seconds)</strong> without timing out.
+        </div>
+
+        <h3>Webhook Testing Services</h3>
+        <p>Use these services to simulate slow responses:</p>
+
+        <h4>1. Webhook.site with Delay</h4>
+        <p>Create a webhook at <a href="https://webhook.site" target="_blank">webhook.site</a> and add delay:</p>
+        <div class="webhook-url">
+            https://webhook.site/YOUR-UUID?delay=30
+        </div>
+        <p>Replace <code>YOUR-UUID</code> with your unique webhook URL. The <code>delay=30</code> parameter adds a
+            30-second delay.</p>
+
+        <h4>2. HTTPBin Delay Endpoint</h4>
+        <p>Use HTTPBin's delay endpoint (delays up to 10 seconds):</p>
+        <div class="webhook-url">
+            https://httpbin.org/delay/10
+        </div>
+
+        <h4>3. Custom n8n Workflow with Wait Node</h4>
+        <p>Create an n8n workflow with a Wait node to simulate processing time.</p>
+    </div>
+
+    <div class="test-section">
+        <h2>What to Expect</h2>
+        <ol>
+            <li><strong>Immediate Event Creation:</strong> Event appears with "⏳ Waiting for response..." status</li>
+            <li><strong>Screenshot Available:</strong> You can view the captured screenshot right away</li>
+            <li><strong>Request Data Visible:</strong> Check what was sent to the webhook</li>
+            <li><strong>Response Section Shows Pending:</strong> Blue box indicates waiting for response</li>
+            <li><strong>Auto-Update:</strong> When response arrives, the event updates automatically</li>
+            <li><strong>Field Results Update:</strong> Field evaluations appear and last results refresh</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Scenarios</h2>
+        <h3>Scenario 1: Normal Delay (30 seconds)</h3>
+        <ul>
+            <li>Use a 30-second delay</li>
+            <li>Verify event shows as pending</li>
+            <li>Confirm auto-update when response arrives</li>
+        </ul>
+
+        <h3>Scenario 2: Very Long Delay (2 minutes)</h3>
+        <ul>
+            <li>Use a 120-second delay</li>
+            <li>Test multiple concurrent captures</li>
+            <li>Verify all events update independently</li>
+        </ul>
+
+        <h3>Scenario 3: Timeout Test (>5 minutes)</h3>
+        <ul>
+            <li>Try a delay longer than 300 seconds</li>
+            <li>Should see timeout error after 5 minutes</li>
+            <li>Event should update with error status</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>Debugging Tips</h2>
+        <ul>
+            <li>Open Chrome DevTools (F12) to see console logs</li>
+            <li>Watch for "Tracking event" and "Updating event" messages</li>
+            <li>Check Network tab to see webhook requests</li>
+            <li>Multiple extension popups can be open to see real-time updates</li>
+        </ul>
+    </div>
+
+    <script>
+        console.log('WebSophon slow webhook test page loaded');
+        console.log('Ready to test long-running webhook responses!');
+    </script>
+</body>
+
+</html>

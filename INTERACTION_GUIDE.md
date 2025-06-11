@@ -38,13 +38,30 @@
 - **Hover effects** on all interactive elements
 - **Smooth transitions** for better user experience
 
+## Pending Request Handling
+
+### Long-Running Webhooks
+- Events appear immediately with **"⏳ Waiting for response..."** status
+- Screenshot and request data are available right away
+- Response section shows pending indicator
+- Events automatically update when response arrives
+- Multiple requests can run concurrently
+
+### Visual Indicators for Pending Events
+- **Pulsing blue status**: Shows active webhook processing
+- **Blue pending section**: Highlights where response will appear
+- **Auto-refresh**: No need to reload - updates appear automatically
+- **5-minute timeout**: Requests can run up to 300 seconds
+
 ## Tips for Effective Debugging
 
 1. **Start from Fields**: Click a field's last result to quickly find its event
-2. **Examine Screenshots**: Verify what the AI actually saw
-3. **Check Request Data**: Confirm the correct fields were sent
-4. **Review Response**: See exactly what the webhook returned
-5. **Compare Events**: Keep multiple events expanded to compare results
+2. **Monitor Pending**: Watch for events updating in real-time
+3. **Examine Screenshots**: Verify what the AI actually saw immediately
+4. **Check Request Data**: Confirm the correct fields were sent
+5. **Review Response**: See exactly what the webhook returned when ready
+6. **Compare Events**: Keep multiple events expanded to compare results
+7. **Handle Slow Webhooks**: Don't worry about timeouts - requests have 5 minutes
 
 ## Keyboard Shortcuts (Future Feature)
 - `Esc` - Collapse all expanded events

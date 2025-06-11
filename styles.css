@@ -717,6 +717,25 @@ input:checked+.slider:before {
     color: #28a745;
 }
 
+.history-status.pending {
+    color: #007bff;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
 .history-no-fields {
     font-size: 11px;
     color: #6c757d;
@@ -980,6 +999,21 @@ input:checked+.slider:before {
 /* Make detail items more readable */
 .detail-item {
     user-select: text;
+}
+
+/* Pending response styling */
+.response-pending {
+    margin-top: 10px;
+    padding: 10px;
+    background: #e3f2fd;
+    border-radius: 4px;
+    border: 1px solid #90caf9;
+}
+
+.pending-text {
+    color: #1976d2;
+    font-weight: 500;
+    animation: pulse 1.5s ease-in-out infinite;
 }
 
 /* Highlight animation for history items */

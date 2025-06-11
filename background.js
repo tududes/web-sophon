@@ -242,11 +242,38 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
 
         console.log(`Sending to webhook: ${webhookUrl}`);
 
-        // Send to webhook
-        const webhookResponse = await fetch(webhookUrl, {
-            method: 'POST',
-            body: formData
+        // Generate event ID early
+        const eventId = Date.now();
+
+        // Track the event immediately as pending
+        trackEvent(null, domain, tab.url, true, null, null, dataUrl, requestData, null, eventId, 'pending');
+
+        // Notify popup that request is pending
+        chrome.runtime.sendMessage({
+            action: 'captureStarted',
+            eventId: eventId,
+            domain: domain
         });
+
+        // Send to webhook with very long timeout (300 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 seconds
+
+        let webhookResponse;
+        try {
+            webhookResponse = await fetch(webhookUrl, {
+                method: 'POST',
+                body: formData,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === 'AbortError') {
+                throw new Error('Request timed out after 5 minutes');
+            }
+            throw fetchError;
+        }
 
         console.log(`Webhook response status: ${webhookResponse.status}`);
 
@@ -267,11 +294,8 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
             console.log('Response was not JSON or could not be parsed:', e);
         }
 
-        // Generate event ID
-        const eventId = Date.now();
-
-        // Always track the event, regardless of success
-        trackEvent(responseData, domain, tab.url, true, webhookResponse.status, parseError, dataUrl, requestData, responseText, eventId);
+        // Update the existing event with the response data
+        updateEvent(eventId, responseData, webhookResponse.status, parseError, responseText);
 
         // Send results to popup if it contains field evaluations
         if (responseData && responseData.fields) {
@@ -296,11 +320,16 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
     } catch (error) {
         console.error('Error capturing/sending screenshot:', error);
 
-        // Track failed event (screenshot may be undefined if capture failed)
-        trackEvent(null, domain, tab ? tab.url : '', false, null, error.message,
-            typeof dataUrl !== 'undefined' ? dataUrl : null,
-            typeof requestData !== 'undefined' ? requestData : null,
-            null, Date.now());
+        // If we have an eventId, update the existing event; otherwise create a new one
+        if (typeof eventId !== 'undefined') {
+            updateEvent(eventId, null, null, error.message, null);
+        } else {
+            // Track failed event (screenshot may be undefined if capture failed)
+            trackEvent(null, domain, tab ? tab.url : '', false, null, error.message,
+                typeof dataUrl !== 'undefined' ? dataUrl : null,
+                typeof requestData !== 'undefined' ? requestData : null,
+                null, Date.now());
+        }
 
         // Send error notification on manual capture
         if (isManual) {
@@ -334,7 +363,7 @@ chrome.windows.onRemoved.addListener(() => {
 });
 
 // Track capture event
-function trackEvent(results, domain, url, success = true, httpStatus = null, error = null, screenshot = null, request = null, response = null, eventId = null) {
+function trackEvent(results, domain, url, success = true, httpStatus = null, error = null, screenshot = null, request = null, response = null, eventId = null, status = 'completed') {
     // Check if any field evaluated to true
     let hasTrueResult = false;
     const fieldResults = [];
@@ -367,7 +396,8 @@ function trackEvent(results, domain, url, success = true, httpStatus = null, err
         read: false,
         screenshot: screenshot, // Store the base64 screenshot
         request: request,
-        response: response
+        response: response,
+        status: status // 'pending' or 'completed'
     };
 
     console.log('Tracking event:', event);
@@ -393,6 +423,67 @@ function trackEvent(results, domain, url, success = true, httpStatus = null, err
             recentEvents.slice(50).forEach(e => delete e.screenshot);
             chrome.storage.local.set({ recentEvents: recentEvents });
         }
+    });
+}
+
+// Update an existing event with response data
+function updateEvent(eventId, results, httpStatus, error, responseText) {
+    // Find the event
+    const eventIndex = recentEvents.findIndex(e => e.id === eventId);
+    if (eventIndex === -1) {
+        console.error('Event not found for update:', eventId);
+        return;
+    }
+
+    const event = recentEvents[eventIndex];
+
+    // Update event data
+    event.status = 'completed';
+    event.httpStatus = httpStatus;
+    event.error = error;
+    event.response = responseText;
+
+    // Update success flag based on HTTP status and error
+    if (error) {
+        event.success = false;
+    } else if (httpStatus) {
+        event.success = httpStatus >= 200 && httpStatus < 300;
+    }
+
+    // Process results if available
+    if (results && results.fields) {
+        event.fields = [];
+        let hasTrueResult = false;
+
+        for (const [fieldName, result] of Object.entries(results.fields)) {
+            event.fields.push({
+                name: fieldName,
+                result: result.boolean,
+                probability: result.probability
+            });
+            if (result.boolean === true) {
+                hasTrueResult = true;
+            }
+        }
+
+        event.hasTrueResult = hasTrueResult;
+        event.reason = results.reason || '';
+
+        // Update unread count if has true result
+        if (hasTrueResult && !event.read) {
+            unreadTrueCount++;
+            updateBadge();
+        }
+    }
+
+    // Save updated events
+    chrome.storage.local.set({ recentEvents: recentEvents });
+
+    // Notify popup of the update
+    chrome.runtime.sendMessage({
+        action: 'eventUpdated',
+        eventId: eventId,
+        event: event
     });
 }
 

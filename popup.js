@@ -423,6 +423,11 @@ function setupEventListeners() {
             } else {
                 showStatus(`Failed: ${message.error}`, 'error');
             }
+        } else if (message.action === 'captureStarted') {
+            // A new capture has started
+            showStatus('Sending to webhook...', 'info');
+            // Reload history to show pending event
+            loadHistory();
         } else if (message.action === 'captureResults') {
             // Handle results from n8n
             fieldManager.updateResults(message.results, message.eventId);
@@ -430,6 +435,39 @@ function setupEventListeners() {
             displayResults(message.results);
             // Reload history to show new event
             loadHistory();
+        } else if (message.action === 'eventUpdated') {
+            // An event has been updated with response data
+            // Update the specific event in our local array
+            const eventIndex = recentEvents.findIndex(e => e.id === message.eventId);
+            if (eventIndex !== -1) {
+                recentEvents[eventIndex] = message.event;
+                renderHistory();
+            }
+
+            // If it's a field result update, update fields too
+            if (message.event.fields && message.event.fields.length > 0) {
+                // Convert field array back to object format expected by updateResults
+                const fieldsObject = {};
+                message.event.fields.forEach(field => {
+                    fieldsObject[field.name] = {
+                        boolean: field.result,
+                        probability: field.probability
+                    };
+                });
+
+                fieldManager.updateResults({
+                    fields: fieldsObject,
+                    reason: message.event.reason
+                }, message.eventId);
+                renderFields();
+
+                // Update the popup status to show completion
+                if (message.event.error) {
+                    showStatus(`Request failed: ${message.event.error}`, 'error');
+                } else {
+                    showStatus('Webhook response received!', 'success');
+                }
+            }
         }
     });
 
@@ -471,9 +509,11 @@ async function handleManualCapture() {
 
     try {
         const response = await new Promise((resolve, reject) => {
+            // Much longer timeout for background script communication (60 seconds)
+            // The actual webhook timeout is 300 seconds in background.js
             const timeout = setTimeout(() => {
-                reject(new Error('Capture timeout - no response from background script'));
-            }, 10000);
+                reject(new Error('Background script not responding'));
+            }, 60000);
 
             chrome.runtime.sendMessage({
                 action: 'captureNow',
@@ -852,7 +892,9 @@ function renderHistory() {
 
         // Handle different types of events
         let statusHtml = '';
-        if (!event.success) {
+        if (event.status === 'pending') {
+            statusHtml = `<span class="history-status pending">⏳ Waiting for response...</span>`;
+        } else if (!event.success) {
             statusHtml = `<span class="history-status error">❌ Failed: ${event.error || 'Unknown error'}</span>`;
         } else if (event.httpStatus && event.httpStatus !== 200) {
             statusHtml = `<span class="history-status warning">⚠️ HTTP ${event.httpStatus}</span>`;
@@ -900,7 +942,11 @@ function renderHistory() {
             </details>
           ` : ''}
           
-          ${event.response ? `
+          ${event.status === 'pending' ? `
+            <div class="response-pending">
+              <strong>Response:</strong> <span class="pending-text">⏳ Waiting for webhook response...</span>
+            </div>
+          ` : event.response ? `
             <details class="request-response-details">
               <summary><strong>Response Data</strong></summary>
               <pre class="json-display">${event.response}</pre>
