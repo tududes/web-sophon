@@ -1,0 +1,167 @@
+# WebSophon - Chrome Extension
+
+A quantum-inspired web observer that exists simultaneously across all dimensions of your browsing experience. WebSophon unfolds from a simple extension into an omnipresent monitoring system, capable of perceiving truth at the most fundamental level of web interactions.
+
+Like a subatomic particle that can expand to observe entire systems, WebSophon monitors your web environment with quantum precision, evaluating reality against your defined truths, and triggering cascading events when those truths manifest. It transforms passive observation into active intelligence, bridging the gap between what you see and what you need to know.
+
+## The Observer Effect in Action
+
+WebSophon doesn't just watch—it understands. By defining fields of truth, you create quantum observers that collapse possibilities into certainties. When truth is detected, WebSophon can instantly trigger events across any system, creating a web of intelligent automation that responds to the changing state of your digital reality.
+
+## Features
+
+### Core Features
+- **Domain-based consent**: Enable/disable screenshot capture per domain
+- **Configurable intervals**: Choose from 5 seconds to 10 minutes
+- **Manual capture**: Click button to capture screenshot on-demand
+- **Automatic stop on navigation**: Captures stop when you navigate away from the consented domain
+
+### Advanced Field Evaluation (v2.0)
+- **Custom Fields**: Define unlimited evaluation criteria with no-spaces field names
+- **AI-Powered Analysis**: Each field is evaluated to true/false with confidence scores
+- **Visual Results**: Green/red indicators show results with probability percentages
+- **Preset Management**: Save and load field configurations as named presets
+- **Cross-Device Sync**: Settings and presets sync across Chrome instances
+- **Conditional Webhooks**: Each field can trigger its own webhook on TRUE results
+- **Custom Payloads**: Define JSON payloads for each field's webhook
+
+### Event History & Notifications (v2.2)
+- **Badge Notifications**: Shows count of unread TRUE events on extension icon
+- **Event History**: View last 100 capture events with field results
+- **Smart Filtering**: Toggle to show only events with TRUE results
+- **Unread Indicators**: Highlights new TRUE events until viewed
+- **Time-based Display**: Shows human-readable timestamps ("5 minutes ago")
+- **Clear History**: Option to clear all stored events
+
+### Developer Features
+- **Clean, modern UI**: Intuitive interface for field management
+- **Webhook integration**: Sends screenshots and fields to n8n workflows
+- **Debug logging**: Comprehensive console logs for troubleshooting
+- **Flexible Response Handling**: Process complex AI responses
+
+## Installation
+
+1. Clone or download this repository
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode" in the top right
+4. Click "Load unpacked" and select this directory
+5. The extension icon will appear in your toolbar
+
+## Setup
+
+1. Click the extension icon to open the popup
+2. Enter your n8n webhook URL (e.g., `https://your-n8n-instance.com/webhook/abc123`)
+3. Select your desired capture interval
+4. Toggle the switch to enable capture for the current domain
+
+## Usage
+
+- **Start capturing**: Toggle the switch ON after entering a webhook URL
+- **Stop capturing**: Toggle the switch OFF or navigate to a different domain
+- **Change interval**: Select a new interval from the dropdown (takes effect immediately if capturing)
+- **View status**: Status messages appear at the bottom of the popup
+
+## Webhook Payload
+
+The extension sends a POST request to your webhook with the following multipart/form-data:
+
+```
+screenshot: [PNG file] - The captured screenshot
+domain: [string] - The domain where the screenshot was taken
+timestamp: [ISO 8601 string] - When the screenshot was captured
+tabId: [string] - The browser tab ID
+url: [string] - The full URL of the page
+isManual: [string] - "true" or "false"
+fields: [JSON string] - Array of field definitions (v2.0+)
+```
+
+### Field Format (v2.0+)
+```json
+[
+  {
+    "name": "field_name",
+    "criteria": "Description of what to evaluate"
+  }
+]
+```
+
+### Expected Response Format (v2.0+)
+```json
+{
+  "fields": {
+    "field_name": {
+      "boolean": true,
+      "probability": 0.95
+    }
+  },
+  "reason": "Explanation of what was detected"
+}
+```
+
+## n8n Workflow Setup
+
+### Basic Setup (v1.0)
+1. Create a new workflow in n8n
+2. Add a **Webhook** node:
+   - Set to POST method
+   - Copy the webhook URL to the extension
+3. The webhook will receive the screenshot and metadata
+4. Process as needed (image analysis, LLM integration, etc.)
+
+### Field Evaluation Setup (v2.0)
+1. Import `n8n-workflow-fields.json` for field evaluation
+2. Configure your OpenAI API credentials
+3. The workflow will:
+   - Receive screenshot and field definitions
+   - Use GPT-4 Vision to evaluate each field
+   - Return results in the expected JSON format
+4. See [FIELD_EVALUATION_GUIDE.md](FIELD_EVALUATION_GUIDE.md) for detailed instructions
+
+## Icon Generation
+
+To generate the required PNG icons, you'll need to create or obtain 16x16, 48x48, and 128x128 pixel PNG images. Name them:
+- `icon-16.png`
+- `icon-48.png`
+- `icon-128.png`
+
+You can use any image editor or online tool to create these icons.
+
+## Privacy & Security
+
+- Screenshots are only captured for domains you explicitly consent to
+- All data is sent directly to your specified webhook URL
+- No data is stored or transmitted elsewhere
+- Settings are stored locally in your browser
+
+## Troubleshooting
+
+- **"Please enter a webhook URL first"**: Make sure to enter a valid webhook URL before enabling capture
+- **Screenshots not sending**: Check the browser console for errors and verify your webhook URL is accessible
+- **Capture stops unexpectedly**: This happens when navigating to a different domain or closing the tab
+
+## Development
+
+The extension consists of:
+- `manifest.json` - Extension configuration (v2.1)
+- `popup.html/js/css` - Enhanced UI with field management
+- `background.js` - Service worker handling captures and responses
+- `content.js` - Page navigation monitoring
+- `n8n-workflow-fields.json` - Field evaluation workflow template
+- `FIELD_EVALUATION_GUIDE.md` - Comprehensive field usage guide
+
+### Key Classes (v2.1)
+- `FieldManager` - Handles field definitions, presets, and results
+- Storage uses `chrome.storage.sync` for cross-device synchronization
+
+To modify the extension, edit these files and reload the extension in Chrome.
+
+## Future Features (TODO)
+
+### Premium Features
+- **Background Monitoring**: Premium users will be able to:
+  - Toggle an option to create background jobs that run independently
+  - Include or exclude cookies from their current session
+  - Monitor public-facing sites without authentication
+  - Set frequencies as low as 5 seconds for both live checks and background jobs
+  - Receive continuous monitoring results from the AI agent deployed in the background
+  - Flag in requests to distinguish between live and background captures 
