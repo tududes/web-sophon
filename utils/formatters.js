@@ -72,9 +72,9 @@ export function handleImageZoom(e) {
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-    // Set transform origin to mouse position
+    // Set transform origin to mouse position and apply 4x zoom
     img.style.transformOrigin = `${x}% ${y}%`;
-    img.style.transform = 'scale(2)';
+    img.style.transform = 'scale(4)'; // 4x zoom when hovering
     img.style.zIndex = '1000';
     img.style.position = 'relative';
 }
