@@ -20,10 +20,12 @@ export class WebhookService {
 
                 console.log(`Loading fields for domain ${domain}:`, domainFields);
 
-                fields = domainFields.map(f => ({
-                    name: this.captureService.sanitizeFieldName(f.friendlyName || f.name),
-                    criteria: this.captureService.escapeJsonString(f.description)
-                }));
+                fields = domainFields
+                    .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
+                    .map(f => ({
+                        name: this.captureService.sanitizeFieldName(f.friendlyName || f.name),
+                        criteria: this.captureService.escapeJsonString(f.description)
+                    }));
 
                 // If no fields configured, still track the event
                 if (fields.length === 0) {

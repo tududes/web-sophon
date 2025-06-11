@@ -420,6 +420,7 @@ class SimplePopupController {
                 const name = nameInput.value.trim();
                 const description = descriptionTextarea.value.trim();
 
+                // Only include fields that have both name and description
                 if (name && description) {
                     fields.push({
                         name: name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
@@ -757,6 +758,16 @@ class SimplePopupController {
                 const webhookPayloadInput = item.querySelector('.webhook-payload-input');
 
                 if (nameInput && descriptionInput) {
+                    // Only save fields that have both name and description
+                    const name = nameInput.value.trim();
+                    const description = descriptionInput.value.trim();
+
+                    // Skip empty fields
+                    if (!name || !description) {
+                        console.log(`Skipping empty field: name="${name}", description="${description}"`);
+                        return;
+                    }
+
                     // Get last result and event ID if available
                     const lastResultContainer = item.querySelector('.field-last-result');
                     const lastResultElement = lastResultContainer?.querySelector('.result-text');
@@ -790,8 +801,8 @@ class SimplePopupController {
 
                     fieldsData.push({
                         id: fieldId,
-                        name: nameInput.value || '',
-                        description: descriptionInput.value || '',
+                        name: name,  // Use trimmed value
+                        description: description,  // Use trimmed value
                         webhookEnabled: webhookToggle ? webhookToggle.checked : false,
                         webhookUrl: webhookUrlInput ? webhookUrlInput.value : '',
                         webhookPayload: webhookPayloadInput ? webhookPayloadInput.value : '',
@@ -816,9 +827,25 @@ class SimplePopupController {
             if (!this.currentDomain) return;
 
             const data = await chrome.storage.local.get([`fields_${this.currentDomain}`]);
-            const fieldsData = data[`fields_${this.currentDomain}`];
+            let fieldsData = data[`fields_${this.currentDomain}`];
 
             if (fieldsData && fieldsData.length > 0) {
+                // Clean up any empty fields before loading
+                const cleanedFields = fieldsData.filter(field => {
+                    const hasValidName = field.name && field.name.trim();
+                    const hasValidDescription = field.description && field.description.trim();
+                    return hasValidName && hasValidDescription;
+                });
+
+                // If we filtered out any fields, save the cleaned version
+                if (cleanedFields.length !== fieldsData.length) {
+                    console.log(`Cleaned ${fieldsData.length - cleanedFields.length} empty fields for ${this.currentDomain}`);
+                    await chrome.storage.local.set({
+                        [`fields_${this.currentDomain}`]: cleanedFields
+                    });
+                    fieldsData = cleanedFields;
+                }
+
                 // Clear existing fields
                 if (this.elements.fieldsContainer) {
                     this.elements.fieldsContainer.innerHTML = '';
@@ -826,6 +853,12 @@ class SimplePopupController {
 
                 // Recreate fields from saved data
                 fieldsData.forEach(fieldData => {
+                    // Skip fields with empty name or description
+                    if (!fieldData.name || !fieldData.name.trim() ||
+                        !fieldData.description || !fieldData.description.trim()) {
+                        console.log('Skipping empty field during load:', fieldData);
+                        return;
+                    }
                     this.createFieldFromData(fieldData);
                 });
 

@@ -18,10 +18,12 @@ export class CaptureService {
         // Get domain-specific fields for automatic captures
         chrome.storage.sync.get([`fields_${domain}`], (data) => {
             const domainFields = data[`fields_${domain}`] || [];
-            const fields = domainFields.map(f => ({
-                name: this.sanitizeFieldName(f.friendlyName || f.name),
-                criteria: this.escapeJsonString(f.description)
-            }));
+            const fields = domainFields
+                .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
+                .map(f => ({
+                    name: this.sanitizeFieldName(f.friendlyName || f.name),
+                    criteria: this.escapeJsonString(f.description)
+                }));
 
             console.log(`Starting capture with fields for ${domain}:`, fields);
 
@@ -33,10 +35,12 @@ export class CaptureService {
                 // Re-fetch fields each time in case they've changed
                 chrome.storage.sync.get([`fields_${domain}`], (data) => {
                     const currentFields = data[`fields_${domain}`] || [];
-                    const apiFields = currentFields.map(f => ({
-                        name: this.sanitizeFieldName(f.friendlyName || f.name),
-                        criteria: this.escapeJsonString(f.description)
-                    }));
+                    const apiFields = currentFields
+                        .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
+                        .map(f => ({
+                            name: this.sanitizeFieldName(f.friendlyName || f.name),
+                            criteria: this.escapeJsonString(f.description)
+                        }));
                     webhookService.captureAndSend(tabId, domain, webhookUrl, false, apiFields);
                 });
             }, interval * 1000);
