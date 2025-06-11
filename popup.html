@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>WebSophon</h1>
+
+        <div class="section">
+            <h2>Current Domain</h2>
+            <div id="current-domain" class="domain-display">Loading...</div>
+        </div>
+
+        <div class="section">
+            <h2>Capture Settings</h2>
+
+            <div class="form-group">
+                <label for="webhook-url">n8n Webhook URL:</label>
+                <input type="url" id="webhook-url" placeholder="https://your-n8n.com/webhook/..." />
+            </div>
+
+            <div class="form-group">
+                <label for="capture-interval">Capture Interval:</label>
+                <select id="capture-interval">
+                    <option value="10">Every 10 seconds</option>
+                    <option value="15">Every 15 seconds</option>
+                    <option value="30" selected>Every 30 seconds</option>
+                    <option value="60">Every 1 minute</option>
+                    <option value="300">Every 5 minutes</option>
+                    <option value="600">Every 10 minutes</option>
+                    <option value="900">Every 15 minutes</option>
+                    <option value="1800">Every 30 minutes</option>
+                    <option value="3600">Every 1 hour</option>
+                    <option value="14400">Every 4 hours</option>
+                    <option value="21600">Every 6 hours</option>
+                    <option value="43200">Every 12 hours</option>
+                    <option value="86400">Every 1 day</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Evaluation Fields</h2>
+
+            <div class="preset-controls">
+                <select id="preset-selector">
+                    <option value="">Select a preset...</option>
+                </select>
+                <button id="save-preset-btn" class="small-button">💾 Save as Preset</button>
+                <button id="delete-preset-btn" class="small-button danger">🗑️ Delete</button>
+            </div>
+
+            <div id="fields-container" class="fields-container">
+                <!-- Fields will be dynamically added here -->
+            </div>
+
+            <button id="add-field-btn" class="add-field-button">
+                ➕ Add Field
+            </button>
+        </div>
+
+        <div class="section">
+            <h2>Capture Control</h2>
+
+            <div class="consent-group">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="consent-toggle">
+                    <span class="slider"></span>
+                </label>
+                <span class="consent-label">Enable screenshot capture for this domain</span>
+            </div>
+
+            <button id="capture-now" class="capture-button">
+                📸 Capture Screenshot Now
+            </button>
+
+            <div id="results-container" class="results-container">
+                <!-- Results will be displayed here -->
+            </div>
+        </div>
+
+        <div id="status" class="status-message"></div>
+
+        <div class="section">
+            <h2>Known Domains</h2>
+            <div id="domains-container" class="domains-container">
+                <!-- Domain items will be dynamically added here -->
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Event History</h2>
+
+            <div class="history-controls">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="show-true-only">
+                    <span>Show only TRUE events</span>
+                </label>
+                <button id="clear-history-btn" class="small-button danger">Clear History</button>
+            </div>
+
+            <div id="history-container" class="history-container">
+                <!-- History items will be dynamically added here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

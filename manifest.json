@@ -1,0 +1,47 @@
+{
+    "manifest_version": 3,
+    "name": "WebSophon",
+    "version": "2.2.0",
+    "description": "Quantum web observer: Monitor, evaluate truth, trigger events",
+    "permissions": [
+        "activeTab",
+        "storage",
+        "tabs",
+        "scripting"
+    ],
+    "host_permissions": [
+        "http://*/*",
+        "https://*/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icon_16.png",
+            "32": "icon_32.png",
+            "48": "icon_48.png",
+            "128": "icon_128.png"
+        }
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "http://*/*",
+                "https://*/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+    "icons": {
+        "16": "icon_16.png",
+        "32": "icon_32.png",
+        "48": "icon_48.png",
+        "128": "icon_128.png",
+        "256": "icon_256.png"
+    }
+}
