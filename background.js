@@ -53,6 +53,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: true });
             break;
 
+        case 'clearHistory':
+            // Clear the events from memory
+            recentEvents = [];
+            unreadTrueCount = 0;
+            updateBadge();
+            // Clear from storage as well
+            chrome.storage.local.set({ recentEvents: [] });
+            sendResponse({ success: true });
+            break;
+
         case 'captureNow':
             // Manual capture
             console.log('Manual capture requested:', request);
@@ -269,16 +279,36 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
             clearTimeout(timeoutId);
         } catch (fetchError) {
             clearTimeout(timeoutId);
+            console.log('Fetch error occurred:', fetchError);
+
+            let errorMessage;
             if (fetchError.name === 'AbortError') {
-                throw new Error('Request timed out after 5 minutes');
+                errorMessage = 'Request timed out after 5 minutes';
+            } else {
+                errorMessage = fetchError.message;
             }
-            throw fetchError;
+
+            // Update the pending event with the error
+            updateEvent(eventId, null, null, errorMessage, null);
+
+            // Send notification on manual capture
+            if (isManual) {
+                chrome.runtime.sendMessage({
+                    action: 'captureComplete',
+                    success: false,
+                    error: errorMessage
+                });
+            }
+
+            return { success: false, error: errorMessage };
         }
 
         console.log(`Webhook response status: ${webhookResponse.status}`);
 
+        // Don't throw error for non-200 status codes, let them be processed
+        console.log(`Webhook response received with status: ${webhookResponse.status}`);
         if (!webhookResponse.ok) {
-            throw new Error(`Webhook returned ${webhookResponse.status}: ${webhookResponse.statusText}`);
+            console.log(`Non-success status: ${webhookResponse.status}: ${webhookResponse.statusText}`);
         }
 
         // Try to parse response for field results
@@ -287,12 +317,16 @@ async function captureAndSend(tabId, domain, webhookUrl, isManual = false, field
         let responseText = '';
         try {
             responseText = await webhookResponse.text();
+            console.log('Raw response text:', responseText);
             responseData = JSON.parse(responseText);
             console.log('Webhook response data:', responseData);
         } catch (e) {
             parseError = e.message;
             console.log('Response was not JSON or could not be parsed:', e);
+            console.log('Raw response that failed to parse:', responseText);
         }
+
+        console.log(`Updating event ${eventId} with response. Status: ${webhookResponse.status}, Has data: ${!!responseData}`);
 
         // Update the existing event with the response data
         updateEvent(eventId, responseData, webhookResponse.status, parseError, responseText);
@@ -476,14 +510,42 @@ function updateEvent(eventId, results, httpStatus, error, responseText) {
         }
     }
 
-    // Save updated events
-    chrome.storage.local.set({ recentEvents: recentEvents });
+    console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}`);
 
-    // Notify popup of the update
+    // Save updated events
+    chrome.storage.local.set({ recentEvents: recentEvents }, () => {
+        console.log('Updated events saved to storage');
+    });
+
+    // Notify all tabs and popups of the update
+    // First try runtime message (for popup)
     chrome.runtime.sendMessage({
         action: 'eventUpdated',
         eventId: eventId,
         event: event
+    }, (response) => {
+        // Log if message was received
+        if (chrome.runtime.lastError) {
+            console.log('No popup listening for event update:', chrome.runtime.lastError.message);
+        } else {
+            console.log('Event update sent to popup for event:', eventId);
+        }
+    });
+
+    // Also send to all tabs in case multiple popups are open
+    chrome.tabs.query({}, (tabs) => {
+        tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, {
+                action: 'eventUpdated',
+                eventId: eventId,
+                event: event
+            }, () => {
+                // Ignore errors for tabs that don't have our content script
+                if (chrome.runtime.lastError) {
+                    // This is expected for most tabs
+                }
+            });
+        });
     });
 }
 

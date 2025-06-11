@@ -166,6 +166,7 @@ You can use any image editor or online tool to create these icons.
   - Check that you have fields configured for the domain
   - Use the test page `test-events.html` to verify event logging
   - Open Chrome DevTools and check the console for error messages
+  - Enable debug mode: `localStorage.setItem('websophon-debug', 'true')` in console, then reload extension
 - **Settings appear on wrong domain**: Settings are now domain-specific, check the "Known Domains" section
 - **Debugging failed captures**:
   - Click on any event in history to see full details
@@ -174,6 +175,26 @@ You can use any image editor or online tool to create these icons.
   - Check Response Data to see what the webhook returned
   - Each field shows its last result - click to jump to that event
 - **Storage quota exceeded**: The extension automatically removes old screenshots if storage is full
+- **History not clearing permanently**: Fixed - now clears both memory and storage
+- **Responses not updating events**: Fixed - events now update in real-time when webhook responses arrive
+
+### Debug Mode
+To enable debug mode and access additional testing features:
+1. Open Chrome DevTools (F12) on any page
+2. Go to Console tab
+3. Type: `localStorage.setItem('websophon-debug', 'true')`
+4. Reload the WebSophon extension popup
+5. You'll see a "🧪 Test Events" button in the Event History section
+6. This creates sample events with different statuses for testing the interface
+
+### Debug Storage Inspector
+For advanced debugging of storage issues, load the debug script:
+1. Copy the contents of `debug-storage.js`
+2. Paste into Chrome DevTools console
+3. Use the available functions:
+   - `inspectWebSophonStorage()` - View all stored data
+   - `clearWebSophonStorage()` - Clear all data (use carefully!)
+   - `enableDebugMode()` / `disableDebugMode()` - Toggle debug features
 
 ## Development
 

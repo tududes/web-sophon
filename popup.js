@@ -264,8 +264,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         historyContainer: document.getElementById('history-container'),
         showTrueOnlyCheckbox: document.getElementById('show-true-only'),
         clearHistoryBtn: document.getElementById('clear-history-btn'),
-        domainsContainer: document.getElementById('domains-container')
+        domainsContainer: document.getElementById('domains-container'),
+        testEventsBtn: document.getElementById('test-events-btn')
     };
+
+    // Show test button if in development mode (when URL contains 'test' or localStorage debug flag set)
+    if (window.location.href.includes('test') ||
+        window.location.href.includes('localhost') ||
+        localStorage.getItem('websophon-debug') === 'true') {
+        elements.testEventsBtn.style.display = '';
+        console.log('Debug mode enabled - showing test events button');
+    }
 
     // Test background script communication
     try {
@@ -436,12 +445,18 @@ function setupEventListeners() {
             // Reload history to show new event
             loadHistory();
         } else if (message.action === 'eventUpdated') {
+            console.log('Received eventUpdated message for event:', message.eventId);
             // An event has been updated with response data
             // Update the specific event in our local array
             const eventIndex = recentEvents.findIndex(e => e.id === message.eventId);
             if (eventIndex !== -1) {
+                console.log('Updating event in local array:', message.event);
                 recentEvents[eventIndex] = message.event;
                 renderHistory();
+            } else {
+                console.log('Event not found in local array, reloading history');
+                // Event not in our array, reload history
+                loadHistory();
             }
 
             // If it's a field result update, update fields too
@@ -464,9 +479,12 @@ function setupEventListeners() {
                 // Update the popup status to show completion
                 if (message.event.error) {
                     showStatus(`Request failed: ${message.event.error}`, 'error');
-                } else {
+                } else if (message.event.status === 'completed') {
                     showStatus('Webhook response received!', 'success');
                 }
+            } else if (message.event.status === 'completed' && message.event.error) {
+                // No fields but there was an error
+                showStatus(`Request completed with error: ${message.event.error}`, 'error');
             }
         }
     });
@@ -479,12 +497,89 @@ function setupEventListeners() {
 
     elements.clearHistoryBtn.addEventListener('click', () => {
         if (confirm('Clear all event history?')) {
-            chrome.storage.local.set({ recentEvents: [] });
+            // Clear local array
             recentEvents = [];
             renderHistory();
-            chrome.runtime.sendMessage({ action: 'markEventsRead' });
+            // Tell background script to clear its array too
+            chrome.runtime.sendMessage({ action: 'clearHistory' }, (response) => {
+                if (response && response.success) {
+                    showStatus('History cleared', 'info');
+                }
+            });
         }
     });
+
+    // Test events button (for debugging)
+    if (elements.testEventsBtn) {
+        elements.testEventsBtn.addEventListener('click', () => {
+            createTestEvents();
+        });
+    }
+}
+
+// Create test events for debugging
+function createTestEvents() {
+    const testEvents = [
+        {
+            id: Date.now() + 1,
+            timestamp: new Date().toISOString(),
+            domain: fieldManager.currentDomain,
+            url: 'https://example.com/test-pending',
+            success: true,
+            httpStatus: null,
+            error: null,
+            fields: [],
+            reason: '',
+            hasTrueResult: false,
+            read: false,
+            screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+            request: { test: 'pending request' },
+            response: null,
+            status: 'pending'
+        },
+        {
+            id: Date.now() + 2,
+            timestamp: new Date(Date.now() - 60000).toISOString(),
+            domain: fieldManager.currentDomain,
+            url: 'https://example.com/test-success',
+            success: true,
+            httpStatus: 200,
+            error: null,
+            fields: [
+                { name: 'test_field', result: true, probability: 0.95 },
+                { name: 'another_field', result: false, probability: 0.23 }
+            ],
+            reason: 'Test evaluation completed successfully',
+            hasTrueResult: true,
+            read: false,
+            screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+            request: { test: 'success request' },
+            response: '{"fields":{"test_field":{"boolean":true,"probability":0.95},"another_field":{"boolean":false,"probability":0.23}},"reason":"Test evaluation completed successfully"}',
+            status: 'completed'
+        },
+        {
+            id: Date.now() + 3,
+            timestamp: new Date(Date.now() - 120000).toISOString(),
+            domain: fieldManager.currentDomain,
+            url: 'https://example.com/test-error',
+            success: false,
+            httpStatus: 500,
+            error: 'Internal Server Error',
+            fields: [],
+            reason: '',
+            hasTrueResult: false,
+            read: false,
+            screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+            request: { test: 'error request' },
+            response: '{"error":"Internal server error"}',
+            status: 'completed'
+        }
+    ];
+
+    // Add test events to the array
+    recentEvents = testEvents.concat(recentEvents);
+    renderHistory();
+    showStatus('Test events created', 'info');
 }
 
 // Handle manual capture
@@ -860,12 +955,29 @@ function showStatus(message, type) {
     }, 3000);
 }
 
-// Load history from background
+// Load history from background and storage
 async function loadHistory() {
-    chrome.runtime.sendMessage({ action: 'getRecentEvents' }, (response) => {
+    console.log('Loading history...');
+
+    // First try to get from background script (most current)
+    chrome.runtime.sendMessage({ action: 'getRecentEvents' }, async (response) => {
         if (response && response.events) {
+            console.log('Loaded events from background:', response.events.length);
             recentEvents = response.events;
             renderHistory();
+        } else {
+            console.log('No response from background, loading from storage directly');
+            // Fallback: load directly from storage
+            try {
+                const storage = await chrome.storage.local.get(['recentEvents']);
+                if (storage.recentEvents) {
+                    recentEvents = storage.recentEvents;
+                    console.log('Loaded events from storage:', recentEvents.length);
+                    renderHistory();
+                }
+            } catch (error) {
+                console.error('Error loading events from storage:', error);
+            }
         }
     });
 }
@@ -890,8 +1002,10 @@ function renderHistory() {
         const unreadClass = event.hasTrueResult && !event.read ? 'unread' : '';
         const errorClass = !event.success ? 'error' : '';
 
-        // Handle different types of events
+        // Handle different types of events with debug info
         let statusHtml = '';
+        console.log(`Rendering event ${event.id}: status=${event.status}, success=${event.success}, httpStatus=${event.httpStatus}, fields=${event.fields?.length || 0}`);
+
         if (event.status === 'pending') {
             statusHtml = `<span class="history-status pending">⏳ Waiting for response...</span>`;
         } else if (!event.success) {
@@ -899,7 +1013,9 @@ function renderHistory() {
         } else if (event.httpStatus && event.httpStatus !== 200) {
             statusHtml = `<span class="history-status warning">⚠️ HTTP ${event.httpStatus}</span>`;
         } else if (event.fields && event.fields.length > 0) {
-            statusHtml = `<span class="history-status success">✓ Evaluated</span>`;
+            statusHtml = `<span class="history-status success">✓ Evaluated (${event.fields.length} fields)</span>`;
+        } else if (event.httpStatus && event.httpStatus === 200) {
+            statusHtml = `<span class="history-status success">✓ HTTP 200 (No fields)</span>`;
         } else {
             statusHtml = `<span class="history-status">📸 Captured</span>`;
         }
