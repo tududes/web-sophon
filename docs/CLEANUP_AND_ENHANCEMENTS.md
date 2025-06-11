@@ -33,8 +33,13 @@ WebSophon/
 ├── popup-main.js              # Main popup controller
 ├── background-main.js         # Service worker entry point
 ├── content.js                 # Page navigation monitoring
-├── styles.css                 # UI styling
-├── icon_*.png                 # Extension icons
+├── assets/                    # UI assets
+│   ├── styles.css            # UI styling
+│   ├── icon_16.png           # Extension icons
+│   ├── icon_32.png           # (16, 32, 48, 128, 256px)
+│   ├── icon_48.png
+│   ├── icon_128.png
+│   └── icon_256.png
 ├── components/                # UI component modules
 │   ├── FieldManager.js       # Field management + webhooks
 │   ├── HistoryManager.js     # Event history management
@@ -68,7 +73,9 @@ WebSophon/
 │   ├── test-events.html
 │   ├── test.html
 │   ├── debug-storage.js
-│   └── test-field-webhook-history.html
+│   ├── test-field-webhook-history.html
+│   ├── test-cancellation-fix.html
+│   └── test-dark-theme.html
 ├── tools/                     # Development utilities
 │   └── generate_icons.py
 └── backup/                    # Original monolithic files
@@ -206,6 +213,73 @@ To verify the enhancement works correctly:
 ### Testing:
 - `test/test-field-webhook-history.html` - Comprehensive validation guide
 
+## 🔧 Cancellation Functionality Fix
+
+### Problem Resolved
+The extension's request cancellation had a critical race condition bug where cancelled requests would continue to hang and not properly update the UI or event history.
+
+### Solution Implemented
+- **Added userCancelledRequests Set**: Tracks user-initiated cancellations before AbortError triggers
+- **Fixed Race Condition**: Proper sequencing prevents confusion between timeouts and user cancellation  
+- **Immediate UI Updates**: Events and field status update immediately upon cancellation
+- **Memory Leak Prevention**: Automatic cleanup of tracking flags prevents accumulation
+- **Enhanced Logging**: Clear console messages for debugging cancellation flow
+
+### Technical Changes
+- `WebhookService.js`: Added userCancelledRequests tracking and proper AbortError handling
+- `popup-main.js`: Enhanced cancellation handler with immediate history reload
+- `test/test-cancellation-fix.html`: Comprehensive test verification
+
+### Results
+✅ **Immediate Response**: Cancellation takes effect instantly - no more hanging requests  
+✅ **Accurate Status**: Field status and history events correctly show cancelled state  
+✅ **Clear Feedback**: User receives immediate confirmation that cancellation worked  
+✅ **Reliable Operation**: No race conditions or stuck states - consistent behavior
+
+## 🎨 Modern UI & Dark Theme Implementation
+
+### Professional Interface Overhaul
+WebSophon now features a completely modernized interface with professional branding and comprehensive theming system.
+
+### New Features Added
+- **🎯 Professional Branding**: WebSophon icon in header with clickable GitHub link
+- **🌙 Smart Theme System**: Automatic system preference detection with manual toggle  
+- **🎨 Modern UI Components**: CSS custom properties with consistent color schemes
+- **📁 Organized Assets**: Clean file structure with dedicated assets directory
+
+### Technical Implementation
+- **CSS Variables System**: Complete color theming with light/dark mode support
+- **System Integration**: Automatic detection of `prefers-color-scheme` setting
+- **Global Preference Storage**: Theme choice persists across all extension instances  
+- **Smooth Transitions**: Professional animations and hover effects throughout
+- **Accessibility Support**: High contrast mode and reduced motion support
+
+### Header Enhancement  
+- Added WebSophon icon (32px) next to title
+- Clickable header opens https://github.com/tududes/web-sophon in new tab
+- Gradient background with professional styling
+- Theme toggle button with animated state changes
+
+### Assets Organization
+- Created `assets/` directory for images and CSS
+- Moved all `.png` icons and `styles.css` to `assets/`
+- Updated `manifest.json` and `popup.html` references
+- Clean separation of code and assets
+
+### Theme System Features
+✅ **System Preference Detection**: Automatically matches user's OS dark/light setting  
+✅ **Manual Override**: Toggle button allows user preference override
+✅ **Global Persistence**: Theme choice saved and synchronized across extension instances
+✅ **Smooth Transitions**: Professional fade animations between theme changes
+✅ **Comprehensive Coverage**: All UI components update properly with theme changes
+
+### Files Enhanced
+- `popup.html`: Added header section with icon and theme toggle
+- `assets/styles.css`: Complete CSS rewrite with variable-based theming
+- `popup-main.js`: Added theme management and GitHub link functionality
+- `manifest.json`: Updated icon paths to use assets directory
+- `test/test-dark-theme.html`: Comprehensive testing and demonstration guide
+
 ## ✅ Enhancement Status: COMPLETE
 
-Both main webhook responses AND field-specific webhook responses are now fully recorded in the extension's event history with complete response data preservation, comprehensive error handling, and unified debugging visibility. 
+WebSophon now includes: field webhook history recording, reliable request cancellation, organized assets structure, modern dark/light theme system, professional branding with GitHub integration, and comprehensive UI overhaul - all while maintaining 100% backward compatibility and functionality. 

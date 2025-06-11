@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSophon Dark Theme & Modern UI</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #4299e1;
+            border-bottom: 3px solid #4299e1;
+            padding-bottom: 10px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .feature-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+
+        .feature-card h3 {
+            color: #2d3748;
+            margin-top: 0;
+        }
+
+        .demo-section {
+            background: #e8f4fd;
+            border-left: 4px solid #4299e1;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 5px 5px 0;
+        }
+
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border: 1px solid #e9ecef;
+            font-family: 'Monaco', monospace;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #4299e1;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .step {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+
+        .step-number {
+            background: #4299e1;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .theme-preview {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .theme-card {
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .light-theme {
+            background: #ffffff;
+            border: 2px solid #dee2e6;
+            color: #212529;
+        }
+
+        .dark-theme {
+            background: #1a1d23;
+            border: 2px solid #4a5568;
+            color: #f7fafc;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎨 WebSophon Modern UI & Dark Theme</h1>
+
+        <div class="demo-section">
+            <h2>✨ Complete UI Overhaul</h2>
+            <p>WebSophon now features a modern, intuitive interface with full dark/light theme support, professional
+                branding, and enhanced user experience across all components.</p>
+        </div>
+
+        <h2>🚀 New Features Implemented</h2>
+
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>🎯 Professional Branding</h3>
+                <ul>
+                    <li>WebSophon icon in header</li>
+                    <li>Clickable header → GitHub repo</li>
+                    <li>Gradient header background</li>
+                    <li>Modern typography & spacing</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>🌙 Smart Theme System</h3>
+                <ul>
+                    <li>Automatic system theme detection</li>
+                    <li>Manual theme toggle button</li>
+                    <li>Global preference storage</li>
+                    <li>Smooth theme transitions</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>🎨 Modern UI Components</h3>
+                <ul>
+                    <li>CSS custom properties (variables)</li>
+                    <li>Consistent color scheme</li>
+                    <li>Enhanced accessibility</li>
+                    <li>Responsive design</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>📁 Organized Assets</h3>
+                <ul>
+                    <li>New <code>assets/</code> directory</li>
+                    <li>Clean file structure</li>
+                    <li>Updated manifest references</li>
+                    <li>Professional organization</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>🎨 Theme Preview</h2>
+
+        <div class="theme-preview">
+            <div class="theme-card light-theme">
+                <h3>☀️ Light Theme</h3>
+                <p>Clean, bright interface perfect for daytime use</p>
+                <div style="background: #007bff; color: white; padding: 8px; border-radius: 4px; margin: 10px 0;">
+                    Primary Actions</div>
+                <div style="background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #dee2e6;">Secondary
+                    Elements</div>
+            </div>
+
+            <div class="theme-card dark-theme">
+                <h3>🌙 Dark Theme</h3>
+                <p>Easy on the eyes for low-light environments</p>
+                <div style="background: #4299e1; color: white; padding: 8px; border-radius: 4px; margin: 10px 0;">
+                    Primary Actions</div>
+                <div style="background: #2d3748; padding: 8px; border-radius: 4px; border: 1px solid #4a5568;">Secondary
+                    Elements</div>
+            </div>
+        </div>
+
+        <h2>🧪 Testing Instructions</h2>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <strong>Load the Extension</strong>
+            <p>Open the WebSophon extension popup and notice the new modern interface</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <strong>Test Theme Detection</strong>
+            <p>The extension should automatically match your system's light/dark preference</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <strong>Toggle Theme Manually</strong>
+            <p>Click the theme toggle button (🌙/☀️) in the top-right corner to switch themes</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">4</span>
+            <strong>Test Header Link</strong>
+            <p>Click the WebSophon icon and title to open the GitHub repository in a new tab</p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">5</span>
+            <strong>Verify Persistence</strong>
+            <p>Close and reopen the popup - your theme preference should be remembered</p>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔧 Technical Implementation</h2>
+            <p><strong>CSS Variables System:</strong></p>
+            <div class="code-block">:root {
+                --bg-primary: #ffffff; /* Light theme */
+                --text-primary: #212529;
+                --accent-primary: #007bff;
+                }
+
+                [data-theme="dark"] {
+                --bg-primary: #1a1d23; /* Dark theme */
+                --text-primary: #f7fafc;
+                --accent-primary: #4299e1;
+                }</div>
+
+            <p><strong>Theme Management:</strong></p>
+            <ul>
+                <li>Automatic system preference detection via <code>prefers-color-scheme</code></li>
+                <li>User preference storage in <code>chrome.storage.local</code></li>
+                <li>Global theme state across all extension instances</li>
+                <li>Smooth transitions with CSS animations</li>
+            </ul>
+        </div>
+
+        <h2>✅ Expected Behaviors</h2>
+
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>🎯 Header Functionality</h3>
+                <ul>
+                    <li>✅ WebSophon icon displays properly</li>
+                    <li>✅ Header has gradient background</li>
+                    <li>✅ Clicking opens GitHub in new tab</li>
+                    <li>✅ Hover effects work smoothly</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>🌙 Theme System</h3>
+                <ul>
+                    <li>✅ Auto-detects system preference</li>
+                    <li>✅ Toggle button works instantly</li>
+                    <li>✅ Preference persists across sessions</li>
+                    <li>✅ Smooth color transitions</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>🎨 UI Components</h3>
+                <ul>
+                    <li>✅ All colors update with theme</li>
+                    <li>✅ Buttons have hover effects</li>
+                    <li>✅ Form elements styled consistently</li>
+                    <li>✅ Status messages themed properly</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>📱 Responsive Design</h3>
+                <ul>
+                    <li>✅ Layout adapts to different sizes</li>
+                    <li>✅ Touch-friendly interaction areas</li>
+                    <li>✅ Accessibility features maintained</li>
+                    <li>✅ High contrast support</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔍 Troubleshooting</h2>
+            <p>If you encounter issues:</p>
+            <ul>
+                <li><strong>Theme not applying:</strong> Check browser console for errors</li>
+                <li><strong>Header link not working:</strong> Verify popup blockers aren't interfering</li>
+                <li><strong>Icons not showing:</strong> Confirm assets directory structure is correct</li>
+                <li><strong>Preference not saving:</strong> Check Chrome storage permissions</li>
+            </ul>
+        </div>
+
+        <p style="text-align: center; margin-top: 40px; color: #6c757d;">
+            <strong>Enhancement Status:</strong>
+            <span class="badge">COMPLETE ✅</span>
+        </p>
+    </div>
+</body>
+
+</html>

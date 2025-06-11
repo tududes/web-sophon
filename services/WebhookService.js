@@ -4,6 +4,7 @@ export class WebhookService {
         this.captureService = captureService;
         this.eventService = eventService;
         this.pendingRequests = new Map(); // Map of eventId to AbortController for cancellation
+        this.userCancelledRequests = new Set(); // Track user-initiated cancellations
     }
 
     // Capture screenshot and send to webhook
@@ -101,6 +102,7 @@ export class WebhookService {
                 });
                 clearTimeout(timeoutId);
                 this.pendingRequests.delete(eventId); // Remove from pending when completed
+                this.userCancelledRequests.delete(eventId); // Clean up cancellation flag
 
                 console.log(`Webhook response status: ${webhookResponse.status}`);
 
@@ -151,14 +153,27 @@ export class WebhookService {
 
                 // Determine error message and response text
                 if (fetchError.name === 'AbortError') {
-                    // Check if it was user-cancelled or timeout
-                    finalError = this.pendingRequests.has(eventId) ? 'Request timed out after 5 minutes' : 'Request cancelled by user';
+                    // Check if it was user-cancelled or timeout using our tracking flag
+                    if (this.userCancelledRequests.has(eventId)) {
+                        finalError = 'Request cancelled by user';
+                        console.log(`Request ${eventId} was cancelled by user`);
+                        // Clean up the cancellation flag
+                        this.userCancelledRequests.delete(eventId);
+                        // Don't update the event here - it was already updated in cancelRequest()
+                        return { success: false, error: finalError };
+                    } else {
+                        finalError = 'Request timed out after 5 minutes';
+                        console.log(`Request ${eventId} timed out`);
+                    }
                     responseText = finalError; // Use error message as response for cancelled requests
                 } else {
                     finalError = fetchError.message;
                     // Use error response text if available, otherwise use error message
                     responseText = errorResponseText || fetchError.message;
                 }
+
+                // Clean up cancellation flag for non-AbortError cases
+                this.userCancelledRequests.delete(eventId);
 
                 // Set httpStatus to indicate network/fetch error
                 webhookResponse = { status: null }; // Network error, no HTTP status
@@ -247,13 +262,23 @@ export class WebhookService {
     cancelRequest(eventId) {
         if (this.pendingRequests.has(eventId)) {
             const controller = this.pendingRequests.get(eventId);
+
+            // Mark this as a user-initiated cancellation BEFORE aborting
+            this.userCancelledRequests.add(eventId);
+
             controller.abort();
             this.pendingRequests.delete(eventId);
-            console.log(`Cancelled request for event ${eventId}`);
+            console.log(`User cancelled request for event ${eventId}`);
 
             // Update the event as cancelled with cancellation message as response
             const cancellationMessage = 'Request cancelled by user';
             this.eventService.updateEvent(eventId, null, null, cancellationMessage, cancellationMessage);
+
+            // Clean up the cancellation flag after a short delay (in case the AbortError handler runs)
+            setTimeout(() => {
+                this.userCancelledRequests.delete(eventId);
+            }, 1000);
+
             return { success: true };
         } else {
             return { success: false, error: 'Request not found or already completed' };

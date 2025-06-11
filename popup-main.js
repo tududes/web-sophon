@@ -35,8 +35,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         showTrueOnlyCheckbox: document.getElementById('show-true-only'),
         clearHistoryBtn: document.getElementById('clear-history-btn'),
         domainsContainer: document.getElementById('domains-container'),
-        testEventsBtn: document.getElementById('test-events-btn')
+        testEventsBtn: document.getElementById('test-events-btn'),
+        headerLink: document.getElementById('header-link'),
+        themeToggle: document.getElementById('theme-toggle')
     };
+
+    // Initialize theme system
+    initializeTheme();
 
     // Set elements in all managers
     uiManager.setElements(elements);
@@ -101,17 +106,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Set up cancel request handler
     uiManager.setCancelRequestHandler((eventId) => {
+        console.log(`Cancelling request ${eventId}`);
         chrome.runtime.sendMessage({
             action: 'cancelRequest',
             eventId: eventId
         }, (response) => {
             if (response && response.success) {
+                console.log(`Request ${eventId} cancelled successfully`);
                 fieldManager.markFieldsCancelled(eventId);
                 fieldManager.saveToStorage();
                 uiManager.renderFields();
+                // Reload history to show the cancelled event
+                historyManager.loadHistory();
                 uiManager.showStatus('Request cancelled', 'info');
             } else {
-                uiManager.showStatus('Failed to cancel request', 'error');
+                console.error(`Failed to cancel request ${eventId}:`, response);
+                uiManager.showStatus(`Failed to cancel request: ${response?.error || 'Unknown error'}`, 'error');
             }
         });
     });
@@ -319,6 +329,18 @@ function setupEventListeners() {
             }
         });
     }
+
+    // Header link to GitHub
+    if (elements.headerLink) {
+        elements.headerLink.addEventListener('click', () => {
+            chrome.tabs.create({ url: 'https://github.com/tududes/web-sophon' });
+        });
+    }
+
+    // Theme toggle
+    if (elements.themeToggle) {
+        elements.themeToggle.addEventListener('click', toggleTheme);
+    }
 }
 
 // Handle manual capture
@@ -413,4 +435,66 @@ chrome.runtime.sendMessage({
     if (response && response.isActive) {
         uiManager.showStatus('Capture is currently active', 'info');
     }
-}); 
+});
+
+// Theme Management Functions
+function initializeTheme() {
+    // Check for saved theme preference, otherwise use system preference
+    chrome.storage.local.get(['themePreference'], (result) => {
+        let theme = result.themePreference;
+
+        // If no saved preference, detect system preference
+        if (!theme) {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        applyTheme(theme);
+        updateThemeToggleIcon(theme);
+    });
+
+    // Listen for system theme changes (only if user hasn't set preference)
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addListener((e) => {
+        chrome.storage.local.get(['themePreference'], (result) => {
+            // Only auto-update if user hasn't manually set a preference
+            if (!result.themePreference) {
+                const theme = e.matches ? 'dark' : 'light';
+                applyTheme(theme);
+                updateThemeToggleIcon(theme);
+            }
+        });
+    });
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+    applyTheme(newTheme);
+    updateThemeToggleIcon(newTheme);
+
+    // Save user preference
+    chrome.storage.local.set({ themePreference: newTheme });
+
+    console.log(`Theme switched to: ${newTheme}`);
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+
+    // Add smooth transition class for theme changes
+    document.body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
+
+    // Remove transition after animation completes
+    setTimeout(() => {
+        document.body.style.transition = '';
+    }, 300);
+}
+
+function updateThemeToggleIcon(theme) {
+    const themeIcon = elements.themeToggle?.querySelector('.theme-icon');
+    if (themeIcon) {
+        themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
+        elements.themeToggle.title = `Switch to ${theme === 'light' ? 'dark' : 'light'} theme`;
+    }
+} 
