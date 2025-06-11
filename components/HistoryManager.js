@@ -34,16 +34,32 @@ export class HistoryManager {
                 // Fallback: load directly from storage
                 try {
                     const storage = await chrome.storage.local.get(['recentEvents']);
-                    if (storage.recentEvents) {
+                    if (storage.recentEvents && Array.isArray(storage.recentEvents)) {
                         this.recentEvents = storage.recentEvents;
                         console.log('Loaded events from storage:', this.recentEvents.length);
+                        this.renderHistory();
+                    } else {
+                        console.log('No events found in storage');
+                        this.recentEvents = [];
                         this.renderHistory();
                     }
                 } catch (error) {
                     console.error('Error loading events from storage:', error);
+                    this.recentEvents = [];
+                    this.renderHistory();
                 }
             }
         });
+    }
+
+    // Save events to storage for persistence
+    async saveToStorage() {
+        try {
+            await chrome.storage.local.set({ recentEvents: this.recentEvents });
+            console.log('Events saved to storage:', this.recentEvents.length);
+        } catch (error) {
+            console.error('Failed to save events to storage:', error);
+        }
     }
 
     // Clear history
@@ -51,7 +67,11 @@ export class HistoryManager {
         if (confirm('Clear all event history?')) {
             // Clear local array
             this.recentEvents = [];
+
+            // Save empty state to storage
+            this.saveToStorage();
             this.renderHistory();
+
             // Tell background script to clear its array too
             chrome.runtime.sendMessage({ action: 'clearHistory' }, (response) => {
                 if (response && response.success) {
@@ -70,6 +90,9 @@ export class HistoryManager {
         if (eventIndex !== -1) {
             console.log('Updating event in local array:', event);
             this.recentEvents[eventIndex] = event;
+
+            // Save updated events to storage
+            this.saveToStorage();
             this.renderHistory();
         } else {
             console.log('Event not found in local array, reloading history');
@@ -196,8 +219,16 @@ export class HistoryManager {
             }
         ];
 
-        // Add test events to the array
+        // Add test events to the beginning of the array and maintain limit
         this.recentEvents = testEvents.concat(this.recentEvents);
+
+        // Keep only last 50 events
+        if (this.recentEvents.length > 50) {
+            this.recentEvents = this.recentEvents.slice(0, 50);
+        }
+
+        // Save to storage to persist
+        this.saveToStorage();
         this.renderHistory();
         return { success: true, message: 'Test events created' };
     }
@@ -291,9 +322,14 @@ export class HistoryManager {
                   ` : ''}
                   
                   ${event.request ? `
-                    <details class="request-response-details">
-                      <summary><strong>Request Data</strong></summary>
-                      <pre class="json-display">${JSON.stringify(event.request, null, 2)}</pre>
+                    <details class="data-section">
+                      <summary class="data-header">
+                        <strong>Request Data</strong>
+                        <button class="copy-data-btn small-button" data-content="${encodeURIComponent(JSON.stringify(event.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
+                      </summary>
+                      <div class="data-content">
+                        <pre class="json-display">${JSON.stringify(event.request, null, 2)}</pre>
+                      </div>
                     </details>
                   ` : ''}
                   
@@ -303,9 +339,14 @@ export class HistoryManager {
                       <button class="cancel-request-btn small-button danger" data-event-id="${event.id}">Cancel Request</button>
                     </div>
                   ` : event.response ? `
-                    <details class="request-response-details">
-                      <summary><strong>Response Data</strong></summary>
-                      ${formatResponseData(event.response)}
+                    <details class="data-section">
+                      <summary class="data-header">
+                        <strong>Response Data</strong>
+                        <button class="copy-data-btn small-button" data-content="${encodeURIComponent(event.response)}" title="Copy to clipboard">📋 Copy</button>
+                      </summary>
+                      <div class="data-content">
+                        ${formatResponseData(event.response)}
+                      </div>
                     </details>
                   ` : ''}
                 </div>
@@ -324,8 +365,10 @@ export class HistoryManager {
             item.addEventListener('click', function (e) {
                 // Don't collapse if clicking on interactive elements
                 if (e.target.closest('.history-screenshot') ||
-                    e.target.closest('.request-response-details') ||
+                    e.target.closest('.data-section') ||
                     e.target.closest('.json-display') ||
+                    e.target.closest('.copy-data-btn') ||
+                    e.target.closest('.download-screenshot-btn') ||
                     e.target.closest('details') ||
                     e.target.closest('summary')) {
                     return;
@@ -348,15 +391,19 @@ export class HistoryManager {
                 e.stopPropagation();
             });
 
-            // Add mousemove for zoom positioning
+            // Add mousemove for zoom positioning and mouseleave to reset
             img.addEventListener('mousemove', handleImageZoom);
             img.addEventListener('mouseleave', resetImageZoom);
         });
 
-        document.querySelectorAll('.request-response-details').forEach(details => {
-            details.addEventListener('click', (e) => {
-                e.stopPropagation();
-            });
+        document.querySelectorAll('.data-section').forEach(section => {
+            // Prevent clicking inside the content from collapsing the details
+            const content = section.querySelector('.data-content');
+            if (content) {
+                content.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            }
         });
 
         // Cancel request buttons
@@ -377,6 +424,33 @@ export class HistoryManager {
                 const result = downloadScreenshot(screenshot, timestamp);
                 // Could emit an event here for status display
                 return result;
+            });
+        });
+
+        // Copy data buttons
+        document.querySelectorAll('.copy-data-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault(); // Prevent details toggle
+                const content = decodeURIComponent(btn.dataset.content);
+
+                navigator.clipboard.writeText(content).then(() => {
+                    // Visual feedback
+                    const originalText = btn.textContent;
+                    btn.textContent = '✓ Copied!';
+                    btn.style.background = 'var(--success)';
+
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                    btn.textContent = '❌ Failed';
+                    setTimeout(() => {
+                        btn.textContent = '📋 Copy';
+                    }, 2000);
+                });
             });
         });
     }

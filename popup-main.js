@@ -7,6 +7,7 @@ class SimplePopupController {
         this.elements = {};
         this.currentDomain = null;
         this.currentTabId = null;
+        this.historyManager = null;
     }
 
     async initialize() {
@@ -19,6 +20,9 @@ class SimplePopupController {
             // Initialize theme
             this.initializeTheme();
 
+            // Initialize HistoryManager
+            await this.initializeHistoryManager();
+
             // Get current tab
             await this.getCurrentTab();
 
@@ -27,6 +31,9 @@ class SimplePopupController {
 
             // Load basic settings
             await this.loadBasicSettings();
+
+            // Test history container availability
+            this.testHistoryIntegration();
 
             console.log('Simple popup initialized successfully');
         } catch (error) {
@@ -48,7 +55,12 @@ class SimplePopupController {
             fieldsContainer: 'fields-container',
             presetSelector: 'preset-selector',
             savePresetBtn: 'save-preset-btn',
-            deletePresetBtn: 'delete-preset-btn'
+            deletePresetBtn: 'delete-preset-btn',
+            // History elements
+            historyContainer: 'history-container',
+            showTrueOnly: 'show-true-only',
+            clearHistoryBtn: 'clear-history-btn',
+            testEventsBtn: 'test-events-btn'
         };
 
         for (const [key, id] of Object.entries(elementMap)) {
@@ -184,6 +196,9 @@ class SimplePopupController {
                 this.deletePreset();
             });
         }
+
+        // History controls
+        this.setupHistoryEventListeners();
     }
 
     async loadBasicSettings() {
@@ -260,7 +275,10 @@ class SimplePopupController {
             <div class="field-item" data-field-id="${fieldId}">
                 <div class="field-header">
                     <input type="text" class="field-name-input" placeholder="Field Name">
-                    <button class="remove-field-btn" onclick="this.parentElement.parentElement.remove()">✕</button>
+                    <div class="field-last-result" id="last-result-${fieldId}">
+                        <span class="result-text">No results yet</span>
+                    </div>
+                    <button class="remove-field-btn" data-field-id="${fieldId}">✕</button>
                 </div>
                 <textarea class="field-description" placeholder="Describe what to evaluate..."></textarea>
                 <div class="field-webhook-config">
@@ -292,6 +310,7 @@ class SimplePopupController {
 
         // Add event listeners for the new field
         this.setupFieldWebhookListeners(fieldId);
+        this.setupFieldRemoveListener(fieldId);
 
         this.showStatus('Field added', 'success');
     }
@@ -495,6 +514,111 @@ class SimplePopupController {
         }
     }
 
+    async initializeHistoryManager() {
+        try {
+            console.log('Initializing HistoryManager...');
+            console.log('Available elements:', Object.keys(this.elements));
+            console.log('History container exists:', !!this.elements.historyContainer);
+
+            // Import the real HistoryManager
+            const { HistoryManager } = await import('./components/HistoryManager.js');
+            console.log('HistoryManager imported successfully');
+
+            // Create and initialize the manager
+            this.historyManager = new HistoryManager();
+            this.historyManager.setElements(this.elements);
+            console.log('HistoryManager created and elements set');
+
+            // Load history after DOM is ready
+            setTimeout(() => {
+                console.log('Loading history with elements:', this.elements.historyContainer ? 'Found' : 'Missing');
+                this.historyManager.loadHistory();
+            }, 100);
+
+            console.log('HistoryManager initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize HistoryManager:', error);
+            console.error('Error details:', error.stack);
+            // Create fallback history manager
+            this.historyManager = {
+                loadHistory: () => {
+                    console.log('Fallback history manager - loadHistory called');
+                    if (this.elements.historyContainer) {
+                        this.elements.historyContainer.innerHTML = '<div class="history-empty">History functionality unavailable (HistoryManager failed to load)</div>';
+                        console.log('Set fallback message in history container');
+                    } else {
+                        console.error('History container element not found:', this.elements);
+                    }
+                },
+                setShowTrueOnly: () => { },
+                clearHistory: () => ({ success: true, message: 'History cleared' }),
+                renderHistory: () => { },
+                scrollToEvent: () => { },
+                updateEvent: () => { },
+                createTestEvents: (domain) => {
+                    console.log('Creating fallback test events for:', domain);
+                    if (this.elements.historyContainer) {
+                        this.elements.historyContainer.innerHTML = `<div class="history-empty">Test events created for ${domain} (fallback mode)</div>`;
+                    }
+                    return { success: true, message: 'Test events created (fallback)' };
+                }
+            };
+        }
+    }
+
+    setupHistoryEventListeners() {
+        try {
+            if (this.elements.showTrueOnly && this.historyManager) {
+                this.elements.showTrueOnly.addEventListener('change', () => {
+                    if (this.historyManager.setShowTrueOnly) {
+                        this.historyManager.setShowTrueOnly(this.elements.showTrueOnly.checked);
+                    }
+                    if (this.historyManager.renderHistory) {
+                        this.historyManager.renderHistory();
+                    }
+                });
+            }
+
+            if (this.elements.clearHistoryBtn && this.historyManager) {
+                this.elements.clearHistoryBtn.addEventListener('click', () => {
+                    if (this.historyManager.clearHistory) {
+                        const result = this.historyManager.clearHistory();
+                        if (result && result.success) {
+                            this.showStatus(result.message, 'info');
+                        }
+                    }
+                });
+            }
+
+            if (this.elements.testEventsBtn && this.historyManager) {
+                this.elements.testEventsBtn.addEventListener('click', () => {
+                    console.log('Test events button clicked');
+                    if (this.historyManager.createTestEvents) {
+                        const result = this.historyManager.createTestEvents(this.currentDomain);
+                        if (result && result.success) {
+                            this.showStatus(result.message, 'info');
+                        }
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Failed to setup history event listeners:', error);
+        }
+    }
+
+    testHistoryIntegration() {
+        console.log('Testing history integration...');
+        console.log('History container:', this.elements.historyContainer);
+
+        if (this.elements.historyContainer) {
+            // Set initial message to show container is working
+            this.elements.historyContainer.innerHTML = '<div class="history-empty">History container connected - waiting for events...</div>';
+            console.log('History container test message set successfully');
+        } else {
+            console.error('History container not found during test!');
+        }
+    }
+
     startAutomaticCapture() {
         const interval = this.elements.captureInterval?.value;
         const webhookUrl = this.elements.webhookUrl?.value.trim();
@@ -561,9 +685,21 @@ class SimplePopupController {
             payloadInput.addEventListener('input', () => this.saveFieldsState());
         }
 
-        // Set default payload when enabled
-        if (payloadInput && !payloadInput.value.trim()) {
-            payloadInput.value = '{"key": "value"}';
+        // Don't force default payload - let user set their own
+    }
+
+    setupFieldRemoveListener(fieldId) {
+        const fieldElement = document.querySelector(`[data-field-id="${fieldId}"]`);
+        if (!fieldElement) return;
+
+        const removeBtn = fieldElement.querySelector('.remove-field-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                console.log('Removing field:', fieldId);
+                fieldElement.remove();
+                this.saveFieldsState();
+                this.showStatus('Field removed', 'info');
+            });
         }
     }
 
@@ -583,13 +719,23 @@ class SimplePopupController {
                 const webhookPayloadInput = item.querySelector('.webhook-payload-input');
 
                 if (nameInput && descriptionInput) {
+                    // Get last result if available
+                    const lastResultElement = item.querySelector('.field-last-result .result-text');
+                    let lastResult = null;
+                    if (lastResultElement && lastResultElement.innerHTML !== 'No results yet') {
+                        // Extract result data from the display (simplified for persistence)
+                        const isTrueResult = lastResultElement.innerHTML.includes('TRUE');
+                        lastResult = { result: isTrueResult };
+                    }
+
                     fieldsData.push({
                         id: fieldId,
                         name: nameInput.value || '',
                         description: descriptionInput.value || '',
                         webhookEnabled: webhookToggle ? webhookToggle.checked : false,
                         webhookUrl: webhookUrlInput ? webhookUrlInput.value : '',
-                        webhookPayload: webhookPayloadInput ? webhookPayloadInput.value : '{"key": "value"}'
+                        webhookPayload: webhookPayloadInput ? webhookPayloadInput.value : '',
+                        lastResult: lastResult
                     });
                 }
             });
@@ -636,7 +782,10 @@ class SimplePopupController {
             <div class="field-item" data-field-id="${fieldData.id}">
                 <div class="field-header">
                     <input type="text" class="field-name-input" placeholder="Field Name" value="${fieldData.name || ''}">
-                    <button class="remove-field-btn" onclick="this.parentElement.parentElement.remove(); window.popupController.saveFieldsState();">✕</button>
+                    <div class="field-last-result" id="last-result-${fieldData.id}">
+                        <span class="result-text">${fieldData.lastResult ? this.formatLastResult(fieldData.lastResult) : 'No results yet'}</span>
+                    </div>
+                    <button class="remove-field-btn" data-field-id="${fieldData.id}">✕</button>
                 </div>
                 <textarea class="field-description" placeholder="Describe what to evaluate...">${fieldData.description || ''}</textarea>
                 <div class="field-webhook-config">
@@ -658,7 +807,7 @@ class SimplePopupController {
                     
                     <div class="webhook-payload-group" style="display: ${fieldData.webhookEnabled ? 'block' : 'none'};">
                         <label>Custom Payload (JSON):</label>
-                        <textarea class="webhook-payload-input" placeholder='{"key": "value"}'>${fieldData.webhookPayload || '{"key": "value"}'}</textarea>
+                        <textarea class="webhook-payload-input" placeholder='{"key": "value"}'>${fieldData.webhookPayload || ''}</textarea>
                     </div>
                 </div>
             </div>
@@ -668,6 +817,107 @@ class SimplePopupController {
 
         // Add event listeners for the recreated field
         this.setupFieldWebhookListeners(fieldData.id);
+        this.setupFieldRemoveListener(fieldData.id);
+    }
+
+    formatLastResult(result) {
+        if (!result) return 'No results yet';
+
+        if (result.status === 'pending') {
+            return '<span class="result-indicator pending"></span>⏳ Pending';
+        }
+
+        if (result.status === 'error') {
+            return '<span class="result-indicator false"></span>❌ Error';
+        }
+
+        const resultClass = result.result ? 'true' : 'false';
+        const percentage = result.probability ? ` (${(result.probability * 100).toFixed(0)}%)` : '';
+
+        return `<span class="result-indicator ${resultClass}"></span>${result.result ? 'TRUE' : 'FALSE'}${percentage}`;
+    }
+
+    updateFieldStatus(fieldName, status, eventId) {
+        console.log(`Updating field "${fieldName}" to status: ${status}, eventId: ${eventId}`);
+
+        const fieldItems = document.querySelectorAll('.field-item');
+        fieldItems.forEach(item => {
+            const nameInput = item.querySelector('.field-name-input');
+            if (nameInput) {
+                const sanitizedFieldValue = nameInput.value.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
+                if (sanitizedFieldValue === fieldName) {
+                    const resultContainer = item.querySelector('.field-last-result');
+                    const resultText = resultContainer?.querySelector('.result-text');
+
+                    if (resultContainer && resultText) {
+                        // Update status display
+                        if (status === 'pending') {
+                            resultText.innerHTML = this.formatLastResult({ status: 'pending' });
+                        }
+
+                        // Store event ID for clicking
+                        if (eventId) {
+                            resultContainer.dataset.eventId = eventId;
+                        }
+
+                        // Make clickable if not already
+                        if (!resultContainer.onclick) {
+                            resultContainer.style.cursor = 'pointer';
+                            resultContainer.onclick = () => {
+                                const storedEventId = resultContainer.dataset.eventId;
+                                if (storedEventId && this.historyManager) {
+                                    console.log('Scrolling to event:', storedEventId);
+                                    this.historyManager.scrollToEvent(
+                                        storedEventId,
+                                        this.elements.showTrueOnly?.checked || false,
+                                        (showTrueOnly) => {
+                                            if (this.elements.showTrueOnly) {
+                                                this.elements.showTrueOnly.checked = showTrueOnly;
+                                            }
+                                        }
+                                    );
+                                }
+                            };
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    updateFieldLastResult(fieldName, result) {
+        console.log(`Looking for field "${fieldName}" to update with result:`, result);
+
+        // Find field by name and update its last result
+        const fieldItems = document.querySelectorAll('.field-item');
+        let found = false;
+
+        fieldItems.forEach(item => {
+            const nameInput = item.querySelector('.field-name-input');
+            if (nameInput) {
+                const fieldValue = nameInput.value;
+                const sanitizedFieldValue = fieldValue.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
+                console.log(`Checking field: original="${fieldValue}", sanitized="${sanitizedFieldValue}", looking for="${fieldName}"`);
+
+                if (sanitizedFieldValue === fieldName) {
+                    found = true;
+                    const resultContainer = item.querySelector('.field-last-result .result-text');
+                    if (resultContainer) {
+                        resultContainer.innerHTML = this.formatLastResult(result);
+                        console.log(`Updated field "${fieldValue}" with result`);
+
+                        // Also save the field state with the last result
+                        this.saveFieldsState();
+                    }
+                }
+            }
+        });
+
+        if (!found) {
+            console.warn(`Field "${fieldName}" not found in DOM`);
+        }
     }
 }
 
@@ -677,6 +927,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const popup = new SimplePopupController();
     window.popupController = popup;
     await popup.initialize();
+
+    // Add debug functions for testing
+    window.debugHistory = () => {
+        console.log('Debug history called');
+        console.log('Current domain:', popup.currentDomain);
+        console.log('History manager:', popup.historyManager);
+        console.log('History container element:', popup.elements.historyContainer);
+        if (popup.historyManager && popup.historyManager.createTestEvents) {
+            return popup.historyManager.createTestEvents(popup.currentDomain);
+        } else {
+            console.error('No createTestEvents method available');
+        }
+    };
 });
 
 // Listen for Chrome runtime messages
@@ -688,12 +951,76 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case 'captureComplete':
                 if (message.success) {
                     window.popupController.showStatus('Screenshot sent successfully!', 'success');
+
+                    // Update field results if available
+                    if (message.results) {
+                        console.log('Capture complete with results:', message.results);
+
+                        // Handle the response structure where fields are directly in results
+                        const fields = message.results;
+                        Object.entries(fields).forEach(([fieldName, fieldData]) => {
+                            if (fieldData && typeof fieldData === 'object' && ('boolean' in fieldData || 'probability' in fieldData)) {
+                                // Handle both array and non-array formats
+                                const processedResult = {
+                                    result: Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean,
+                                    probability: Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability
+                                };
+                                console.log(`Updating field ${fieldName} with result:`, processedResult);
+                                window.popupController.updateFieldLastResult(fieldName, processedResult);
+
+                                // Store event ID if available
+                                if (message.eventId) {
+                                    window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
+                                }
+                            }
+                        });
+                    }
                 } else {
                     window.popupController.showStatus(`Failed: ${message.error}`, 'error');
+                }
+                // Reload history to show the new event
+                if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
+                    window.popupController.historyManager.loadHistory();
                 }
                 break;
             case 'captureStarted':
                 window.popupController.showStatus('Sending to webhook...', 'info');
+
+                // Set all fields to pending state
+                if (message.fields) {
+                    message.fields.forEach(field => {
+                        window.popupController.updateFieldStatus(field.name, 'pending', null);
+                    });
+                }
+
+                // Reload history to show the new pending event
+                if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
+                    window.popupController.historyManager.loadHistory();
+                }
+                break;
+            case 'eventUpdated':
+                console.log('Event updated:', message.eventId);
+                if (window.popupController.historyManager && window.popupController.historyManager.updateEvent) {
+                    window.popupController.historyManager.updateEvent(message.eventId, message.event);
+                }
+
+                // Update field statuses from the event
+                if (message.event && message.event.fields) {
+                    message.event.fields.forEach(field => {
+                        const result = {
+                            result: field.result,
+                            probability: field.probability
+                        };
+                        window.popupController.updateFieldLastResult(field.name, result);
+                        window.popupController.updateFieldStatus(field.name, 'complete', message.eventId);
+                    });
+                }
+                break;
+            case 'historyReloaded':
+                console.log('History reloaded');
+                if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
+                    window.popupController.historyManager.loadHistory();
+                }
                 break;
         }
     }
