@@ -81,30 +81,56 @@ function throttle(func, limit) {
 export const handleImageZoom = throttle(function (e) {
     const img = e.target;
 
+    // Only apply zoom to thumbnail images in history
+    if (!img.classList.contains('history-screenshot-thumbnail')) {
+        return;
+    }
+
     // Add will-change for performance if not already set
     if (!img.style.willChange) {
         img.style.willChange = 'transform';
+        img.style.transition = 'transform 0.1s ease-out';
     }
 
     const rect = img.getBoundingClientRect();
 
-    // Calculate mouse position relative to image
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    // Calculate mouse position relative to image (more precise)
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
 
-    // Set transform origin to mouse position and apply 4x zoom
+    // Set transform origin to mouse position and apply high zoom for fine print reading
     img.style.transformOrigin = `${x}% ${y}%`;
-    img.style.transform = 'scale(4)'; // 4x zoom when hovering
-    img.style.zIndex = '1000';
+    img.style.transform = 'scale(6)'; // 6x zoom for reading fine print
+    img.style.zIndex = '9999';
     img.style.position = 'relative';
-}, 16); // ~60fps throttling
+    img.style.borderRadius = '4px';
+    img.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
+
+    // Ensure container doesn't clip the zoomed image
+    const container = img.closest('.screenshot-container');
+    if (container) {
+        container.style.overflow = 'visible';
+        container.style.zIndex = '9998';
+    }
+}, 12); // ~80fps for smoother tracking
 
 // Reset image zoom
 export function resetImageZoom(e) {
     const img = e.target;
+
     img.style.transform = 'scale(1)';
     img.style.zIndex = '';
     img.style.position = '';
     img.style.transformOrigin = 'center';
-    img.style.willChange = ''; // Remove will-change when not needed
+    img.style.willChange = '';
+    img.style.transition = '';
+    img.style.borderRadius = '';
+    img.style.boxShadow = '';
+
+    // Reset container overflow
+    const container = img.closest('.screenshot-container');
+    if (container) {
+        container.style.overflow = '';
+        container.style.zIndex = '';
+    }
 } 

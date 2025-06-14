@@ -778,4 +778,90 @@ Return only JSON.`;
         console.log('Final normalized response:', normalized);
         return normalized;
     }
+
+    // Test LLM configuration with a simple request
+    async testConfiguration(llmConfig) {
+        try {
+            console.log('Testing LLM configuration...');
+
+            // Validate basic config
+            if (!llmConfig || !llmConfig.apiUrl || !llmConfig.apiKey) {
+                const missingFields = [];
+                if (!llmConfig) missingFields.push('entire config');
+                else {
+                    if (!llmConfig.apiUrl) missingFields.push('API URL');
+                    if (!llmConfig.apiKey) missingFields.push('API Key');
+                }
+                throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+            }
+
+            // Create a simple test request
+            const testPayload = {
+                model: llmConfig.model || 'gpt-4-vision-preview',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a helpful assistant. Respond with a simple confirmation message.'
+                    },
+                    {
+                        role: 'user',
+                        content: 'Please respond with "Configuration test successful" to confirm this connection works.'
+                    }
+                ],
+                max_tokens: 50,
+                temperature: 0.1
+            };
+
+            console.log('Sending test request to:', llmConfig.apiUrl);
+
+            // Send test request
+            const response = await fetch(llmConfig.apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${llmConfig.apiKey}`,
+                    ...(llmConfig.customHeaders || {})
+                },
+                body: JSON.stringify(testPayload),
+                signal: AbortSignal.timeout(30000) // 30 second timeout
+            });
+
+            console.log('Test response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+            }
+
+            const responseData = await response.json();
+            console.log('Test response received successfully');
+
+            // Validate response structure
+            if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
+                console.warn('Unexpected response format, but API responded successfully');
+            }
+
+            return {
+                success: true,
+                message: 'LLM API connection successful',
+                model: llmConfig.model || 'default',
+                status: response.status
+            };
+
+        } catch (error) {
+            console.error('LLM configuration test failed:', error);
+
+            let errorMessage = error.message;
+            if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                errorMessage = 'Request timed out - API may be slow or unavailable';
+            } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage = 'Network error - check API URL and internet connection';
+            }
+
+            return {
+                success: false,
+                error: errorMessage
+            };
+        }
+    }
 } 

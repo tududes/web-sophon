@@ -112,6 +112,25 @@ export class MessageService {
                             sendResponse({ success: false, error: error.message });
                         });
                     return true; // Will respond asynchronously
+
+                case 'testLLM':
+                    // Test LLM configuration
+                    console.log('LLM test requested:', { ...request, llmConfig: { ...request.llmConfig, apiKey: 'HIDDEN' } });
+                    if (!this.llmService) {
+                        sendResponse({ success: false, error: 'LLM service not available' });
+                        return;
+                    }
+
+                    this.llmService.testConfiguration(request.llmConfig)
+                        .then(result => {
+                            console.log('LLM test result:', result);
+                            sendResponse(result);
+                        })
+                        .catch(error => {
+                            console.error('LLM test error:', error);
+                            sendResponse({ success: false, error: error.message });
+                        });
+                    return true; // Will respond asynchronously
             }
             return true; // Keep message channel open for async responses
         });

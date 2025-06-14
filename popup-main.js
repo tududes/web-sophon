@@ -1,733 +1,1291 @@
-// Simplified WebSophon Popup - Basic functionality first
-console.log('Starting WebSophon popup...');
+// Clean LLM-only Popup Controller
+// Uses FieldManagerLLM for proper state management
 
-// Basic popup functionality without complex architecture
-class SimplePopupController {
+class CleanPopupController {
     constructor() {
+        // Initialize field manager first
+        this.fieldManager = new FieldManagerLLM();
+
+        // Other instance variables
+        this.currentDomain = '';
+        this.currentTab = 'capture'; // Track current tab
         this.elements = {};
-        this.currentDomain = null;
-        this.currentTabId = null;
         this.historyManager = null;
-        this.saveTimeout = null; // Add debounce timeout for saves
+        this.saveDebounceTimer = null;
     }
 
     async initialize() {
         try {
-            console.log('Initializing SimplePopupController...');
+            // 1. Get current domain and display it
+            this.currentDomain = await this.getCurrentDomain();
+            this.displayCurrentDomain();
 
-            // Get DOM elements FIRST
+            // 2. Get DOM elements
             this.getDOMElements();
 
-            // Initialize tab system
-            this.initializeTabSystem();
+            // 3. Load data
+            this.fieldManager.currentDomain = this.currentDomain;
+            await this.fieldManager.loadFromStorage();
 
-            // Get current tab with retries (fixes loading issues)
-            await this.getCurrentTabWithRetry();
-
-            // Set up event listeners
+            // 4. Setup UI
             this.setupEventListeners();
+            this.initializeTabSystem();
+            this.setupMessageListener();
 
-            // Load all settings and state concurrently (prevents race conditions)
-            await Promise.allSettled([
-                this.loadBasicSettings(),
-                this.loadFieldsState(),
-                this.loadPresets(),
-                this.loadKnownDomains()
-            ]);
+            // 5. Load settings and history manager
+            await this.loadBasicSettings();
+            await this.initializeHistoryManager();
 
-            // Initialize theme
-            this.initializeTheme();
+            // 6. Load initial tab content
+            this.switchTab('capture');
 
-            // Initialize history manager with better error handling
-            await this.initializeHistoryManagerSafely();
+            console.log('Clean popup initialized successfully');
 
-            console.log('SimplePopupController initialized successfully');
         } catch (error) {
-            console.error('Failed to initialize SimplePopupController:', error);
-            this.showError('Failed to load extension. Please refresh and try again.');
+            console.error('Failed to initialize popup:', error);
         }
     }
 
-    // Tab System Implementation
-    initializeTabSystem() {
-        console.log('Initializing tab system...');
-
-        // Set up tab switching
-        const tabButtons = document.querySelectorAll('.tab-button');
-        const tabPanels = document.querySelectorAll('.tab-panel');
-
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const targetTab = button.dataset.tab;
-                this.switchTab(targetTab);
-            });
-        });
-
-        // Set default active tab
-        this.switchTab('capture');
-        console.log('Tab system initialized');
-    }
-
-    switchTab(tabName) {
-        console.log(`Switching to tab: ${tabName}`);
-
-        // Update tab buttons
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.classList.remove('active');
-            if (button.dataset.tab === tabName) {
-                button.classList.add('active');
-            }
-        });
-
-        // Update tab panels
-        document.querySelectorAll('.tab-panel').forEach(panel => {
-            panel.classList.remove('active');
-            if (panel.id === `${tabName}-tab`) {
-                panel.classList.add('active');
-            }
-        });
-
-        // Handle tab-specific loading
-        this.handleTabSpecificLoading(tabName);
-    }
-
-    handleTabSpecificLoading(tabName) {
-        switch (tabName) {
-            case 'history':
-                // Reload history when history tab is opened
-                if (this.historyManager) {
-                    this.historyManager.loadHistory();
-                }
-                break;
-            case 'settings':
-                // Refresh known domains when settings tab is opened
-                this.loadKnownDomains();
-                break;
-        }
-    }
-
-    // Improved getCurrentTab with retry mechanism
-    async getCurrentTabWithRetry(retries = 3) {
-        for (let i = 0; i < retries; i++) {
-            try {
-                console.log(`Getting current tab (attempt ${i + 1}/${retries})...`);
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-                if (tab && tab.url) {
-                    const url = new URL(tab.url);
-                    this.currentDomain = url.hostname;
-                    this.currentTabId = tab.id;
-
-                    console.log('Current domain:', this.currentDomain);
-
-                    if (this.elements.currentDomain) {
-                        this.elements.currentDomain.textContent = this.currentDomain;
-                    }
-                    return; // Success
-                } else {
-                    throw new Error('No active tab found');
-                }
-            } catch (error) {
-                console.error(`Failed to get current tab (attempt ${i + 1}):`, error);
-
-                if (i === retries - 1) {
-                    // Last attempt failed
-                    this.currentDomain = 'unknown';
-                    this.currentTabId = null;
-                    if (this.elements.currentDomain) {
-                        this.elements.currentDomain.textContent = 'Unable to detect domain';
-                    }
-                    console.warn('Using fallback domain after all retries failed');
-                } else {
-                    // Wait before retry
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                }
-            }
-        }
-    }
-
-    // Safer history manager initialization
-    async initializeHistoryManagerSafely() {
+    async getCurrentDomain() {
         try {
-            console.log('Initializing HistoryManager safely...');
-
-            // Import the HistoryManager
-            const { HistoryManager } = await import('./components/HistoryManager.js');
-            console.log('HistoryManager imported successfully');
-
-            // Create and initialize the manager
-            this.historyManager = new HistoryManager();
-            this.historyManager.setElements(this.elements);
-            console.log('HistoryManager created and elements set');
-
-            // Set up history event listeners
-            this.setupHistoryEventListeners();
-
-            // Load history with a reasonable delay to ensure DOM is ready
-            await new Promise(resolve => setTimeout(resolve, 50));
-            this.historyManager.loadHistory();
-
-            console.log('HistoryManager initialized successfully');
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tabs[0]?.url) {
+                const url = new URL(tabs[0].url);
+                return url.hostname;
+            }
         } catch (error) {
-            console.error('Failed to initialize HistoryManager:', error);
-            this.createFallbackHistoryManager();
+            console.error('Error getting current domain:', error);
         }
+        return 'unknown';
     }
 
-    createFallbackHistoryManager() {
-        console.log('Creating fallback history manager...');
-        this.historyManager = {
-            loadHistory: () => {
-                if (this.elements.historyContainer) {
-                    this.elements.historyContainer.innerHTML = '<div class="history-empty">History functionality unavailable. Please refresh the extension.</div>';
-                }
-            },
-            setShowTrueOnly: () => { },
-            clearHistory: () => ({ success: true, message: 'History cleared' }),
-            renderHistory: () => { },
-            scrollToEvent: () => { },
-            updateEvent: () => { }
-        };
+    displayCurrentDomain() {
+        const domainElement = document.getElementById('currentDomain');
+        if (domainElement) {
+            domainElement.textContent = this.currentDomain;
+        }
     }
 
     getDOMElements() {
-        const elementMap = {
-            currentDomain: 'current-domain',
-            llmApiUrl: 'llm-api-url',
-            llmApiKey: 'llm-api-key',
-            llmModel: 'llm-model',
-            llmCustomModel: 'llm-custom-model',
-            customModelGroup: 'custom-model-group',
-            llmTemperature: 'llm-temperature',
-            llmMaxTokens: 'llm-max-tokens',
-            captureInterval: 'capture-interval',
-            refreshPageToggle: 'refresh-page-toggle',
-            captureDelay: 'capture-delay',
-            consentToggle: 'consent-toggle',
-            status: 'status',
-            captureNow: 'capture-now',
-            themeToggle: 'theme-toggle',
-            addFieldBtn: 'add-field-btn',
-            fieldsContainer: 'fields-container',
-            presetSelector: 'preset-selector',
-            savePresetBtn: 'save-preset-btn',
-            deletePresetBtn: 'delete-preset-btn',
-            // Known domains
-            domainsContainer: 'domains-container',
-            // History elements
-            historyContainer: 'history-container',
-            showTrueOnly: 'show-true-only',
-            clearHistoryBtn: 'clear-history-btn',
-            // Field status
-            fieldStatus: 'field-status',
-            fullPageCaptureToggle: 'full-page-capture-toggle'
+        this.elements = {
+            // Fields section
+            fieldsContainer: document.getElementById('fieldsContainer'),
+            addFieldBtn: document.getElementById('addFieldBtn'),
+            presetSelector: document.getElementById('presetSelector'),
+            savePresetBtn: document.getElementById('savePresetBtn'),
+            deletePresetBtn: document.getElementById('deletePresetBtn'),
+
+            // Capture section
+            captureBtn: document.getElementById('captureBtn'),
+            captureStatus: document.getElementById('captureStatus'),
+
+            // Settings section
+            consentToggle: document.getElementById('consentToggle'),
+            captureInterval: document.getElementById('captureInterval'),
+
+            // LLM Configuration
+            llmApiUrl: document.getElementById('llmApiUrl'),
+            llmApiKey: document.getElementById('llmApiKey'),
+            llmModel: document.getElementById('llmModel'),
+            llmTemperature: document.getElementById('llmTemperature'),
+            llmMaxTokens: document.getElementById('llmMaxTokens'),
+            testLlmConfig: document.getElementById('testLlmConfig'),
+            testConfigStatus: document.getElementById('testConfigStatus'),
+
+            // History section
+            historyContainer: document.getElementById('historyContainer'),
+            showTrueOnly: document.getElementById('showTrueOnly'),
+            clearHistoryBtn: document.getElementById('clearHistoryBtn'),
+
+            // Known Domains
+            domainsContainer: document.getElementById('domainsContainer'),
+
+            // Theme toggle
+            themeToggle: document.getElementById('themeToggle'),
+
+            // New elements
+            refreshPageToggle: document.getElementById('refreshPageToggle'),
+            captureDelay: document.getElementById('captureDelay'),
+            fullPageCaptureToggle: document.getElementById('fullPageCaptureToggle')
         };
-
-        for (const [key, id] of Object.entries(elementMap)) {
-            const element = document.getElementById(id);
-            if (element) {
-                this.elements[key] = element;
-                console.log(`Found element: ${key} (${id})`);
-            } else {
-                console.warn(`Element not found: ${key} (${id})`);
-            }
-        }
     }
-
-
 
     setupEventListeners() {
-        console.log('Setting up event listeners...');
+        // Tab switching
+        document.querySelectorAll('[data-tab]').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const tabName = e.target.dataset.tab;
+                this.switchTab(tabName);
+            });
+        });
+
+        // Field management
+        this.elements.addFieldBtn?.addEventListener('click', () => {
+            this.addField();
+        });
+
+        // Capture button
+        this.elements.captureBtn?.addEventListener('click', () => {
+            this.handleCapture();
+        });
+
+        // Preset management
+        this.elements.presetSelector?.addEventListener('change', () => {
+            this.updatePresetButtons();
+            // Load preset when selected
+            if (this.elements.presetSelector.value) {
+                this.loadPreset();
+            }
+        });
+
+        this.elements.savePresetBtn?.addEventListener('click', () => {
+            this.savePreset();
+        });
+
+        this.elements.deletePresetBtn?.addEventListener('click', () => {
+            this.deletePreset();
+        });
+
+        // Settings
+        this.elements.consentToggle?.addEventListener('change', (e) => {
+            this.saveConsent(e.target.checked);
+        });
+
+        // LLM Configuration
+        this.elements.llmApiUrl?.addEventListener('input', () => {
+            this.debouncedSaveLlmConfig();
+        });
+
+        this.elements.llmApiKey?.addEventListener('input', () => {
+            this.debouncedSaveLlmConfig();
+        });
+
+        this.elements.testLlmConfig?.addEventListener('click', () => {
+            this.testLlmConfiguration();
+        });
 
         // Theme toggle
-        if (this.elements.themeToggle) {
-            this.elements.themeToggle.addEventListener('click', () => {
-                console.log('Theme toggle clicked');
-                this.toggleTheme();
-            });
-            console.log('Theme toggle listener added');
-        }
-
-
-
-        // LLM Configuration inputs
-        if (this.elements.llmApiUrl) {
-            this.elements.llmApiUrl.addEventListener('change', async () => {
-                const apiUrl = this.elements.llmApiUrl.value.trim();
-                await this.saveLlmConfig({ apiUrl });
-                this.showStatus('LLM API URL saved', 'success');
-            });
-        }
-
-        if (this.elements.llmApiKey) {
-            this.elements.llmApiKey.addEventListener('change', async () => {
-                const apiKey = this.elements.llmApiKey.value.trim();
-                await this.saveLlmConfig({ apiKey });
-                this.showStatus('LLM API Key saved', 'success');
-            });
-        }
-
-        if (this.elements.llmModel) {
-            this.elements.llmModel.addEventListener('change', async () => {
-                const model = this.elements.llmModel.value;
-
-                // Show/hide custom model input based on selection
-                if (model === 'custom') {
-                    if (this.elements.customModelGroup) {
-                        this.elements.customModelGroup.style.display = 'block';
-                    }
-                    // Don't save the 'custom' value, wait for custom input
-                } else {
-                    if (this.elements.customModelGroup) {
-                        this.elements.customModelGroup.style.display = 'none';
-                    }
-                    // Clear custom model value when using preset
-                    await this.saveLlmConfig({ model, customModel: '' });
-                    this.showStatus('LLM Model saved', 'success');
-                }
-            });
-        }
-
-        if (this.elements.llmCustomModel) {
-            this.elements.llmCustomModel.addEventListener('change', async () => {
-                const customModel = this.elements.llmCustomModel.value.trim();
-                if (customModel) {
-                    await this.saveLlmConfig({ model: 'custom', customModel });
-                    this.showStatus('Custom LLM Model saved', 'success');
-                }
-            });
-        }
-
-        if (this.elements.llmTemperature) {
-            this.elements.llmTemperature.addEventListener('change', async () => {
-                const temperature = parseFloat(this.elements.llmTemperature.value);
-                await this.saveLlmConfig({ temperature });
-                this.showStatus('LLM Temperature saved', 'success');
-            });
-        }
-
-        if (this.elements.llmMaxTokens) {
-            this.elements.llmMaxTokens.addEventListener('change', async () => {
-                const maxTokens = parseInt(this.elements.llmMaxTokens.value);
-                await this.saveLlmConfig({ maxTokens });
-                this.showStatus('LLM Max Tokens saved', 'success');
-            });
-        }
-
-        // Interval change
-        if (this.elements.captureInterval) {
-            this.elements.captureInterval.addEventListener('change', async () => {
-                const interval = this.elements.captureInterval.value;
-                await this.saveInterval(interval);
-
-                // Update UI based on manual mode
-                this.updateManualModeUI();
-
-                if (interval === 'manual') {
-                    this.showStatus('Manual only mode enabled', 'info');
-                    // Stop automatic capture but keep domain enabled
-                    this.stopAutomaticCapture();
-                } else {
-                    this.showStatus(`Interval updated to ${interval} seconds`, 'success');
-                    // If domain is enabled, start automatic capture with new interval
-                    if (this.elements.consentToggle && this.elements.consentToggle.checked) {
-                        this.startAutomaticCapture();
-                    }
-                }
-            });
-        }
-
-        // Refresh page toggle
-        if (this.elements.refreshPageToggle) {
-            this.elements.refreshPageToggle.addEventListener('change', async () => {
-                const refreshEnabled = this.elements.refreshPageToggle.checked;
-                await this.saveRefreshPageSetting(refreshEnabled);
-                this.showStatus(`Page refresh ${refreshEnabled ? 'enabled' : 'disabled'}`, 'success');
-            });
-        }
-
-        // Capture delay change
-        if (this.elements.captureDelay) {
-            this.elements.captureDelay.addEventListener('change', async () => {
-                const delay = this.elements.captureDelay.value;
-                await this.saveCaptureDelay(delay);
-                this.showStatus(`Capture delay set to ${delay} seconds`, 'success');
-            });
-        }
-
-        // Full page capture toggle
-        if (this.elements.fullPageCaptureToggle) {
-            this.elements.fullPageCaptureToggle.addEventListener('change', async () => {
-                const fullPageEnabled = this.elements.fullPageCaptureToggle.checked;
-                await this.saveFullPageCaptureSetting(fullPageEnabled);
-                this.showStatus(`Full page capture ${fullPageEnabled ? 'enabled' : 'disabled'}`, 'success');
-            });
-        }
-
-        // Consent toggle - now enables WebSophon for domain (both manual and automatic)
-        if (this.elements.consentToggle) {
-            this.elements.consentToggle.addEventListener('change', async () => {
-                const isEnabled = this.elements.consentToggle.checked;
-                const interval = this.elements.captureInterval.value;
-
-                await this.saveConsent(isEnabled);
-
-                if (isEnabled) {
-                    if (interval === 'manual') {
-                        this.showStatus('WebSophon enabled for manual captures', 'success');
-                    } else {
-                        this.showStatus(`WebSophon enabled with ${interval}s interval`, 'success');
-                        // Start automatic capture if interval is set
-                        this.startAutomaticCapture();
-                    }
-                } else {
-                    this.showStatus('WebSophon disabled for this domain', 'info');
-                    // Stop any automatic capture
-                    this.stopAutomaticCapture();
-                }
-            });
-        }
-
-        // Add field button
-        if (this.elements.addFieldBtn) {
-            this.elements.addFieldBtn.addEventListener('click', () => {
-                this.addBasicField();
-            });
-        }
-
-        // Manual capture
-        if (this.elements.captureNow) {
-            this.elements.captureNow.addEventListener('click', () => {
-                this.handleManualCapture();
-            });
-        }
-
-        // Preset buttons
-        if (this.elements.savePresetBtn) {
-            this.elements.savePresetBtn.addEventListener('click', () => {
-                this.savePreset();
-            });
-        }
-
-        if (this.elements.deletePresetBtn) {
-            this.elements.deletePresetBtn.addEventListener('click', () => {
-                this.deletePreset();
-            });
-        }
-
-        // Preset selector
-        if (this.elements.presetSelector) {
-            this.elements.presetSelector.addEventListener('change', () => {
-                this.loadPreset();
-            });
-        }
+        this.elements.themeToggle?.addEventListener('click', () => {
+            this.toggleTheme();
+        });
 
         // History controls
-        this.setupHistoryEventListeners();
+        this.elements.clearHistoryBtn?.addEventListener('click', () => {
+            if (this.historyManager?.clearHistory) {
+                this.historyManager.clearHistory();
+            }
+        });
+
+        this.elements.showTrueOnly?.addEventListener('change', (e) => {
+            if (this.historyManager?.setShowTrueOnly) {
+                this.historyManager.setShowTrueOnly(e.target.checked);
+                this.historyManager.renderHistory();
+            }
+        });
     }
 
-    async loadBasicSettings() {
+    initializeTabSystem() {
+        this.switchTab('capture');
+    }
+
+    switchTab(tabName) {
+        console.log('Switching to tab:', tabName);
+
+        // Track current tab
+        this.currentTab = tabName;
+
+        // Hide all tab panels
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.style.display = 'none';
+            panel.classList.remove('active');
+        });
+
+        // Remove active class from all tab buttons
+        document.querySelectorAll('[data-tab]').forEach(tab => {
+            tab.classList.remove('active');
+        });
+
+        // Show selected tab panel
+        const tabPanel = document.getElementById(`${tabName}Content`);
+        if (tabPanel) {
+            tabPanel.style.display = 'block';
+            tabPanel.classList.add('active');
+            console.log('Showed tab panel:', `${tabName}Content`);
+        } else {
+            console.error('Tab panel not found:', `${tabName}Content`);
+        }
+
+        // Add active class to selected tab button
+        const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
+        if (selectedTab) {
+            selectedTab.classList.add('active');
+        }
+
+        // Load tab-specific data
+        this.handleTabSpecificLoading(tabName);
+    }
+
+    async handleTabSpecificLoading(tabName) {
         try {
-            if (!this.currentDomain) return;
-
-            const keys = [
-                `consent_${this.currentDomain}`,
-                `interval_${this.currentDomain}`,
-                `refreshPage_${this.currentDomain}`,
-                `captureDelay_${this.currentDomain}`,
-                `llmConfig_${this.currentDomain}`,
-                `fields_${this.currentDomain}`,
-                'fullPageCapture'
-            ];
-
-            const data = await chrome.storage.local.get(keys);
-
-            if (data[`consent_${this.currentDomain}`] !== undefined && this.elements.consentToggle) {
-                this.elements.consentToggle.checked = data[`consent_${this.currentDomain}`];
-            }
-
-            if (data[`interval_${this.currentDomain}`] && this.elements.captureInterval) {
-                this.elements.captureInterval.value = data[`interval_${this.currentDomain}`];
-            }
-
-            if (data[`refreshPage_${this.currentDomain}`] !== undefined && this.elements.refreshPageToggle) {
-                this.elements.refreshPageToggle.checked = data[`refreshPage_${this.currentDomain}`];
-            }
-
-            if (data[`captureDelay_${this.currentDomain}`] !== undefined && this.elements.captureDelay) {
-                this.elements.captureDelay.value = data[`captureDelay_${this.currentDomain}`];
-            }
-
-            if (data.fullPageCapture !== undefined && this.elements.fullPageCaptureToggle) {
-                this.elements.fullPageCaptureToggle.checked = data.fullPageCapture;
-            }
-
-            // Load LLM settings
-            const llmConfig = data[`llmConfig_${this.currentDomain}`] || {};
-            if (llmConfig.apiUrl && this.elements.llmApiUrl) {
-                this.elements.llmApiUrl.value = llmConfig.apiUrl;
-            } else if (this.elements.llmApiUrl && !this.elements.llmApiUrl.value) {
-                // Set OpenRouter as default if no URL is configured
-                this.elements.llmApiUrl.value = 'https://openrouter.ai/api/v1/chat/completions';
-            }
-            if (llmConfig.apiKey && this.elements.llmApiKey) {
-                this.elements.llmApiKey.value = llmConfig.apiKey;
-            }
-            if (llmConfig.model && this.elements.llmModel) {
-                this.elements.llmModel.value = llmConfig.model;
-
-                // Handle custom model display
-                if (llmConfig.model === 'custom') {
-                    if (this.elements.customModelGroup) {
-                        this.elements.customModelGroup.style.display = 'block';
-                    }
-                    if (llmConfig.customModel && this.elements.llmCustomModel) {
-                        this.elements.llmCustomModel.value = llmConfig.customModel;
-                    }
-                } else {
-                    if (this.elements.customModelGroup) {
-                        this.elements.customModelGroup.style.display = 'none';
-                    }
+            if (tabName === 'fields') {
+                this.renderFields();
+                this.renderPresets();
+            } else if (tabName === 'history') {
+                if (this.historyManager?.loadHistory) {
+                    this.historyManager.loadHistory();
                 }
-            } else if (this.elements.llmModel && this.elements.llmModel.options.length > 0) {
-                // Set OpenGVLab InternVL3 14B as default model (free tier on OpenRouter)
-                this.elements.llmModel.value = 'opengvlab/internvl3-14b:free';
+            } else if (tabName === 'settings') {
+                await this.loadKnownDomains();
+            } else if (tabName === 'capture') {
+                // No special loading needed for capture tab
             }
-            if (llmConfig.temperature !== undefined && this.elements.llmTemperature) {
-                this.elements.llmTemperature.value = llmConfig.temperature;
+        } catch (error) {
+            console.error(`Error loading tab ${tabName}:`, error);
+        }
+    }
+
+    // === THEME FUNCTIONALITY ===
+
+    toggleTheme() {
+        const currentTheme = document.body.getAttribute('data-theme') || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+        document.body.setAttribute('data-theme', newTheme);
+
+        // Update theme icon
+        const themeIcon = this.elements.themeToggle?.querySelector('.theme-icon');
+        if (themeIcon) {
+            themeIcon.textContent = newTheme === 'light' ? '🌙' : '☀️';
+        }
+
+        // Save theme preference
+        chrome.storage.local.set({ theme: newTheme });
+
+        console.log('Theme switched to:', newTheme);
+    }
+
+    async loadTheme() {
+        try {
+            const data = await chrome.storage.local.get(['theme']);
+            const theme = data.theme || 'light';
+
+            document.body.setAttribute('data-theme', theme);
+
+            const themeIcon = this.elements.themeToggle?.querySelector('.theme-icon');
+            if (themeIcon) {
+                themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
             }
-            if (llmConfig.maxTokens !== undefined && this.elements.llmMaxTokens) {
-                this.elements.llmMaxTokens.value = llmConfig.maxTokens;
+        } catch (error) {
+            console.error('Failed to load theme:', error);
+        }
+    }
+
+    // === FIELD MANAGEMENT (Clean Data Flow) ===
+
+    addField() {
+        try {
+            // 1. Create field in memory with stable ID
+            const field = this.fieldManager.addField({
+                friendlyName: '',
+                description: ''
+            });
+
+            console.log('Added new field:', field.id);
+
+            // 2. Save state atomically  
+            this.debouncedSave();
+
+            // 3. Re-render UI from state
+            this.renderFields();
+
+            // 4. Focus new field for editing
+            this.focusField(field.id);
+
+            this.showFieldStatus('Field added', 'success');
+
+        } catch (error) {
+            console.error('Error adding field:', error);
+            this.showFieldStatus('Failed to add field', 'error');
+        }
+    }
+
+    updateField(fieldId, updates) {
+        try {
+            console.log(`Updating field ${fieldId}:`, updates);
+
+            // 1. Update field state
+            const success = this.fieldManager.updateField(fieldId, updates);
+            if (!success) {
+                console.warn('Field not found:', fieldId);
+                return;
             }
 
-            // Load saved fields
-            await this.loadFieldsState();
+            // 2. Save state atomically
+            this.debouncedSave();
 
-            // Update UI based on manual mode
-            this.updateManualModeUI();
+            // 3. Update field display if needed
+            this.updateFieldDisplay(fieldId);
 
-            console.log('Settings loaded:', data);
         } catch (error) {
-            console.error('Failed to load settings:', error);
+            console.error('Error updating field:', error);
         }
     }
 
-    async saveInterval(interval) {
+    removeField(fieldId) {
         try {
-            if (!this.currentDomain) return;
-            await chrome.storage.local.set({ [`interval_${this.currentDomain}`]: interval });
-            console.log('Interval saved:', interval);
+            const field = this.fieldManager.getField(fieldId);
+            const fieldName = field?.friendlyName || 'Unknown';
 
-            // Refresh known domains after settings change
-            await this.loadKnownDomains();
+            if (!confirm(`Remove field "${fieldName}"?`)) {
+                return;
+            }
+
+            console.log('Removing field:', fieldId);
+
+            // 1. Remove from memory
+            this.fieldManager.removeField(fieldId);
+
+            // 2. Save state atomically
+            this.debouncedSave();
+
+            // 3. Re-render UI
+            this.renderFields();
+
+            this.showFieldStatus(`Field "${fieldName}" removed`, 'success');
+
         } catch (error) {
-            console.error('Failed to save interval:', error);
+            console.error('Error removing field:', error);
+            this.showFieldStatus('Failed to remove field', 'error');
         }
     }
 
-    async saveConsent(enabled) {
+    // === CAPTURE FLOW (No Race Conditions) ===
+
+    async handleCapture() {
         try {
-            if (!this.currentDomain) return;
-            await chrome.storage.local.set({ [`consent_${this.currentDomain}`]: enabled });
-            console.log('Consent saved:', enabled);
+            console.log('=== Starting capture ===');
 
-            // Refresh known domains after settings change
-            await this.loadKnownDomains();
+            // 1. Validate domain consent
+            if (!this.elements.consentToggle?.checked) {
+                throw new Error('Please enable WebSophon for this domain first');
+            }
+
+            // 2. Validate LLM configuration
+            const llmConfig = await this.getLlmConfig();
+            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+                throw new Error('Please configure LLM API URL and API Key first');
+            }
+
+            // 3. Validate fields
+            const validationErrors = this.fieldManager.validateFields();
+            if (validationErrors.length > 0) {
+                throw new Error(validationErrors[0]);
+            }
+
+            // 4. Mark all fields as pending atomically
+            const eventId = Date.now().toString();
+            this.fieldManager.markFieldsPending(eventId);
+            await this.fieldManager.saveToStorage();
+
+            // 5. Re-render to show pending state
+            this.renderFields();
+
+            // 6. Show capture status
+            this.showStatus('Starting capture...', 'info');
+
+            // 7. Send capture request with clean field data
+            const fieldsForAPI = this.fieldManager.getFieldsForAPI();
+            console.log('Sending fields to API:', fieldsForAPI);
+
+            const response = await this.sendCaptureRequest(fieldsForAPI, eventId, llmConfig);
+
+            // 8. Handle response
+            if (response.success) {
+                this.showStatus('Capture in progress...', 'info');
+                console.log('Capture initiated successfully');
+            } else {
+                throw new Error(response.error || 'Capture failed');
+            }
+
         } catch (error) {
-            console.error('Failed to save consent:', error);
+            console.error('Capture failed:', error);
+
+            // Mark fields as error atomically
+            this.fieldManager.markFieldsError(error.message);
+            await this.fieldManager.saveToStorage();
+            this.renderFields();
+
+            this.showError(error.message);
         }
     }
 
-    async saveRefreshPageSetting(enabled) {
+    async sendCaptureRequest(fields, eventId, llmConfig) {
         try {
-            if (!this.currentDomain) return;
-            await chrome.storage.local.set({ [`refreshPage_${this.currentDomain}`]: enabled });
-            console.log('Refresh page setting saved:', enabled);
+            const message = {
+                action: 'captureLLM',
+                tabId: await this.getCurrentTabId(),
+                domain: this.currentDomain,
+                fields: fields,
+                eventId: eventId,
+                llmConfig: llmConfig,
+                refreshPage: this.elements.refreshPageToggle?.checked || false,
+                captureDelay: parseInt(this.elements.captureDelay?.value || '0'),
+                fullPageCapture: this.elements.fullPageCaptureToggle?.checked || false
+            };
+
+            const response = await this.sendMessageToBackground(message);
+            return response;
+
         } catch (error) {
-            console.error('Failed to save refresh page setting:', error);
+            console.error('Error sending capture request:', error);
+            return { success: false, error: error.message };
         }
     }
 
-    async saveCaptureDelay(delay) {
+    async getCurrentTabId() {
         try {
-            if (!this.currentDomain) return;
-            await chrome.storage.local.set({ [`captureDelay_${this.currentDomain}`]: delay });
-            console.log('Capture delay saved:', delay);
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            return tabs[0]?.id || null;
         } catch (error) {
-            console.error('Failed to save capture delay:', error);
+            console.error('Error getting current tab ID:', error);
+            return null;
         }
     }
 
-    async saveFullPageCaptureSetting(enabled) {
+    // === RESULT UPDATES (Single Path) ===
+
+    handleCaptureResults(results, eventId) {
         try {
-            await chrome.storage.local.set({ fullPageCapture: enabled });
-            console.log('Full page capture setting saved:', enabled);
+            console.log('=== CAPTURE RESULTS DEBUG START ===');
+            console.log('Raw results received:', results);
+            console.log('Event ID:', eventId);
+            console.log('Current fields before update:', this.fieldManager.fields.map(f => ({
+                id: f.id,
+                name: f.name,
+                friendlyName: f.friendlyName,
+                isPending: f.isPending,
+                lastEventId: f.lastEventId
+            })));
+
+            // The LLMService sends results in this format:
+            // results = raw LLM response like { "field_name": [true, 0.95], "reason": "..." }
+            // We need to format it as { fields: { "field_name": [true, 0.95] } }
+
+            let formattedResults;
+            if (results && typeof results === 'object') {
+                // Check if results already has the expected structure
+                if (results.fields) {
+                    formattedResults = results;
+                    console.log('Results already have .fields structure');
+                } else {
+                    // Convert raw LLM response to expected format
+                    const fields = {};
+                    Object.keys(results).forEach(key => {
+                        // Skip non-field properties like 'reason', 'timestamp', etc.
+                        if (key !== 'reason' && key !== 'timestamp' && key !== 'url' &&
+                            key !== 'domain' && key !== 'screenshot' && !key.startsWith('_')) {
+                            fields[key] = results[key];
+                            console.log(`Extracted field result: ${key} = ${JSON.stringify(results[key])}`);
+                        }
+                    });
+                    formattedResults = { fields };
+                    console.log('Converted raw results to structured format');
+                }
+            } else {
+                console.warn('Invalid results format, using empty fields');
+                formattedResults = { fields: {} };
+            }
+
+            console.log('Final formatted results for FieldManager:', formattedResults);
+
+            // Update field manager with results
+            const beforeUpdateFields = JSON.parse(JSON.stringify(this.fieldManager.fields));
+            this.fieldManager.updateResults(formattedResults, eventId);
+            const afterUpdateFields = this.fieldManager.fields;
+
+            console.log('Fields comparison:');
+            beforeUpdateFields.forEach((beforeField, index) => {
+                const afterField = afterUpdateFields[index];
+                if (afterField) {
+                    console.log(`Field ${beforeField.friendlyName}:`, {
+                        before: {
+                            isPending: beforeField.isPending,
+                            result: beforeField.result,
+                            lastStatus: beforeField.lastStatus
+                        },
+                        after: {
+                            isPending: afterField.isPending,
+                            result: afterField.result,
+                            lastStatus: afterField.lastStatus
+                        },
+                        changed: beforeField.isPending !== afterField.isPending ||
+                            beforeField.result !== afterField.result ||
+                            beforeField.lastStatus !== afterField.lastStatus
+                    });
+                }
+            });
+
+            // Save and re-render
+            console.log('Saving to storage and re-rendering...');
+            this.fieldManager.saveToStorage();
+            this.renderFields();
+            console.log('Fields re-rendered');
+
+            // Update Known Domains display if we're on the settings tab
+            if (this.currentTab === 'settings') {
+                this.loadKnownDomains();
+            }
+
+            this.showStatus('Capture completed successfully', 'success');
+            console.log('=== CAPTURE RESULTS DEBUG END ===');
+
         } catch (error) {
-            console.error('Failed to save full page capture setting:', error);
+            console.error('Error handling capture results:', error);
+            this.fieldManager.markFieldsError(error.message, null, eventId);
+            this.fieldManager.saveToStorage();
+            this.renderFields();
+            this.showError(`Error processing results: ${error.message}`);
         }
     }
 
-    async saveLlmConfig(config) {
-        try {
-            if (!this.currentDomain) return;
+    // === UI RENDERING (State → DOM) ===
 
-            // Get existing config
-            const data = await chrome.storage.local.get([`llmConfig_${this.currentDomain}`]);
-            const existingConfig = data[`llmConfig_${this.currentDomain}`] || {};
+    renderFields() {
+        if (!this.elements.fieldsContainer) return;
 
-            // Merge with new config
-            const updatedConfig = { ...existingConfig, ...config };
+        console.log('Rendering fields from state:', this.fieldManager.fields.length);
 
-            await chrome.storage.local.set({ [`llmConfig_${this.currentDomain}`]: updatedConfig });
-            console.log('LLM config saved:', updatedConfig);
-        } catch (error) {
-            console.error('Failed to save LLM config:', error);
-        }
+        // Clear container
+        this.elements.fieldsContainer.innerHTML = '';
+
+        // Render each field from current state
+        this.fieldManager.fields.forEach(field => {
+            this.renderField(field.id);
+        });
     }
 
+    renderField(fieldId) {
+        const field = this.fieldManager.getField(fieldId);
+        if (!field) return;
 
+        // Helper function to get domain from URL
+        const getDomainFromUrl = (url) => {
+            if (!url) return '';
+            try {
+                const urlObj = new URL(url);
+                return urlObj.hostname;
+            } catch {
+                return url; // Return original if not a valid URL
+            }
+        };
 
-    addBasicField() {
-        const fieldId = Date.now().toString();
+        // Check if URL should show domain only (has been saved before)
+        const showDomainOnly = field.webhookUrl && field.webhookUrl.startsWith('http');
+        const displayUrl = showDomainOnly ? getDomainFromUrl(field.webhookUrl) : field.webhookUrl;
+
         const fieldHtml = `
             <div class="field-item" data-field-id="${fieldId}">
                 <div class="field-header">
-                    <input type="text" class="field-name-input" placeholder="Field Name" />
-                    <button class="remove-field-btn" data-field-id="${fieldId}">✕</button>
+                    <input type="text" 
+                           class="field-name-input" 
+                           placeholder="Field Name" 
+                           value="${this.escapeHtml(field.friendlyName || '')}"
+                           data-field-id="${fieldId}">
+                    
+                    <div class="field-status">
+                        ${this.renderFieldStatus(field)}
+                    </div>
+                    
+                    <button class="remove-field-btn" data-field-id="${fieldId}" title="Remove field">
+                        ✕
+                    </button>
                 </div>
-                <textarea class="field-description" placeholder="Describe what to evaluate..."></textarea>
+                
+                <textarea class="field-description" 
+                          placeholder="Describe what to evaluate..." 
+                          data-field-id="${fieldId}">${this.escapeHtml(field.description || '')}</textarea>
+                
+                <!-- Webhook Toggle (just below field) -->
+                <div class="webhook-toggle-section">
+                    <label class="webhook-toggle-switch">
+                        <input type="checkbox" class="webhook-enabled" 
+                               data-field-id="${fieldId}" 
+                               ${field.webhookEnabled ? 'checked' : ''}>
+                        <span class="webhook-slider"></span>
+                        <span class="webhook-label">🔗 Webhook Integration</span>
+                    </label>
+                </div>
+                
+                <!-- Webhook Configuration (expanded when enabled) -->
+                <div class="webhook-config-panel ${field.webhookEnabled ? 'webhook-panel-visible' : 'webhook-panel-hidden'}">
+                    
+                    <div class="webhook-setting-row">
+                        <label class="webhook-setting-label">Fire webhook when result is:</label>
+                        <select class="webhook-trigger-select" data-field-id="${fieldId}">
+                            <option value="true" ${(field.webhookTrigger === true || field.webhookTrigger === undefined) ? 'selected' : ''}>TRUE</option>
+                            <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
+                        </select>
+                    </div>
+                    
+                    <div class="webhook-setting-row">
+                        <label class="webhook-setting-label">Minimum Confidence: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
+                        <input type="range" 
+                               class="webhook-confidence-slider" 
+                               min="0" max="100" step="5"
+                               value="${field.webhookMinConfidence || 75}"
+                               data-field-id="${fieldId}">
+                    </div>
+                    
+                    <div class="webhook-setting-row">
+                        <label class="webhook-setting-label">Webhook URL:</label>
+                        <div class="webhook-url-container">
+                            <input type="text" 
+                                   class="webhook-url-input ${showDomainOnly ? 'url-masked' : ''}" 
+                                   placeholder="https://discord.com/api/webhooks/..." 
+                                   value="${this.escapeHtml(displayUrl)}"
+                                   data-field-id="${fieldId}"
+                                   data-full-url="${this.escapeHtml(field.webhookUrl || '')}">
+                            ${showDomainOnly ? `
+                                <button type="button" class="url-visibility-toggle" data-field-id="${fieldId}" title="Show/hide full URL">
+                                    👁️
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="webhook-setting-row webhook-payload-row">
+                        <label class="webhook-setting-label">Payload (JSON):</label>
+                        <textarea class="webhook-payload-input" 
+                                  placeholder='{"content": "Field **${field.friendlyName || 'FieldName'}** result: **{{result}}** ({{confidence}}% confidence)\\nDomain: {{domain}} | Time: {{timestamp}}"}'
+                                  data-field-id="${fieldId}">${this.escapeHtml(field.webhookPayload || '')}</textarea>
+                        <div class="webhook-variables-help">
+                            <small>Available variables: {{fieldName}}, {{result}}, {{confidence}}, {{timestamp}}, {{domain}}</small>
+                        </div>
+                    </div>
+                    
+                </div>
             </div>
         `;
 
-        this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+        const container = this.elements.fieldsContainer;
+        const existingField = container.querySelector(`[data-field-id="${fieldId}"]`);
 
-        // Add event listeners for the new field
-        this.setupFieldRemoveListener(fieldId);
+        if (existingField) {
+            existingField.outerHTML = fieldHtml;
+        } else {
+            container.insertAdjacentHTML('beforeend', fieldHtml);
+        }
 
-        this.showFieldStatus('Field added', 'success');
+        this.setupFieldEventHandlers(fieldId);
     }
 
-    async savePreset() {
+    renderFieldStatus(field) {
+        if (field.isPending) {
+            return '<span class="status pending">⏳ Pending</span>';
+        }
+
+        if (field.lastStatus === 'error') {
+            const errorMsg = field.lastError ? ` (${field.lastError})` : '';
+            return `<span class="status error" title="Error${errorMsg}">❌ Error</span>`;
+        }
+
+        if (field.result !== null) {
+            const percentage = field.probability ? ` (${(field.probability * 100).toFixed(0)}%)` : '';
+            const statusClass = field.result ? 'true' : 'false';
+            const statusText = field.result ? 'TRUE' : 'FALSE';
+            return `<span class="status ${statusClass}" title="Click to view in history">${statusText}${percentage}</span>`;
+        }
+
+        return '<span class="status none">No results yet</span>';
+    }
+
+    updateFieldDisplay(fieldId) {
+        const field = this.fieldManager.getField(fieldId);
+        if (!field) return;
+
+        // Update status display
+        const statusEl = document.querySelector(`.field-status[data-field-id="${fieldId}"]`);
+        if (statusEl) {
+            statusEl.innerHTML = this.renderFieldStatus(field);
+        }
+    }
+
+    // === EVENT HANDLERS (ID-Based) ===
+
+    setupFieldEventHandlers(fieldId) {
+        // Name input
+        const nameInput = document.querySelector(`input.field-name-input[data-field-id="${fieldId}"]`);
+        nameInput?.addEventListener('input', (e) => {
+            this.updateField(fieldId, {
+                friendlyName: e.target.value
+            });
+        });
+
+        // Description input  
+        const descInput = document.querySelector(`textarea.field-description[data-field-id="${fieldId}"]`);
+        descInput?.addEventListener('input', (e) => {
+            this.updateField(fieldId, {
+                description: e.target.value
+            });
+        });
+
+        // Remove button
+        const removeBtn = document.querySelector(`button.remove-field-btn[data-field-id="${fieldId}"]`);
+        removeBtn?.addEventListener('click', () => {
+            this.removeField(fieldId);
+        });
+
+        // Status click (for history navigation)
+        const statusEl = document.querySelector(`.field-status[data-field-id="${fieldId}"]`);
+        statusEl?.addEventListener('click', () => {
+            const field = this.fieldManager.getField(fieldId);
+            if (field?.lastEventId) {
+                this.navigateToHistoryEvent(field.lastEventId);
+            }
+        });
+
+        // Webhook controls
+        const webhookEnabled = document.querySelector(`input.webhook-enabled[data-field-id="${fieldId}"]`);
+        webhookEnabled?.addEventListener('change', (e) => {
+            this.updateField(fieldId, {
+                webhookEnabled: e.target.checked
+            });
+            // Show/hide webhook config
+            const config = document.querySelector(`.field-item[data-field-id="${fieldId}"] .webhook-config-panel`);
+            if (config) {
+                config.className = `webhook-config-panel ${e.target.checked ? 'webhook-panel-visible' : 'webhook-panel-hidden'}`;
+            }
+        });
+
+        const webhookTrigger = document.querySelector(`select.webhook-trigger-select[data-field-id="${fieldId}"]`);
+        webhookTrigger?.addEventListener('change', (e) => {
+            this.updateField(fieldId, {
+                webhookTrigger: e.target.value === 'true'
+            });
+        });
+
+        const webhookUrl = document.querySelector(`input.webhook-url-input[data-field-id="${fieldId}"]`);
+        webhookUrl?.addEventListener('input', (e) => {
+            this.updateField(fieldId, {
+                webhookUrl: e.target.value
+            });
+        });
+
+        // URL visibility toggle
+        const urlVisibilityToggle = document.querySelector(`button.url-visibility-toggle[data-field-id="${fieldId}"]`);
+        urlVisibilityToggle?.addEventListener('click', (e) => {
+            e.preventDefault();
+            const urlInput = document.querySelector(`input.webhook-url-input[data-field-id="${fieldId}"]`);
+            if (urlInput) {
+                const isCurrentlyMasked = urlInput.classList.contains('url-masked');
+                if (isCurrentlyMasked) {
+                    // Show full URL
+                    urlInput.value = urlInput.dataset.fullUrl || '';
+                    urlInput.classList.remove('url-masked');
+                    e.target.textContent = '🙈';
+                } else {
+                    // Show domain only
+                    const fullUrl = urlInput.value;
+                    urlInput.dataset.fullUrl = fullUrl;
+                    try {
+                        const urlObj = new URL(fullUrl);
+                        urlInput.value = urlObj.hostname;
+                    } catch {
+                        // If not a valid URL, keep as is
+                    }
+                    urlInput.classList.add('url-masked');
+                    e.target.textContent = '👁️';
+                }
+            }
+        });
+
+        const webhookPayload = document.querySelector(`textarea.webhook-payload-input[data-field-id="${fieldId}"]`);
+        webhookPayload?.addEventListener('input', (e) => {
+            this.updateField(fieldId, {
+                webhookPayload: e.target.value
+            });
+        });
+
+        // Webhook minimum confidence slider
+        const webhookMinConfidenceSlider = document.querySelector(`input.webhook-confidence-slider[data-field-id="${fieldId}"]`);
+        webhookMinConfidenceSlider?.addEventListener('input', (e) => {
+            const confidence = parseInt(e.target.value);
+            this.updateField(fieldId, {
+                webhookMinConfidence: confidence
+            });
+            // Update the displayed value
+            const valueDisplay = document.querySelector(`.field-item[data-field-id="${fieldId}"] .confidence-value`);
+            if (valueDisplay) {
+                valueDisplay.textContent = `${confidence}%`;
+            }
+        });
+    }
+
+    focusField(fieldId) {
+        setTimeout(() => {
+            const nameInput = document.querySelector(`input.field-name-input[data-field-id="${fieldId}"]`);
+            if (nameInput) {
+                nameInput.focus();
+                nameInput.select();
+            }
+        }, 100);
+    }
+
+    // === MESSAGE HANDLING (Clean) ===
+
+    setupMessageListener() {
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            console.log('Received message:', message);
+
+            // Handle both 'action' and 'type' properties for compatibility
+            const messageType = message.type || message.action;
+
+            switch (messageType) {
+                case 'captureComplete':
+                case 'captureResults':
+                    console.log('Processing capture results:', message);
+                    this.handleCaptureResults(message.results, message.eventId);
+
+                    // Reload history to show new event
+                    if (this.historyManager?.loadHistory) {
+                        this.historyManager.loadHistory();
+                    }
+                    break;
+
+                case 'captureError':
+                    this.fieldManager.markFieldsError(
+                        message.error,
+                        message.httpStatus,
+                        message.eventId
+                    );
+                    this.fieldManager.saveToStorage();
+                    this.renderFields();
+                    this.showError(`Capture failed: ${message.error}`);
+                    break;
+
+                case 'captureCancelled':
+                    this.fieldManager.markFieldsCancelled(message.eventId);
+                    this.fieldManager.saveToStorage();
+                    this.renderFields();
+                    this.showStatus('Capture cancelled', 'warning');
+                    break;
+
+                default:
+                    console.warn('Unknown message type:', messageType, 'Full message:', message);
+            }
+        });
+    }
+
+    // === PRESETS ===
+
+    renderPresets() {
+        if (!this.elements.presetSelector) return;
+
+        const presetNames = this.fieldManager.getPresetNames();
+
+        // Clear existing options
+        this.elements.presetSelector.innerHTML = '<option value="">Select a preset...</option>';
+
+        if (presetNames.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No presets available';
+            option.disabled = true;
+            this.elements.presetSelector.appendChild(option);
+        } else {
+            presetNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                this.elements.presetSelector.appendChild(option);
+            });
+        }
+
+        this.updatePresetButtons();
+    }
+
+    updatePresetButtons() {
+        const hasSelection = this.elements.presetSelector?.value;
+        if (this.elements.deletePresetBtn) {
+            this.elements.deletePresetBtn.disabled = !hasSelection;
+        }
+    }
+
+    savePreset() {
         const name = prompt('Enter preset name:');
-        if (!name || !name.trim()) {
-            return;
-        }
-
-        const presetName = name.trim();
-
-        // Get current fields from DOM
-        const fields = this.getAllFieldsFromDOM(); // Get all field data including webhooks
-
-        if (fields.length === 0) {
-            this.showStatus('No fields to save in preset', 'error');
-            return;
-        }
+        if (!name || !name.trim()) return;
 
         try {
-            // Get existing presets
-            const data = await chrome.storage.local.get(['fieldPresets']);
-            const presets = data.fieldPresets || {};
-
-            // Save preset
-            presets[presetName] = {
-                name: presetName,
-                fields: fields,
-                created: new Date().toISOString(),
-                domain: this.currentDomain // Optional: track which domain it was created on
-            };
-
-            await chrome.storage.local.set({ fieldPresets: presets });
-
-            // Refresh preset dropdown
-            await this.loadPresets();
-
-            // Select the newly saved preset
-            if (this.elements.presetSelector) {
-                this.elements.presetSelector.value = presetName;
+            const validationErrors = this.fieldManager.validateFields();
+            if (validationErrors.length > 0) {
+                this.showError(`Cannot save preset: ${validationErrors[0]}`);
+                return;
             }
 
-            this.showStatus(`Preset "${presetName}" saved successfully`, 'success');
-            console.log('Preset saved:', presets[presetName]);
+            const success = this.fieldManager.savePreset(name.trim());
+            if (!success) {
+                this.showError('Failed to save preset');
+                return;
+            }
+
+            this.fieldManager.saveToStorage();
+            this.renderPresets();
+
+            if (this.elements.presetSelector) {
+                this.elements.presetSelector.value = name.trim();
+                this.updatePresetButtons();
+            }
+
+            this.showStatus(`Preset "${name.trim()}" saved successfully`, 'success');
+
         } catch (error) {
-            console.error('Failed to save preset:', error);
-            this.showStatus('Failed to save preset', 'error');
+            console.error('Error saving preset:', error);
+            this.showError('Failed to save preset');
         }
     }
 
-    async deletePreset() {
+    deletePreset() {
         const presetName = this.elements.presetSelector?.value;
-        if (!presetName) {
-            this.showStatus('Please select a preset to delete', 'error');
-            return;
-        }
+        if (!presetName) return;
 
         if (!confirm(`Are you sure you want to delete the preset "${presetName}"?`)) {
             return;
         }
 
         try {
-            // Get existing presets
-            const data = await chrome.storage.local.get(['fieldPresets']);
-            const presets = data.fieldPresets || {};
-
-            if (presets[presetName]) {
-                delete presets[presetName];
-                await chrome.storage.local.set({ fieldPresets: presets });
-
-                // Refresh preset dropdown
-                await this.loadPresets();
-
-                this.showStatus(`Preset "${presetName}" deleted successfully`, 'success');
-                console.log('Preset deleted:', presetName);
-            } else {
-                this.showStatus('Preset not found', 'error');
+            const success = this.fieldManager.deletePreset(presetName);
+            if (!success) {
+                this.showError('Preset not found');
+                return;
             }
+
+            this.fieldManager.saveToStorage();
+            this.renderPresets();
+            this.showStatus(`Preset "${presetName}" deleted successfully`, 'success');
+
         } catch (error) {
-            console.error('Failed to delete preset:', error);
-            this.showStatus('Failed to delete preset', 'error');
+            console.error('Error deleting preset:', error);
+            this.showError('Failed to delete preset');
         }
     }
 
-    async loadPresets() {
-        if (!this.elements.presetSelector) {
-            return;
+    loadPreset() {
+        const presetName = this.elements.presetSelector?.value;
+        if (!presetName) return;
+
+        try {
+            console.log('Loading preset:', presetName);
+
+            const success = this.fieldManager.loadPreset(presetName);
+            if (!success) {
+                this.showError('Preset not found');
+                return;
+            }
+
+            // Save the loaded state and re-render
+            this.fieldManager.saveToStorage();
+            this.renderFields();
+
+            this.showStatus(`Preset "${presetName}" loaded successfully`, 'success');
+            console.log('Preset loaded successfully');
+
+        } catch (error) {
+            console.error('Error loading preset:', error);
+            this.showError('Failed to load preset');
+        }
+    }
+
+    // === SETTINGS ===
+
+    async loadBasicSettings() {
+        try {
+            const keys = [
+                `consent_${this.currentDomain}`,
+                `interval_${this.currentDomain}`,
+                'llmConfig_global'
+            ];
+
+            const data = await chrome.storage.local.get(keys);
+
+            if (this.elements.consentToggle) {
+                this.elements.consentToggle.checked = data[`consent_${this.currentDomain}`] || false;
+            }
+
+            if (this.elements.captureInterval) {
+                this.elements.captureInterval.value = data[`interval_${this.currentDomain}`] || 'manual';
+            }
+
+            // LLM configuration (global)
+            const llmConfig = data.llmConfig_global || {};
+            if (this.elements.llmApiUrl) {
+                this.elements.llmApiUrl.value = llmConfig.apiUrl || '';
+            }
+            if (this.elements.llmApiKey) {
+                this.elements.llmApiKey.value = llmConfig.apiKey || '';
+            }
+            if (this.elements.llmModel) {
+                this.elements.llmModel.value = llmConfig.model || 'opengvlab/internvl3-14b:free';
+            }
+
+            // Load theme
+            await this.loadTheme();
+
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+        }
+    }
+
+    async saveConsent(enabled) {
+        try {
+            await chrome.storage.local.set({ [`consent_${this.currentDomain}`]: enabled });
+        } catch (error) {
+            console.error('Failed to save consent:', error);
+        }
+    }
+
+    async getLlmConfig() {
+        try {
+            const data = await chrome.storage.local.get(['llmConfig_global']);
+            const config = data.llmConfig_global || {};
+
+            // Fallback to UI values if storage is empty
+            if (!config.apiUrl && this.elements.llmApiUrl) {
+                config.apiUrl = this.elements.llmApiUrl.value;
+            }
+            if (!config.apiKey && this.elements.llmApiKey) {
+                config.apiKey = this.elements.llmApiKey.value;
+            }
+            if (!config.model && this.elements.llmModel) {
+                config.model = this.elements.llmModel.value;
+            }
+
+            return config;
+        } catch (error) {
+            console.error('Failed to get LLM config:', error);
+            return {};
+        }
+    }
+
+    async saveLlmConfig() {
+        try {
+            const config = {
+                apiUrl: this.elements.llmApiUrl?.value || '',
+                apiKey: this.elements.llmApiKey?.value || '',
+                model: this.elements.llmModel?.value || 'opengvlab/internvl3-14b:free',
+                temperature: parseFloat(this.elements.llmTemperature?.value) || 0.3,
+                maxTokens: parseInt(this.elements.llmMaxTokens?.value) || 1000
+            };
+
+            await chrome.storage.local.set({ llmConfig_global: config });
+            console.log('LLM config saved');
+
+        } catch (error) {
+            console.error('Failed to save LLM config:', error);
+        }
+    }
+
+    debouncedSaveLlmConfig() {
+        clearTimeout(this.saveDebounceTimer);
+        this.saveDebounceTimer = setTimeout(() => {
+            this.saveLlmConfig();
+        }, 500);
+    }
+
+    async testLlmConfiguration() {
+        console.log('Testing LLM configuration...');
+
+        if (this.elements.testConfigStatus) {
+            this.elements.testConfigStatus.textContent = 'Testing...';
+            this.elements.testConfigStatus.className = 'status-pending';
         }
 
         try {
-            const data = await chrome.storage.local.get(['fieldPresets']);
-            const presets = data.fieldPresets || {};
+            const llmConfig = await this.getLlmConfig();
 
-            // Clear existing options except the default
-            this.elements.presetSelector.innerHTML = '<option value="">Select a preset...</option>';
-
-            // Add preset options
-            const presetNames = Object.keys(presets).sort();
-            if (presetNames.length === 0) {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'No presets available';
-                option.disabled = true;
-                this.elements.presetSelector.appendChild(option);
-            } else {
-                presetNames.forEach(name => {
-                    const option = document.createElement('option');
-                    option.value = name;
-                    option.textContent = name;
-                    this.elements.presetSelector.appendChild(option);
-                });
+            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+                throw new Error('Missing API URL or API Key');
             }
 
-            // Update delete button state
-            this.updatePresetUIState();
+            // Test with a simple request
+            const testMessage = {
+                action: 'testLLM',
+                llmConfig: llmConfig
+            };
 
-            console.log(`Loaded ${presetNames.length} presets`);
+            const response = await this.sendMessageToBackground(testMessage);
+
+            if (response && response.success) {
+                if (this.elements.testConfigStatus) {
+                    this.elements.testConfigStatus.textContent = '✓ Configuration valid';
+                    this.elements.testConfigStatus.className = 'status-success';
+                }
+                console.log('LLM test successful');
+            } else {
+                throw new Error(response?.error || 'Test failed');
+            }
         } catch (error) {
-            console.error('Failed to load presets:', error);
+            console.error('LLM test failed:', error);
+            if (this.elements.testConfigStatus) {
+                this.elements.testConfigStatus.textContent = `✗ ${error.message}`;
+                this.elements.testConfigStatus.className = 'status-error';
+            }
         }
+    }
+
+    // === HISTORY ===
+
+    async initializeHistoryManager() {
+        try {
+            console.log('Initializing history manager...');
+            console.log('window.HistoryManager available:', !!window.HistoryManager);
+            console.log('historyContainer element:', !!this.elements.historyContainer);
+
+            if (window.HistoryManager) {
+                this.historyManager = new window.HistoryManager();
+                this.historyManager.setElements(this.elements);
+
+                // Load initial history data
+                if (this.historyManager.loadHistory) {
+                    console.log('Loading history data...');
+                    this.historyManager.loadHistory();
+                } else {
+                    console.warn('HistoryManager.loadHistory method not found');
+                }
+
+                console.log('History manager initialized successfully');
+            } else {
+                console.warn('HistoryManager not available - adding fallback');
+                // Add fallback placeholder
+                if (this.elements.historyContainer) {
+                    this.elements.historyContainer.innerHTML = `
+                        <div class="history-empty">
+                            <h3>📊 History</h3>
+                            <p>No capture events yet. Try running a manual capture to see results here.</p>
+                            <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">History manager failed to load</p>
+                        </div>
+                    `;
+                }
+            }
+        } catch (error) {
+            console.error('Failed to initialize history manager:', error);
+            // Add error placeholder with better styling
+            if (this.elements.historyContainer) {
+                this.elements.historyContainer.innerHTML = `
+                    <div class="history-empty">
+                        <h3>📊 History</h3>
+                        <p>No capture events yet. Try running a manual capture to see results here.</p>
+                        <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    navigateToHistoryEvent(eventId) {
+        this.switchTab('history');
+
+        if (this.historyManager?.scrollToEvent) {
+            this.historyManager.scrollToEvent(eventId);
+        }
+    }
+
+    // === UTILITY METHODS ===
+
+    debouncedSave() {
+        clearTimeout(this.saveDebounceTimer);
+        this.saveDebounceTimer = setTimeout(() => {
+            this.fieldManager.saveToStorage();
+        }, 500);
+    }
+
+    async sendMessageToBackground(message) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(response || {});
+                }
+            });
+        });
+    }
+
+    showStatus(message, type = 'info') {
+        console.log(`Status (${type}):`, message);
+
+        if (this.elements.captureStatus) {
+            this.elements.captureStatus.textContent = message;
+            this.elements.captureStatus.className = `status-message ${type}`;
+
+            setTimeout(() => {
+                if (this.elements.captureStatus.textContent === message) {
+                    this.elements.captureStatus.textContent = '';
+                    this.elements.captureStatus.className = 'status-message';
+                }
+            }, 5000);
+        }
+    }
+
+    showError(message) {
+        this.showStatus(message, 'error');
+    }
+
+    showFieldStatus(message, type = 'info') {
+        console.log(`Field Status (${type}):`, message);
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Debug method for troubleshooting field updates
+    debugFieldStates() {
+        console.log('=== FIELD DEBUG INFO ===');
+        console.log('Current Domain:', this.currentDomain);
+        console.log('Total Fields:', this.fieldManager.fields.length);
+
+        this.fieldManager.fields.forEach((field, index) => {
+            console.log(`Field ${index + 1}:`, {
+                id: field.id,
+                name: field.name,
+                friendlyName: field.friendlyName,
+                description: field.description?.substring(0, 50) + '...',
+                isPending: field.isPending,
+                lastStatus: field.lastStatus,
+                result: field.result,
+                probability: field.probability,
+                lastEventId: field.lastEventId,
+                lastResultTime: field.lastResultTime
+            });
+        });
+
+        // Check if DOM elements exist for each field
+        console.log('DOM Field Elements:');
+        this.fieldManager.fields.forEach((field, index) => {
+            const fieldElement = document.querySelector(`[data-field-id="${field.id}"]`);
+            const statusElement = fieldElement?.querySelector('.field-status');
+            console.log(`Field ${index + 1} DOM:`, {
+                fieldElement: !!fieldElement,
+                statusElement: !!statusElement,
+                statusHTML: statusElement?.innerHTML || 'NOT FOUND'
+            });
+        });
+
+        console.log('Last Results:', this.fieldManager.lastResults);
+        console.log('=== END FIELD DEBUG ===');
+
+        return {
+            fieldCount: this.fieldManager.fields.length,
+            fields: this.fieldManager.fields,
+            lastResults: this.fieldManager.lastResults
+        };
     }
 
     async loadKnownDomains() {
         if (!this.elements.domainsContainer) {
+            console.log('No domains container found');
             return;
         }
 
@@ -890,7 +1448,7 @@ class SimplePopupController {
                 const domain = button.dataset.domain;
 
                 // Confirm deletion
-                const confirmMessage = `Delete all WebSophon settings for "${domain}"?\n\nThis will remove:\n• Domain consent settings\n• Capture interval\n• Field configurations\n• LLM settings\n• History data\n\nThis action cannot be undone.`;
+                const confirmMessage = `Delete all WebSophon settings for "${domain}"?\n\nThis will remove:\n• Domain consent settings\n• Capture interval\n• Field configurations\n• History data\n\nThis action cannot be undone.`;
 
                 if (confirm(confirmMessage)) {
                     await this.deleteDomainSettings(domain);
@@ -932,20 +1490,6 @@ class SimplePopupController {
                 console.log(`Removed ${captureHistory.length - filteredHistory.length} history events for domain`);
             }
 
-            // Stop any automatic capture for this domain if it's the current domain
-            if (domain === this.currentDomain) {
-                this.stopAutomaticCapture();
-
-                // Reset UI to defaults
-                if (this.elements.consentToggle) this.elements.consentToggle.checked = false;
-                if (this.elements.captureInterval) this.elements.captureInterval.value = 'manual';
-                if (this.elements.refreshPageToggle) this.elements.refreshPageToggle.checked = false;
-                if (this.elements.captureDelay) this.elements.captureDelay.value = '0';
-                if (this.elements.fieldsContainer) this.elements.fieldsContainer.innerHTML = '';
-
-                this.updateManualModeUI();
-            }
-
             // Refresh the domains list
             await this.loadKnownDomains();
 
@@ -961,903 +1505,44 @@ class SimplePopupController {
             this.showStatus(`Failed to delete settings for "${domain}"`, 'error');
         }
     }
+}
 
-    updatePresetUIState() {
-        const hasSelection = this.elements.presetSelector?.value;
-        if (this.elements.deletePresetBtn) {
-            this.elements.deletePresetBtn.disabled = !hasSelection;
-        }
+// LLM-only Field Manager (simplified version)
+class FieldManagerLLM {
+    constructor() {
+        this.fields = [];
+        this.presets = {};
+        this.currentDomain = '';
+        this.lastResults = null;
     }
 
-    async loadPreset() {
-        const presetName = this.elements.presetSelector?.value;
-        if (!presetName) {
-            this.updatePresetUIState();
-            return;
-        }
-
-        try {
-            const data = await chrome.storage.local.get(['fieldPresets']);
-            const presets = data.fieldPresets || {};
-            const preset = presets[presetName];
-
-            if (!preset || !preset.fields) {
-                this.showStatus('Preset not found or invalid', 'error');
-                return;
-            }
-
-            // Clear existing fields
-            if (this.elements.fieldsContainer) {
-                this.elements.fieldsContainer.innerHTML = '';
-            }
-
-            // Load preset fields
-            preset.fields.forEach(fieldData => {
-                this.createFieldFromData(fieldData);
-            });
-
-            // Save the loaded fields state
-            await this.saveFieldsState();
-
-            // Update UI state
-            this.updatePresetUIState();
-
-            this.showStatus(`Preset "${presetName}" loaded successfully`, 'success');
-            console.log('Preset loaded:', preset);
-        } catch (error) {
-            console.error('Failed to load preset:', error);
-            this.showStatus('Failed to load preset', 'error');
-        }
+    generateFieldId() {
+        return `field_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // Get all field data for LLM-only operation
-    getAllFieldsFromDOM() {
-        const fields = [];
-        const fieldItems = Array.from(document.querySelectorAll('.field-item'))
-            .filter(item => item.isConnected && item.parentNode);
-
-        fieldItems.forEach((item, index) => {
-            const fieldId = item.dataset.fieldId || Date.now() + index;
-            const nameInput = item.querySelector('.field-name-input');
-            const descriptionInput = item.querySelector('.field-description');
-
-            if (nameInput && descriptionInput && nameInput.isConnected && descriptionInput.isConnected) {
-                const name = nameInput.value.trim();
-                const description = descriptionInput.value.trim();
-
-                // Only include fields with valid name and description
-                if (name && description) {
-                    // Get last result and event ID if available
-                    const lastResultContainer = item.querySelector('.field-last-result');
-                    const lastResultElement = lastResultContainer?.querySelector('.result-text');
-                    let lastResult = null;
-                    let eventId = null;
-
-                    if (lastResultElement && lastResultElement.innerHTML !== 'No results yet') {
-                        // Extract result data from the display
-                        if (lastResultElement.innerHTML.includes('Pending')) {
-                            lastResult = { status: 'pending' };
-                        } else if (lastResultElement.innerHTML.includes('Error')) {
-                            lastResult = { status: 'error' };
-                        } else if (lastResultElement.innerHTML.includes('TRUE')) {
-                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
-                            lastResult = {
-                                result: true,
-                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
-                            };
-                        } else if (lastResultElement.innerHTML.includes('FALSE')) {
-                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
-                            lastResult = {
-                                result: false,
-                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
-                            };
-                        }
-                    }
-
-                    if (lastResultContainer && lastResultContainer.dataset.eventId) {
-                        eventId = lastResultContainer.dataset.eventId;
-                    }
-
-                    fields.push({
-                        id: fieldId,
-                        name: name,
-                        description: description,
-                        lastResult: lastResult,
-                        eventId: eventId
-                    });
-                }
-            }
-        });
-
-        return fields;
+    addField(data = {}) {
+        const field = {
+            id: this.generateFieldId(),
+            name: this.sanitizeFieldName(data.friendlyName || data.name || ''),
+            friendlyName: data.friendlyName || data.name || '',
+            description: data.description || '',
+            result: null,
+            probability: null,
+            lastStatus: null,
+            lastError: null,
+            lastEventId: null,
+            lastResultTime: null,
+            isPending: false,
+            webhookEnabled: data.webhookEnabled || false,
+            webhookTrigger: data.webhookTrigger !== undefined ? data.webhookTrigger : true,
+            webhookUrl: data.webhookUrl || '',
+            webhookPayload: data.webhookPayload || '',
+            webhookMinConfidence: data.webhookMinConfidence !== undefined ? data.webhookMinConfidence : 75
+        };
+        this.fields.push(field);
+        return field;
     }
 
-    async handleManualCapture() {
-        // Check if domain is enabled
-        if (!this.elements.consentToggle?.checked) {
-            this.showStatus('Please enable WebSophon for this domain first', 'error');
-            return;
-        }
-
-        // Validate LLM configuration
-        const llmConfig = await this.getLlmConfig();
-        if (!llmConfig.apiUrl || !llmConfig.apiKey) {
-            this.showStatus('Please configure LLM API URL and API Key first', 'error');
-            return;
-        }
-
-        // Get fields and save them before capture
-        const fields = this.getFieldsFromDOM();
-        if (fields.length === 0) {
-            this.showStatus('Please add at least one field', 'error');
-            return;
-        }
-
-        // Save current field state
-        await this.saveFieldsState();
-
-        // Update button state
-        if (this.elements.captureNow) {
-            this.elements.captureNow.disabled = true;
-            this.elements.captureNow.textContent = '⏳ Analyzing with LLM...';
-        }
-
-        try {
-            // Set all fields to pending before sending
-            console.log('Setting fields to pending:', fields);
-            fields.forEach(field => {
-                this.updateFieldStatus(field.name, 'pending', null);
-            });
-
-            // Save state to ensure pending status persists
-            await this.saveFieldsState();
-
-            // Prepare LLM capture message
-            const message = {
-                action: 'captureLLM',
-                domain: this.currentDomain,
-                tabId: this.currentTabId,
-                llmConfig: llmConfig,
-                fields: fields,
-                refreshPage: this.elements.refreshPageToggle?.checked || false,
-                captureDelay: parseInt(this.elements.captureDelay?.value || '0'),
-                fullPageCapture: this.elements.fullPageCaptureToggle?.checked || false
-            };
-
-            // Send to background script
-            const response = await this.sendMessageToBackground(message);
-
-            if (response && response.success) {
-                this.showStatus('Screenshot analyzed with LLM!', 'success');
-
-                // Store event ID with fields if available
-                if (response.eventId) {
-                    fields.forEach(field => {
-                        this.updateFieldStatus(field.name, 'pending', response.eventId);
-                    });
-                }
-            } else {
-                this.showStatus(`LLM analysis failed: ${response?.error || 'Unknown error'}`, 'error');
-
-                // Set fields to error state
-                fields.forEach(field => {
-                    this.updateFieldStatus(field.name, 'error', null);
-                });
-            }
-        } catch (error) {
-            console.error('Capture error:', error);
-            this.showStatus(`Error: ${error.message}`, 'error');
-        } finally {
-            // Restore button
-            if (this.elements.captureNow) {
-                this.elements.captureNow.disabled = false;
-                this.elements.captureNow.textContent = '📸 Capture Screenshot Now';
-            }
-        }
-    }
-
-    async getLlmConfig() {
-        if (!this.currentDomain) return {};
-
-        const data = await chrome.storage.local.get([`llmConfig_${this.currentDomain}`]);
-        const config = data[`llmConfig_${this.currentDomain}`] || {};
-
-        // Handle custom model: if model is 'custom', use customModel value
-        if (config.model === 'custom' && config.customModel) {
-            return {
-                ...config,
-                model: config.customModel // Use the custom model name as the actual model
-            };
-        }
-
-        return config;
-    }
-
-    getFieldsFromDOM() {
-        const fields = [];
-        const fieldItems = Array.from(document.querySelectorAll('.field-item'))
-            .filter(item => item.isConnected && item.parentNode); // Only connected elements
-
-        console.log(`getFieldsFromDOM: Found ${fieldItems.length} connected field items`);
-
-        fieldItems.forEach((item, index) => {
-            const nameInput = item.querySelector('.field-name-input');
-            const descriptionInput = item.querySelector('.field-description');
-
-            if (nameInput && descriptionInput && nameInput.isConnected && descriptionInput.isConnected) {
-                const name = nameInput.value.trim();
-                const description = descriptionInput.value.trim();
-
-                console.log(`Field ${index}: name="${name}", description="${description}"`);
-
-                // Only include fields that have both name and description
-                if (name && description) {
-                    const sanitizedName = name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-                    fields.push({
-                        name: sanitizedName,
-                        criteria: description
-                    });
-                    console.log(`Added field ${index} to collection: ${sanitizedName}`);
-                } else {
-                    console.log(`Skipped field ${index} - empty name or description`);
-                }
-            } else {
-                console.log(`Skipped field ${index} - missing or disconnected elements`);
-            }
-        });
-
-        console.log(`getFieldsFromDOM: Returning ${fields.length} valid fields:`, fields);
-        return fields;
-    }
-
-    async sendMessageToBackground(message) {
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('Background script timeout'));
-            }, 30000);
-
-            chrome.runtime.sendMessage(message, (response) => {
-                clearTimeout(timeout);
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else {
-                    resolve(response);
-                }
-            });
-        });
-    }
-
-    showStatus(message, type) {
-        if (this.elements.status) {
-            this.elements.status.textContent = message;
-            this.elements.status.className = `status-message ${type}`;
-            setTimeout(() => {
-                this.elements.status.className = 'status-message';
-            }, 3000);
-        }
-        console.log(`Status: ${type} - ${message}`);
-    }
-
-    showError(message) {
-        this.showStatus(message, 'error');
-    }
-
-    showFieldStatus(message, type) {
-        if (this.elements.fieldStatus) {
-            this.elements.fieldStatus.textContent = message;
-            this.elements.fieldStatus.className = `status-message ${type}`;
-            setTimeout(() => {
-                this.elements.fieldStatus.className = 'status-message';
-            }, 3000);
-        }
-        console.log(`Field Status: ${type} - ${message}`);
-    }
-
-    // Theme system
-    initializeTheme() {
-        console.log('Initializing theme...');
-
-        chrome.storage.local.get(['themePreference'], (result) => {
-            let theme = result.themePreference;
-            if (!theme) {
-                theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            }
-            this.applyTheme(theme);
-            this.updateThemeIcon(theme);
-            console.log(`Initial theme: ${theme}`);
-        });
-
-        // Listen for system theme changes
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        mediaQuery.addListener((e) => {
-            chrome.storage.local.get(['themePreference'], (result) => {
-                if (!result.themePreference) {
-                    const theme = e.matches ? 'dark' : 'light';
-                    this.applyTheme(theme);
-                    this.updateThemeIcon(theme);
-                    console.log(`System theme changed to: ${theme}`);
-                }
-            });
-        });
-    }
-
-    toggleTheme() {
-        console.log('Toggling theme...');
-        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-
-        this.applyTheme(newTheme);
-        this.updateThemeIcon(newTheme);
-
-        // Save preference
-        chrome.storage.local.set({ themePreference: newTheme });
-        console.log(`Theme switched to: ${newTheme}`);
-        this.showStatus(`Switched to ${newTheme} theme`, 'success');
-    }
-
-    applyTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-        console.log(`Applied theme: ${theme}`);
-    }
-
-    updateThemeIcon(theme) {
-        const themeIcon = this.elements.themeToggle?.querySelector('.theme-icon');
-        if (themeIcon) {
-            themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
-            console.log(`Updated theme icon for ${theme} theme`);
-        }
-    }
-
-    updateManualModeUI() {
-        const isManualMode = this.elements.captureInterval?.value === 'manual';
-        const consentLabel = document.querySelector('.consent-label');
-
-        if (consentLabel) {
-            if (isManualMode) {
-                consentLabel.textContent = 'Enable WebSophon for this domain (Manual captures only)';
-            } else {
-                const interval = this.elements.captureInterval?.value;
-                if (interval && interval !== 'manual') {
-                    consentLabel.textContent = `Enable WebSophon for this domain (${interval}s automatic + manual)`;
-                } else {
-                    consentLabel.textContent = 'Enable WebSophon for this domain';
-                }
-            }
-        }
-    }
-
-    async initializeHistoryManager() {
-        try {
-            console.log('Initializing HistoryManager...');
-            console.log('Available elements:', Object.keys(this.elements));
-            console.log('History container exists:', !!this.elements.historyContainer);
-
-            // Import the real HistoryManager
-            const { HistoryManager } = await import('./components/HistoryManager.js');
-            console.log('HistoryManager imported successfully');
-
-            // Create and initialize the manager
-            this.historyManager = new HistoryManager();
-            this.historyManager.setElements(this.elements);
-            console.log('HistoryManager created and elements set');
-
-            // Load history after DOM is ready
-            setTimeout(() => {
-                console.log('Loading history with elements:', this.elements.historyContainer ? 'Found' : 'Missing');
-                this.historyManager.loadHistory();
-            }, 100);
-
-            console.log('HistoryManager initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize HistoryManager:', error);
-            console.error('Error details:', error.stack);
-            // Create fallback history manager
-            this.historyManager = {
-                loadHistory: () => {
-                    console.log('Fallback history manager - loadHistory called');
-                    if (this.elements.historyContainer) {
-                        this.elements.historyContainer.innerHTML = '<div class="history-empty">History functionality unavailable (HistoryManager failed to load)</div>';
-                        console.log('Set fallback message in history container');
-                    } else {
-                        console.error('History container element not found:', this.elements);
-                    }
-                },
-                setShowTrueOnly: () => { },
-                clearHistory: () => ({ success: true, message: 'History cleared' }),
-                renderHistory: () => { },
-                scrollToEvent: () => { },
-                updateEvent: () => { },
-                createTestEvents: (domain) => {
-                    console.log('Creating fallback test events for:', domain);
-                    if (this.elements.historyContainer) {
-                        this.elements.historyContainer.innerHTML = `<div class="history-empty">Test events created for ${domain} (fallback mode)</div>`;
-                    }
-                    return { success: true, message: 'Test events created (fallback)' };
-                }
-            };
-        }
-    }
-
-    setupHistoryEventListeners() {
-        try {
-            if (this.elements.showTrueOnly && this.historyManager) {
-                this.elements.showTrueOnly.addEventListener('change', () => {
-                    if (this.historyManager.setShowTrueOnly) {
-                        this.historyManager.setShowTrueOnly(this.elements.showTrueOnly.checked);
-                    }
-                    if (this.historyManager.renderHistory) {
-                        this.historyManager.renderHistory();
-                    }
-                });
-            }
-
-            if (this.elements.clearHistoryBtn && this.historyManager) {
-                this.elements.clearHistoryBtn.addEventListener('click', () => {
-                    if (this.historyManager.clearHistory) {
-                        const result = this.historyManager.clearHistory();
-                        if (result && result.success) {
-                            this.showStatus(result.message, 'info');
-                        }
-                    }
-                });
-            }
-
-        } catch (error) {
-            console.error('Failed to setup history event listeners:', error);
-        }
-    }
-
-
-
-    startAutomaticCapture() {
-        const interval = this.elements.captureInterval?.value;
-        const webhookUrl = this.elements.webhookUrl?.value.trim();
-
-        if (interval === 'manual' || !webhookUrl) return;
-
-        // Get current fields to include with automatic capture
-        const fields = this.getFieldsFromDOM();
-
-        this.sendMessageToBackground({
-            action: 'startCapture',
-            domain: this.currentDomain,
-            tabId: this.currentTabId,
-            interval: parseInt(interval),
-            webhookUrl: webhookUrl,
-            fields: fields,
-            refreshPage: this.elements.refreshPageToggle?.checked || false,
-            captureDelay: parseInt(this.elements.captureDelay?.value || '0')
-        });
-    }
-
-    stopAutomaticCapture() {
-        chrome.runtime.sendMessage({ action: 'stopTimer' });
-        console.log('Stopped automatic capture');
-    }
-
-    setupFieldRemoveListener(fieldId) {
-        const removeBtn = document.querySelector(`.remove-field-btn[data-field-id="${fieldId}"]`);
-        if (removeBtn) {
-            removeBtn.addEventListener('click', async () => {
-                const fieldItem = removeBtn.closest('.field-item');
-                if (fieldItem) {
-                    // Get field name before removing for the status message
-                    const nameInput = fieldItem.querySelector('.field-name-input');
-                    const fieldName = nameInput ? nameInput.value.trim() : 'Field';
-
-                    // Remove from DOM
-                    fieldItem.remove();
-
-                    // Save updated state
-                    await this.saveFieldsState();
-
-                    // Show status message
-                    this.showFieldStatus(`${fieldName} removed`, 'info');
-
-                    // Refresh known domains to update field count
-                    await this.loadKnownDomains();
-                }
-            });
-        }
-    }
-
-    // Debounced save to prevent race conditions
-    debouncedSaveFieldsState() {
-        if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
-        }
-        this.saveTimeout = setTimeout(() => {
-            this.saveFieldsState();
-            this.saveTimeout = null;
-        }, 200); // 200ms debounce
-    }
-
-    async saveFieldsState() {
-        try {
-            if (!this.currentDomain) return;
-
-            // Get all valid fields from DOM
-            const fields = this.getAllFieldsFromDOM();
-            console.log('Saving fields state for domain:', this.currentDomain);
-            console.log('Fields to save:', fields);
-
-            // Save to storage
-            const key = `fields_${this.currentDomain}`;
-            await chrome.storage.local.set({ [key]: fields });
-
-            console.log('Fields state saved successfully');
-
-            // Refresh known domains to update field count
-            await this.loadKnownDomains();
-        } catch (error) {
-            console.error('Failed to save fields state:', error);
-        }
-    }
-
-    async loadFieldsState() {
-        try {
-            if (!this.currentDomain) return;
-
-            const data = await chrome.storage.local.get([`fields_${this.currentDomain}`]);
-            let fieldsData = data[`fields_${this.currentDomain}`];
-
-            if (fieldsData && fieldsData.length > 0) {
-                // Clean up any empty fields before loading
-                const cleanedFields = fieldsData.filter(field => {
-                    const hasValidName = field.name && field.name.trim();
-                    const hasValidDescription = field.description && field.description.trim();
-                    return hasValidName && hasValidDescription;
-                });
-
-                // If we filtered out any fields, save the cleaned version
-                if (cleanedFields.length !== fieldsData.length) {
-                    console.log(`Cleaned ${fieldsData.length - cleanedFields.length} empty fields for ${this.currentDomain}`);
-                    await chrome.storage.local.set({
-                        [`fields_${this.currentDomain}`]: cleanedFields
-                    });
-                    fieldsData = cleanedFields;
-                }
-
-                // Clear existing fields
-                if (this.elements.fieldsContainer) {
-                    this.elements.fieldsContainer.innerHTML = '';
-                }
-
-                // Recreate fields from saved data
-                fieldsData.forEach(fieldData => {
-                    // Skip fields with empty name or description
-                    if (!fieldData.name || !fieldData.name.trim() ||
-                        !fieldData.description || !fieldData.description.trim()) {
-                        console.log('Skipping empty field during load:', fieldData);
-                        return;
-                    }
-                    this.createFieldFromData(fieldData);
-                });
-
-                console.log('Fields state loaded for', this.currentDomain, fieldsData);
-            }
-        } catch (error) {
-            console.error('Failed to load fields state:', error);
-        }
-    }
-
-    createFieldFromData(fieldData) {
-        if (!this.elements.fieldsContainer) return;
-
-        const webhookTrigger = fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true; // Default to true
-
-        const fieldHtml = `
-            <div class="field-item" data-field-id="${fieldData.id}">
-                <div class="field-header">
-                    <input type="text" class="field-name-input" placeholder="Field Name" value="${fieldData.name || ''}">
-                    <div class="field-last-result" id="last-result-${fieldData.id}">
-                        <span class="result-text">${fieldData.lastResult ? this.formatLastResult(fieldData.lastResult) : 'No results yet'}</span>
-                    </div>
-                    <button class="remove-field-btn" data-field-id="${fieldData.id}">✕</button>
-                </div>
-                <textarea class="field-description" placeholder="Describe what to evaluate...">${fieldData.description || ''}</textarea>
-                <div class="field-webhook-config">
-                    <div class="webhook-toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" class="webhook-toggle" ${fieldData.webhookEnabled ? 'checked' : ''}>
-                            <span class="slider"></span>
-                        </label>
-                        <div class="webhook-config-text">
-                            <span>Fire webhook on </span>
-                            <select class="webhook-trigger-dropdown">
-                                <option value="true" ${webhookTrigger ? 'selected' : ''}>TRUE</option>
-                                <option value="false" ${!webhookTrigger ? 'selected' : ''}>FALSE</option>
-                            </select>
-                            <span> result</span>
-                        </div>
-                    </div>
-                    
-                    <div class="webhook-url-group" style="display: ${fieldData.webhookEnabled ? 'block' : 'none'};">
-                        <label>Webhook URL:</label>
-                        <div class="webhook-url-input-group">
-                            <input type="url" class="webhook-url-input" placeholder="https://webhook.url/endpoint" value="${fieldData.webhookUrl || ''}">
-                            <button class="toggle-url-visibility" title="Show/Hide URL" style="display: none;">👁️</button>
-                        </div>
-                    </div>
-                    
-                    <div class="webhook-payload-group" style="display: ${fieldData.webhookEnabled ? 'block' : 'none'};">
-                        <label>Custom Payload (JSON):</label>
-                        <textarea class="webhook-payload-input" placeholder='{"key": "value"}'>${fieldData.webhookPayload || ''}</textarea>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
-
-        // Add event listeners for the recreated field
-        this.setupFieldRemoveListener(fieldData.id);
-
-        // Restore event ID and make clickable if present
-        if (fieldData.eventId) {
-            const resultContainer = document.querySelector(`#last-result-${fieldData.id}`);
-            if (resultContainer) {
-                resultContainer.dataset.eventId = fieldData.eventId;
-                resultContainer.style.cursor = 'pointer';
-                resultContainer.onclick = () => {
-                    if (this.historyManager) {
-                        console.log('Scrolling to event:', fieldData.eventId);
-                        this.historyManager.scrollToEvent(
-                            fieldData.eventId,
-                            this.elements.showTrueOnly?.checked || false,
-                            (showTrueOnly) => {
-                                if (this.elements.showTrueOnly) {
-                                    this.elements.showTrueOnly.checked = showTrueOnly;
-                                }
-                            }
-                        );
-                    }
-                };
-            }
-        }
-    }
-
-    formatLastResult(result) {
-        if (!result) return 'No results yet';
-
-        if (result.status === 'pending') {
-            return '<span class="result-indicator pending"></span>⏳ Pending';
-        }
-
-        if (result.status === 'error') {
-            return '<span class="result-indicator false"></span>❌ Error';
-        }
-
-        const resultClass = result.result ? 'true' : 'false';
-        const percentage = result.probability ? ` (${(result.probability * 100).toFixed(0)}%)` : '';
-
-        return `<span class="result-indicator ${resultClass}"></span>${result.result ? 'TRUE' : 'FALSE'}${percentage}`;
-    }
-
-    updateFieldStatus(fieldName, status, eventId) {
-        console.log(`Updating field "${fieldName}" to status: ${status}, eventId: ${eventId}`);
-
-        const fieldItems = document.querySelectorAll('.field-item');
-        fieldItems.forEach(item => {
-            // Ensure the item is still connected to the DOM
-            if (!item.isConnected) {
-                console.log('Skipping disconnected field item');
-                return;
-            }
-
-            const nameInput = item.querySelector('.field-name-input');
-            if (nameInput) {
-                // Use the same sanitization logic as CaptureService.sanitizeFieldName()
-                const sanitizedFieldValue = this.sanitizeFieldName(nameInput.value);
-
-                if (sanitizedFieldValue === fieldName) {
-                    const resultContainer = item.querySelector('.field-last-result');
-                    const resultText = resultContainer?.querySelector('.result-text');
-
-                    if (resultContainer && resultText) {
-                        // Update status display
-                        if (status === 'pending') {
-                            resultText.innerHTML = this.formatLastResult({ status: 'pending' });
-                        } else if (status === 'error') {
-                            resultText.innerHTML = this.formatLastResult({ status: 'error' });
-                        }
-
-                        // Store event ID for clicking
-                        if (eventId) {
-                            resultContainer.dataset.eventId = eventId;
-                        }
-
-                        // Use debounced save instead of timeout
-                        this.debouncedSaveFieldsState();
-
-                        // Make clickable if not already
-                        if (!resultContainer.onclick) {
-                            resultContainer.style.cursor = 'pointer';
-                            resultContainer.onclick = () => {
-                                const storedEventId = resultContainer.dataset.eventId;
-                                if (storedEventId && this.historyManager) {
-                                    console.log('Scrolling to event:', storedEventId);
-                                    this.historyManager.scrollToEvent(
-                                        storedEventId,
-                                        this.elements.showTrueOnly?.checked || false,
-                                        (showTrueOnly) => {
-                                            if (this.elements.showTrueOnly) {
-                                                this.elements.showTrueOnly.checked = showTrueOnly;
-                                            }
-                                        }
-                                    );
-                                }
-                            };
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    updateFieldLastResult(fieldName, result) {
-        console.log(`=== UPDATE FIELD LAST RESULT DEBUG ===`);
-        console.log(`Looking for field "${fieldName}" to update with result:`, result);
-
-        // Find field by name and update its last result
-        const fieldItems = document.querySelectorAll('.field-item');
-        console.log(`Found ${fieldItems.length} field items in DOM`);
-        let found = false;
-
-        fieldItems.forEach((item, index) => {
-            // Ensure the item is still connected to the DOM
-            if (!item.isConnected) {
-                console.log(`Skipping disconnected field item ${index}`);
-                return;
-            }
-
-            const nameInput = item.querySelector('.field-name-input');
-            if (nameInput) {
-                const fieldValue = nameInput.value;
-                // Use the same sanitization logic as CaptureService.sanitizeFieldName()
-                const sanitizedFieldValue = this.sanitizeFieldName(fieldValue);
-
-                console.log(`Field ${index}: original="${fieldValue}", sanitized="${sanitizedFieldValue}", looking for="${fieldName}"`);
-
-                if (sanitizedFieldValue === fieldName) {
-                    found = true;
-                    console.log(`✓ MATCH FOUND for field "${fieldName}"`);
-
-                    const resultContainer = item.querySelector('.field-last-result');
-                    const resultText = resultContainer?.querySelector('.result-text');
-
-                    if (resultContainer && resultText) {
-                        const formattedResult = this.formatLastResult(result);
-                        resultText.innerHTML = formattedResult;
-                        console.log(`Updated field "${fieldValue}" with formatted result: ${formattedResult}`);
-
-                        // Make container clickable
-                        if (!resultContainer.onclick && resultContainer.dataset.eventId) {
-                            resultContainer.style.cursor = 'pointer';
-                            resultContainer.onclick = () => {
-                                const storedEventId = resultContainer.dataset.eventId;
-                                if (storedEventId && this.historyManager) {
-                                    console.log('Scrolling to event:', storedEventId);
-                                    this.historyManager.scrollToEvent(
-                                        storedEventId,
-                                        this.elements.showTrueOnly?.checked || false,
-                                        (showTrueOnly) => {
-                                            if (this.elements.showTrueOnly) {
-                                                this.elements.showTrueOnly.checked = showTrueOnly;
-                                            }
-                                        }
-                                    );
-                                }
-                            };
-                        }
-
-                        // Use debounced save instead of timeout
-                        this.debouncedSaveFieldsState();
-                    } else {
-                        console.warn(`Field "${fieldValue}" found but result container or text element missing`);
-                        console.warn('resultContainer:', resultContainer);
-                        console.warn('resultText:', resultText);
-                    }
-                } else {
-                    console.log(`✗ No match: "${sanitizedFieldValue}" !== "${fieldName}"`);
-                }
-            } else {
-                console.log(`Field item ${index} has no name input`);
-            }
-        });
-
-        if (!found) {
-            console.warn(`❌ Field "${fieldName}" not found in DOM`);
-            console.log('Available fields in DOM:');
-            fieldItems.forEach((item, index) => {
-                const nameInput = item.querySelector('.field-name-input');
-                if (nameInput) {
-                    const fieldValue = nameInput.value;
-                    const sanitized = this.sanitizeFieldName(fieldValue);
-                    console.log(`  ${index}: "${fieldValue}" → "${sanitized}"`);
-                }
-            });
-        } else {
-            console.log(`✓ Successfully updated field "${fieldName}"`);
-        }
-        console.log(`=== END UPDATE FIELD LAST RESULT DEBUG ===`);
-    }
-
-    // Add utility method to force clean storage
-    async cleanupStorageForDomain(domain = null) {
-        try {
-            const targetDomain = domain || this.currentDomain;
-            if (!targetDomain) {
-                console.log('No domain specified for cleanup');
-                return;
-            }
-
-            const key = `fields_${targetDomain}`;
-            const data = await chrome.storage.local.get([key]);
-            const fields = data[key] || [];
-
-            console.log(`Cleaning up storage for ${targetDomain}: ${fields.length} fields found`);
-
-            const cleanFields = fields.filter(field => {
-                const hasValidName = field.name && field.name.trim();
-                const hasValidDescription = field.description && field.description.trim();
-                const isValid = hasValidName && hasValidDescription;
-
-                if (!isValid) {
-                    console.log('Removing invalid field from storage:', field);
-                }
-
-                return isValid;
-            });
-
-            if (cleanFields.length !== fields.length) {
-                await chrome.storage.local.set({ [key]: cleanFields });
-                console.log(`Cleaned ${fields.length - cleanFields.length} invalid fields, ${cleanFields.length} remaining`);
-
-                // Reload fields to reflect the cleanup
-                await this.loadFieldsState();
-            } else {
-                console.log('No cleanup needed - all fields are valid');
-            }
-        } catch (error) {
-            console.error('Error during storage cleanup:', error);
-        }
-    }
-
-    // Add method to validate current DOM state
-    validateFieldsState() {
-        console.log('=== FIELD STATE VALIDATION ===');
-
-        const domFields = this.getFieldsFromDOM();
-        console.log('DOM fields:', domFields);
-
-        // Log all field elements found in DOM
-        const allFieldItems = document.querySelectorAll('.field-item');
-        console.log(`Total .field-item elements in DOM: ${allFieldItems.length}`);
-
-        allFieldItems.forEach((item, index) => {
-            const fieldId = item.dataset.fieldId;
-            const nameInput = item.querySelector('.field-name-input');
-            const descriptionInput = item.querySelector('.field-description');
-            const isConnected = item.isConnected;
-            const hasParent = !!item.parentNode;
-
-            console.log(`Field element ${index}:`, {
-                fieldId,
-                name: nameInput?.value || 'MISSING',
-                description: descriptionInput?.value || 'MISSING',
-                isConnected,
-                hasParent,
-                element: item
-            });
-        });
-
-        console.log('=== END VALIDATION ===');
-
-        return domFields;
-    }
-
-    // Field name sanitization - MUST match CaptureService.sanitizeFieldName() exactly
     sanitizeFieldName(friendlyName) {
         if (!friendlyName) return 'unnamed_field';
         return friendlyName.toLowerCase()
@@ -1865,368 +1550,306 @@ class SimplePopupController {
             .replace(/^_+|_+$/g, '')
             .replace(/_+/g, '_') || 'unnamed_field';
     }
+
+    removeField(fieldId) {
+        this.fields = this.fields.filter(f => f.id !== fieldId);
+    }
+
+    updateField(fieldId, updates) {
+        const field = this.fields.find(f => f.id === fieldId);
+        if (!field) return false;
+
+        Object.assign(field, updates);
+
+        if (updates.name || updates.friendlyName) {
+            field.name = this.sanitizeFieldName(field.friendlyName || field.name);
+        }
+
+        return true;
+    }
+
+    getField(fieldId) {
+        return this.fields.find(f => f.id === fieldId);
+    }
+
+    getFieldsForAPI() {
+        return this.fields
+            .filter(f => f.friendlyName && f.description)
+            .map(f => ({
+                name: f.name,
+                criteria: f.description.trim()
+            }));
+    }
+
+    markFieldsPending(eventId = null) {
+        this.fields.forEach(field => {
+            field.isPending = true;
+            field.lastStatus = 'pending';
+            field.lastEventId = eventId;
+            field.lastError = null;
+            field.lastResultTime = new Date().toISOString();
+        });
+    }
+
+    updateResults(results, eventId = null) {
+        if (!results || !results.fields) {
+            console.warn('Invalid results format:', results);
+            return;
+        }
+
+        console.log('=== UpdateResults Debug ===');
+        console.log('Results fields:', results.fields);
+        console.log('Current fields in manager:', this.fields.map(f => ({
+            id: f.id,
+            name: f.name,
+            friendlyName: f.friendlyName,
+            isPending: f.isPending
+        })));
+
+        // Track which fields were updated
+        const updatedFields = [];
+        const missingFields = [];
+
+        this.fields.forEach(field => {
+            console.log(`Processing field: ${field.friendlyName} (${field.name})`);
+
+            const result = results.fields[field.name];
+            if (result !== undefined) {
+                let resultValue = null;
+                let probabilityValue = null;
+
+                if (Array.isArray(result) && result.length >= 2) {
+                    resultValue = result[0];
+                    probabilityValue = result[1];
+                } else if (typeof result === 'object' && result !== null) {
+                    resultValue = result.boolean !== undefined ? result.boolean : result.result;
+                    probabilityValue = result.probability;
+                } else {
+                    resultValue = result;
+                }
+
+                // Update field properties
+                field.result = resultValue;
+                field.probability = probabilityValue;
+                field.lastStatus = 'success';
+                field.lastError = null;
+                field.isPending = false;
+                field.lastEventId = eventId;
+                field.lastResultTime = new Date().toISOString();
+
+                updatedFields.push(field.name);
+
+                console.log(`✓ Updated field "${field.friendlyName}" (${field.name}):`, {
+                    result: resultValue,
+                    probability: probabilityValue,
+                    eventId: eventId
+                });
+            } else {
+                // Field was pending but no result received
+                if (field.isPending) {
+                    field.isPending = false;
+                    field.lastStatus = 'error';
+                    field.lastError = 'No result received';
+                    field.lastResultTime = new Date().toISOString();
+                }
+                missingFields.push(field.name);
+                console.log(`✗ No result for field "${field.friendlyName}" (${field.name})`);
+            }
+        });
+
+        console.log('Updated fields:', updatedFields);
+        console.log('Missing fields:', missingFields);
+        console.log('=== End UpdateResults Debug ===');
+
+        this.lastResults = results;
+    }
+
+    markFieldsError(error, httpStatus = null, eventId = null) {
+        this.fields.forEach(field => {
+            if (field.lastEventId === eventId || eventId === null) {
+                field.isPending = false;
+                field.lastStatus = 'error';
+                field.lastError = error;
+                field.lastResultTime = new Date().toISOString();
+                field.result = null;
+                field.probability = null;
+            }
+        });
+    }
+
+    markFieldsCancelled(eventId = null) {
+        this.fields.forEach(field => {
+            if (field.isPending && (field.lastEventId === eventId || eventId === null)) {
+                field.isPending = false;
+                field.lastStatus = 'cancelled';
+                field.lastError = 'Request cancelled';
+                field.lastResultTime = new Date().toISOString();
+            }
+        });
+    }
+
+    savePreset(name) {
+        if (!name || !name.trim()) return false;
+
+        const presetFields = this.fields.map(field => ({
+            id: field.id,
+            name: field.name,
+            friendlyName: field.friendlyName,
+            description: field.description
+        }));
+
+        this.presets[name.trim()] = {
+            name: name.trim(),
+            fields: presetFields,
+            created: new Date().toISOString(),
+            domain: this.currentDomain
+        };
+
+        return true;
+    }
+
+    loadPreset(name) {
+        const preset = this.presets[name];
+        if (!preset || !preset.fields) return false;
+
+        this.fields = preset.fields.map(fieldData => ({
+            ...fieldData,
+            id: this.generateFieldId(),
+            result: null,
+            probability: null,
+            lastStatus: null,
+            lastError: null,
+            lastEventId: null,
+            lastResultTime: null,
+            isPending: false,
+            // Add webhook properties for backwards compatibility
+            webhookEnabled: fieldData.webhookEnabled || false,
+            webhookTrigger: fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true,
+            webhookUrl: fieldData.webhookUrl || '',
+            webhookPayload: fieldData.webhookPayload || '',
+            webhookMinConfidence: fieldData.webhookMinConfidence !== undefined ? fieldData.webhookMinConfidence : 75
+        }));
+
+        return true;
+    }
+
+    deletePreset(name) {
+        if (this.presets[name]) {
+            delete this.presets[name];
+            return true;
+        }
+        return false;
+    }
+
+    getPresetNames() {
+        return Object.keys(this.presets).sort();
+    }
+
+    async saveToStorage() {
+        try {
+            const domainKey = `fields_${this.currentDomain}`;
+            const updates = {
+                [domainKey]: this.fields,
+                fieldPresets: this.presets
+            };
+
+            await chrome.storage.local.set(updates);
+            console.log(`Saved ${this.fields.length} fields for domain: ${this.currentDomain}`);
+        } catch (error) {
+            console.error('Error saving to storage:', error);
+            throw error;
+        }
+    }
+
+    async loadFromStorage() {
+        try {
+            const domainKey = `fields_${this.currentDomain}`;
+            const data = await chrome.storage.local.get([domainKey, 'fieldPresets']);
+
+            this.fields = data[domainKey] || [];
+            this.presets = data.fieldPresets || {};
+
+            console.log(`Loaded ${this.fields.length} fields for domain: ${this.currentDomain}`);
+
+            // Ensure all fields have required properties
+            this.fields = this.fields.map(field => ({
+                id: field.id || this.generateFieldId(),
+                name: field.name || this.sanitizeFieldName(field.friendlyName || ''),
+                friendlyName: field.friendlyName || field.name || '',
+                description: field.description || '',
+                result: field.result || null,
+                probability: field.probability || null,
+                lastStatus: field.lastStatus || null,
+                lastError: field.lastError || null,
+                lastEventId: field.lastEventId || null,
+                lastResultTime: field.lastResultTime || null,
+                isPending: field.isPending || false,
+                // Add webhook properties for backwards compatibility
+                webhookEnabled: field.webhookEnabled || false,
+                webhookTrigger: field.webhookTrigger !== undefined ? field.webhookTrigger : true,
+                webhookUrl: field.webhookUrl || '',
+                webhookPayload: field.webhookPayload || '',
+                webhookMinConfidence: field.webhookMinConfidence !== undefined ? field.webhookMinConfidence : 75
+            }));
+
+        } catch (error) {
+            console.error('Error loading from storage:', error);
+            this.fields = [];
+            this.presets = {};
+        }
+    }
+
+    validateFields() {
+        const errors = [];
+
+        if (this.fields.length === 0) {
+            errors.push('No fields configured');
+        }
+
+        this.fields.forEach((field, index) => {
+            if (!field.friendlyName || !field.friendlyName.trim()) {
+                errors.push(`Field ${index + 1}: Name is required`);
+            }
+            if (!field.description || !field.description.trim()) {
+                errors.push(`Field ${index + 1}: Description is required`);
+            }
+        });
+
+        return errors;
+    }
+
+    getSummary() {
+        const validFields = this.fields.filter(f => f.friendlyName && f.description);
+        const pendingFields = this.fields.filter(f => f.isPending);
+        const completedFields = this.fields.filter(f => f.result !== null);
+        const errorFields = this.fields.filter(f => f.lastStatus === 'error');
+
+        return {
+            total: this.fields.length,
+            valid: validFields.length,
+            pending: pendingFields.length,
+            completed: completedFields.length,
+            errors: errorFields.length,
+            presets: Object.keys(this.presets).length
+        };
+    }
 }
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('DOM loaded, starting popup...');
-    const popup = new SimplePopupController();
+    console.log('DOM loaded, starting clean popup...');
+    const popup = new CleanPopupController();
     window.popupController = popup;
+
+    // Add debug methods to window for console access
+    window.debugFields = () => popup.debugFieldStates();
+    window.debugFieldManager = () => popup.fieldManager;
+
     await popup.initialize();
-
-    // Add debug functions for testing
-    window.debugHistory = () => {
-        console.log('Debug history called');
-        console.log('Current domain:', popup.currentDomain);
-        console.log('History manager:', popup.historyManager);
-        console.log('History container element:', popup.elements.historyContainer);
-        if (popup.historyManager && popup.historyManager.createTestEvents) {
-            return popup.historyManager.createTestEvents(popup.currentDomain);
-        } else {
-            console.error('No createTestEvents method available');
-        }
-    };
-
-    // Add field debugging functions
-    window.debugFields = () => {
-        console.log('=== FIELD DEBUG INFO ===');
-        console.log('Current domain:', popup.currentDomain);
-
-        if (popup.validateFieldsState) {
-            popup.validateFieldsState();
-        }
-
-        return {
-            domFields: popup.getFieldsFromDOM(),
-            domain: popup.currentDomain
-        };
-    };
-
-    window.cleanupFields = async () => {
-        console.log('Manually cleaning up fields...');
-        if (popup.cleanupStorageForDomain) {
-            await popup.cleanupStorageForDomain();
-        }
-        return 'Cleanup completed';
-    };
-
-    window.forceRefreshFields = async () => {
-        console.log('Force refreshing field state...');
-        await popup.saveFieldsState();
-        await popup.loadFieldsState();
-        return 'Fields refreshed';
-    };
-
-    // Add preset debugging functions
-    window.debugPresets = async () => {
-        console.log('=== PRESET DEBUG INFO ===');
-        const data = await chrome.storage.local.get(['fieldPresets']);
-        const presets = data.fieldPresets || {};
-        console.log('Stored presets:', presets);
-        console.log('Preset count:', Object.keys(presets).length);
-        console.log('Current selector value:', popup.elements.presetSelector?.value);
-        return presets;
-    };
-
-    window.clearAllPresets = async () => {
-        if (confirm('Are you sure you want to delete ALL presets?')) {
-            await chrome.storage.local.set({ fieldPresets: {} });
-            await popup.loadPresets();
-            console.log('All presets cleared');
-            return 'All presets cleared';
-        }
-        return 'Cancelled';
-    };
-
-    window.createTestPreset = async () => {
-        // Create a test preset for debugging
-        const testPreset = {
-            name: 'Test Preset',
-            fields: [
-                {
-                    id: Date.now(),
-                    name: 'Test Field 1',
-                    description: 'This is a test field for debugging',
-                    webhookEnabled: true,
-                    webhookUrl: 'https://webhook.site/test',
-                    webhookPayload: '{"test": "data"}'
-                },
-                {
-                    id: Date.now() + 1,
-                    name: 'Test Field 2',
-                    description: 'Another test field',
-                    webhookEnabled: false,
-                    webhookUrl: '',
-                    webhookPayload: ''
-                }
-            ],
-            created: new Date().toISOString(),
-            domain: popup.currentDomain
-        };
-
-        const data = await chrome.storage.local.get(['fieldPresets']);
-        const presets = data.fieldPresets || {};
-        presets['Test Preset'] = testPreset;
-        await chrome.storage.local.set({ fieldPresets: presets });
-        await popup.loadPresets();
-        console.log('Test preset created');
-        return testPreset;
-    };
-
-    // Add known domains debugging functions
-    window.debugKnownDomains = async () => {
-        console.log('=== KNOWN DOMAINS DEBUG INFO ===');
-        const allData = await chrome.storage.local.get();
-        const domainKeys = Object.keys(allData).filter(key =>
-            key.startsWith('consent_') || key.startsWith('interval_') || key.startsWith('fields_')
-        );
-        console.log('Found domain keys:', domainKeys);
-
-        const domains = new Set();
-        domainKeys.forEach(key => {
-            const parts = key.split('_');
-            if (parts.length >= 2) {
-                const domain = parts.slice(1).join('_');
-                if (domain) {
-                    domains.add(domain);
-                }
-            }
-        });
-
-        console.log('Extracted domains:', Array.from(domains));
-        console.log('Current domain:', popup.currentDomain);
-        console.log('Domains container element:', popup.elements.domainsContainer);
-        return {
-            domains: Array.from(domains),
-            currentDomain: popup.currentDomain,
-            storageData: allData
-        };
-    };
 });
 
-// Listen for Chrome runtime messages
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('Received message:', message);
-
-    if (window.popupController) {
-        switch (message.action) {
-            case 'captureComplete':
-                console.log('captureComplete message received:', message);
-                if (message.success) {
-                    window.popupController.showStatus('Screenshot sent successfully!', 'success');
-
-                    // Update field results if available
-                    if (message.results) {
-                        console.log('Capture complete with results:', message.results);
-                        console.log('Results type:', typeof message.results);
-                        console.log('Results keys:', Object.keys(message.results));
-
-                        // Handle the response structure where fields are directly in results
-                        const fields = message.results;
-                        Object.entries(fields).forEach(([fieldName, fieldData]) => {
-                            if (fieldData && typeof fieldData === 'object') {
-                                // Handle both 'boolean' and 'result' property names
-                                let resultValue = null;
-                                let probabilityValue = null;
-
-                                // Check for 'result' or 'boolean' property
-                                if ('result' in fieldData) {
-                                    resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
-                                } else if ('boolean' in fieldData) {
-                                    resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
-                                }
-
-                                // Get probability
-                                if ('probability' in fieldData) {
-                                    probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
-                                }
-
-                                // Only update if we have a result
-                                if (resultValue !== null) {
-                                    const processedResult = {
-                                        result: resultValue,
-                                        probability: probabilityValue
-                                    };
-                                    console.log(`Updating field ${fieldName} with result:`, processedResult);
-                                    window.popupController.updateFieldLastResult(fieldName, processedResult);
-
-                                    // Store event ID if available
-                                    if (message.eventId) {
-                                        window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } else {
-                    window.popupController.showStatus(`Failed: ${message.error}`, 'error');
-                }
-                // Reload history to show the new event
-                if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
-                    window.popupController.historyManager.loadHistory();
-                }
-                break;
-            case 'captureStarted':
-                window.popupController.showStatus('Sending to webhook...', 'info');
-
-                // Set all fields to pending state
-                if (message.fields) {
-                    message.fields.forEach(field => {
-                        window.popupController.updateFieldStatus(field.name, 'pending', null);
-                    });
-                }
-
-                // Reload history to show the new pending event
-                if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
-                    window.popupController.historyManager.loadHistory();
-                }
-                break;
-            case 'eventUpdated':
-                console.log('Event updated:', message.eventId);
-                console.log('Event data:', message.event);
-                console.log('Event results:', message.event?.results);
-                console.log('Event fields:', message.event?.fields);
-
-                if (window.popupController.historyManager && window.popupController.historyManager.updateEvent) {
-                    window.popupController.historyManager.updateEvent(message.eventId, message.event);
-                }
-
-                // Update field statuses from the event
-                if (message.event && message.event.fields) {
-                    message.event.fields.forEach(field => {
-                        const result = {
-                            result: field.result,
-                            probability: field.probability
-                        };
-                        window.popupController.updateFieldLastResult(field.name, result);
-                        window.popupController.updateFieldStatus(field.name, 'complete', message.eventId);
-                    });
-                } else if (message.event && message.results) {
-                    // Handle the new response format where results contain field data directly
-                    Object.entries(message.results).forEach(([fieldName, fieldData]) => {
-                        if (fieldData && typeof fieldData === 'object') {
-                            // Check for 'result' or 'boolean' property
-                            let resultValue = null;
-                            if ('result' in fieldData) {
-                                resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
-                            } else if ('boolean' in fieldData) {
-                                resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
-                            }
-
-                            const probabilityValue = fieldData.probability !== undefined ?
-                                (Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability) : null;
-
-                            if (resultValue !== null) {
-                                const result = {
-                                    result: resultValue,
-                                    probability: probabilityValue
-                                };
-                                window.popupController.updateFieldLastResult(fieldName, result);
-                                window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
-                            }
-                        }
-                    });
-                }
-                break;
-            case 'historyReloaded':
-                console.log('History reloaded');
-                if (window.popupController.historyManager && window.popupController.historyManager.loadHistory) {
-                    window.popupController.historyManager.loadHistory();
-                }
-                break;
-            case 'captureResults':
-                console.log('=== POPUP CAPTURE RESULTS DEBUG ===');
-                console.log('captureResults message received:', message);
-                console.log('message.results:', message.results);
-                console.log('message.fieldResults:', message.fieldResults);
-                console.log('message.hasActualFields:', message.hasActualFields);
-                console.log('typeof message.results:', typeof message.results);
-
-                if (message.results) {
-                    console.log('Processing capture results...');
-                    console.log('Object.keys(message.results):', Object.keys(message.results));
-
-                    // Handle the response structure where fields are directly in results
-                    const fields = message.results;
-                    let fieldsProcessed = 0;
-
-                    Object.entries(fields).forEach(([fieldName, fieldData]) => {
-                        console.log(`=== Processing field: "${fieldName}" ===`);
-                        console.log('Field data:', fieldData);
-                        console.log('Field data type:', typeof fieldData);
-                        console.log('Field data isArray:', Array.isArray(fieldData));
-
-                        // Skip the 'reason' field as it's not a field result
-                        if (fieldName === 'reason') {
-                            console.log(`Skipping reason field: ${fieldData}`);
-                            return;
-                        }
-
-                        let resultValue = null;
-                        let probabilityValue = null;
-
-                        // Handle array format from LLM: [boolean, probability]
-                        if (Array.isArray(fieldData) && fieldData.length >= 1) {
-                            resultValue = fieldData[0]; // boolean result
-                            probabilityValue = fieldData.length > 1 ? fieldData[1] : null; // probability
-                            console.log(`Array format - Field "${fieldName}": result=${resultValue} (type: ${typeof resultValue}), probability=${probabilityValue} (type: ${typeof probabilityValue})`);
-                        }
-                        // Handle object format: {result: boolean, probability: number}
-                        else if (fieldData && typeof fieldData === 'object') {
-                            // Check for 'result' or 'boolean' property
-                            if ('result' in fieldData) {
-                                resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
-                            } else if ('boolean' in fieldData) {
-                                resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
-                            }
-
-                            // Get probability
-                            if ('probability' in fieldData) {
-                                probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
-                            }
-                            console.log(`Object format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
-                        }
-
-                        // Only update if we have a valid result
-                        if (resultValue !== null && typeof resultValue === 'boolean') {
-                            fieldsProcessed++;
-                            const processedResult = {
-                                result: resultValue,
-                                probability: probabilityValue
-                            };
-                            console.log(`Updating field "${fieldName}" with result:`, processedResult);
-                            console.log(`Calling updateFieldLastResult("${fieldName}", processedResult)`);
-                            window.popupController.updateFieldLastResult(fieldName, processedResult);
-
-                            // Store event ID if available
-                            if (message.eventId) {
-                                console.log(`Setting field status for "${fieldName}" to complete with eventId: ${message.eventId}`);
-                                window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
-                            }
-                        } else {
-                            console.warn(`Invalid field data for "${fieldName}":`, fieldData);
-                            console.warn(`resultValue: ${resultValue} (type: ${typeof resultValue})`);
-                            console.warn(`Expected: boolean, got: ${typeof resultValue}`);
-                        }
-                        console.log(`=== End processing field: "${fieldName}" ===`);
-                    });
-
-                    console.log(`Processed ${fieldsProcessed} field results from captureResults message`);
-                    console.log('=== END POPUP CAPTURE RESULTS DEBUG ===');
-
-                    if (fieldsProcessed === 0) {
-                        console.warn('No valid field results found in captureResults message');
-                        console.warn('This means either:');
-                        console.warn('1. No fields in message.results');
-                        console.warn('2. Fields are not in expected format [boolean, probability]');
-                        console.warn('3. Field names don\'t match configured fields');
-                    }
-                } else {
-                    console.error('captureResults message received but message.results is missing!');
-                }
-                break;
-        }
-    }
-});
-
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { CleanPopupController, FieldManagerLLM };
+}
 console.log('WebSophon popup script loaded'); 

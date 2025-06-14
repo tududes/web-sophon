@@ -14,7 +14,7 @@
                 <h1>WebSophon</h1>
             </div>
             <div class="theme-controls">
-                <button id="theme-toggle" class="theme-toggle" title="Toggle theme">
+                <button id="themeToggle" class="theme-toggle" title="Toggle theme">
                     <span class="theme-icon">🌙</span>
                 </button>
             </div>
@@ -31,23 +31,23 @@
         <!-- Tab Content -->
         <div class="tab-content">
             <!-- Capture Tab -->
-            <div class="tab-panel active" id="capture-tab">
+            <div class="tab-panel active" id="captureContent">
                 <div class="domain-section">
                     <h3>Current Domain</h3>
                     <div class="domain-consent-group">
                         <label class="toggle-switch">
-                            <input type="checkbox" id="consent-toggle">
+                            <input type="checkbox" id="consentToggle">
                             <span class="slider"></span>
                         </label>
                         <span class="consent-label">Enable WebSophon for this domain</span>
                     </div>
-                    <div id="current-domain" class="domain-display">Loading...</div>
+                    <div id="currentDomain" class="domain-display">Loading...</div>
                 </div>
 
                 <div class="capture-controls">
                     <div class="form-group">
-                        <label for="capture-interval">Capture Interval:</label>
-                        <select id="capture-interval">
+                        <label for="captureInterval">Capture Interval:</label>
+                        <select id="captureInterval">
                             <option value="manual" selected>Manual Only</option>
                             <option value="10">Every 10 seconds</option>
                             <option value="15">Every 15 seconds</option>
@@ -68,7 +68,7 @@
                     <div class="form-group">
                         <div class="domain-consent-group">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="refresh-page-toggle">
+                                <input type="checkbox" id="refreshPageToggle">
                                 <span class="slider"></span>
                             </label>
                             <span class="consent-label">Refresh page before screenshot</span>
@@ -76,8 +76,8 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="capture-delay">Delay after page load:</label>
-                        <select id="capture-delay">
+                        <label for="captureDelay">Delay after page load:</label>
+                        <select id="captureDelay">
                             <option value="0" selected>0 seconds</option>
                             <option value="1">1 second</option>
                             <option value="3">3 seconds</option>
@@ -92,79 +92,79 @@
                     <div class="form-group">
                         <div class="domain-consent-group">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="full-page-capture-toggle">
+                                <input type="checkbox" id="fullPageCaptureToggle">
                                 <span class="slider"></span>
                             </label>
                             <span class="consent-label">📄 Capture full page (instead of just viewport)</span>
                         </div>
                     </div>
 
-                    <button id="capture-now" class="capture-button">
+                    <button id="captureBtn" class="capture-button">
                         📸 Capture Screenshot Now
                     </button>
 
-                    <div id="status" class="status-message"></div>
+                    <div id="captureStatus" class="status-message"></div>
                 </div>
             </div>
 
             <!-- Fields Tab -->
-            <div class="tab-panel" id="fields-tab">
+            <div class="tab-panel" id="fieldsContent">
                 <div class="preset-controls">
                     <div class="preset-dropdown-group">
-                        <select id="preset-selector">
+                        <select id="presetSelector">
                             <option value="">Select a preset...</option>
                         </select>
                     </div>
                     <div class="preset-buttons-group">
-                        <button id="save-preset-btn" class="small-button">💾 Save</button>
-                        <button id="delete-preset-btn" class="small-button danger">🗑️ Delete</button>
+                        <button id="savePresetBtn" class="small-button">💾 Save</button>
+                        <button id="deletePresetBtn" class="small-button danger">🗑️ Delete</button>
                     </div>
                 </div>
 
-                <div id="fields-container" class="fields-container">
+                <div id="fieldsContainer" class="fields-container">
                     <!-- Fields will be dynamically added here -->
                 </div>
 
-                <button id="add-field-btn" class="add-field-button">
+                <button id="addFieldBtn" class="add-field-button">
                     ➕ Add Field
                 </button>
 
-                <div id="field-status" class="status-message"></div>
+                <div id="fieldStatus" class="status-message"></div>
             </div>
 
             <!-- History Tab -->
-            <div class="tab-panel" id="history-tab">
+            <div class="tab-panel" id="historyContent">
                 <div class="history-controls">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="show-true-only">
+                        <input type="checkbox" id="showTrueOnly">
                         <span>Show only TRUE events</span>
                     </label>
-                    <button id="clear-history-btn" class="small-button danger">Clear History</button>
+                    <button id="clearHistoryBtn" class="small-button danger">Clear History</button>
                 </div>
 
-                <div id="history-container" class="history-container">
+                <div id="historyContainer" class="history-container">
                     <!-- History items will be dynamically added here -->
                 </div>
             </div>
 
             <!-- Settings Tab -->
-            <div class="tab-panel" id="settings-tab">
+            <div class="tab-panel" id="settingsContent">
                 <div class="settings-section">
                     <h3>LLM Configuration</h3>
                     <div class="form-group">
-                        <label for="llm-api-url">LLM API URL:</label>
-                        <input type="url" id="llm-api-url" placeholder="https://openrouter.ai/api/v1/chat/completions"
+                        <label for="llmApiUrl">LLM API URL:</label>
+                        <input type="url" id="llmApiUrl" placeholder="https://openrouter.ai/api/v1/chat/completions"
                             value="https://openrouter.ai/api/v1/chat/completions" />
                     </div>
 
                     <div class="form-group">
-                        <label for="llm-api-key">API Key:</label>
-                        <input type="password" id="llm-api-key" placeholder="Enter your API key..." />
+                        <label for="llmApiKey">API Key:</label>
+                        <input type="password" id="llmApiKey" placeholder="Enter your API key..." />
                     </div>
 
                     <div class="form-group">
-                        <label for="llm-model">Model:</label>
-                        <select id="llm-model">
+                        <label for="llmModel">Model:</label>
+                        <select id="llmModel">
                             <optgroup label="🆓 Free Vision Models (OpenRouter)">
                                 <option value="opengvlab/internvl3-14b:free" selected>OpenGVLab InternVL3 14B ⭐ (Free)
                                 </option>
@@ -219,25 +219,32 @@
                         </select>
                     </div>
 
-                    <div class="form-group" id="custom-model-group" style="display: none;">
-                        <label for="llm-custom-model">Custom Model Name:</label>
-                        <input type="text" id="llm-custom-model" placeholder="e.g., your-custom-model-name" />
+                    <div class="form-group" id="customModelGroup" style="display: none;">
+                        <label for="llmCustomModel">Custom Model Name:</label>
+                        <input type="text" id="llmCustomModel" placeholder="e.g., your-custom-model-name" />
                     </div>
 
                     <div class="form-group">
-                        <label for="llm-temperature">Temperature (0.0-1.0):</label>
-                        <input type="number" id="llm-temperature" min="0" max="1" step="0.1" value="0.1" />
+                        <label for="llmTemperature">Temperature (0.0-1.0):</label>
+                        <input type="number" id="llmTemperature" min="0" max="1" step="0.1" value="0.1" />
                     </div>
 
                     <div class="form-group">
-                        <label for="llm-max-tokens">Max Tokens:</label>
-                        <input type="number" id="llm-max-tokens" min="100" max="4000" step="100" value="1000" />
+                        <label for="llmMaxTokens">Max Tokens:</label>
+                        <input type="number" id="llmMaxTokens" min="100" max="4000" step="100" value="1000" />
+                    </div>
+
+                    <div class="form-group">
+                        <button id="testLlmConfig" class="test-config-button">
+                            🧪 Test LLM Configuration
+                        </button>
+                        <div id="testConfigStatus" class="status-message"></div>
                     </div>
                 </div>
 
                 <div class="settings-section">
                     <h3>Known Domains</h3>
-                    <div id="domains-container" class="domains-container">
+                    <div id="domainsContainer" class="domains-container">
                         <!-- Domain items will be dynamically added here -->
                     </div>
                 </div>
@@ -245,6 +252,379 @@
         </div>
     </div>
 
+    <style>
+        /* Webhook UI Improvements */
+        .webhook-toggle-section {
+            margin: 8px 0;
+            padding: 8px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .webhook-toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .webhook-toggle-switch input[type="checkbox"] {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #444;
+            border-radius: 10px;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .webhook-toggle-switch input[type="checkbox"]:checked {
+            background: #007acc;
+        }
+
+        .webhook-toggle-switch input[type="checkbox"]::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .webhook-toggle-switch input[type="checkbox"]:checked::before {
+            transform: translateX(20px);
+        }
+
+        .webhook-label {
+            font-size: 13px;
+            color: #ccc;
+        }
+
+        .webhook-config-panel {
+            overflow: hidden;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+
+        .webhook-panel-hidden {
+            max-height: 0;
+            padding: 0;
+            opacity: 0;
+        }
+
+        .webhook-panel-visible {
+            max-height: 500px;
+            padding: 12px;
+            opacity: 1;
+        }
+
+        .webhook-setting-row {
+            margin-bottom: 12px;
+        }
+
+        .webhook-setting-row.webhook-payload-row {
+            margin-bottom: 8px;
+        }
+
+        .webhook-setting-label {
+            display: block;
+            font-size: 12px;
+            color: #bbb;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .webhook-trigger-select {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #2a2a2a !important;
+            color: #fff !important;
+            font-size: 12px;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 16px;
+            padding-right: 32px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid #555;
+        }
+
+        .webhook-trigger-select:hover {
+            border-color: #007acc;
+            background-color: #333 !important;
+        }
+
+        .webhook-trigger-select:focus {
+            outline: none;
+            border-color: #007acc;
+            box-shadow: 0 0 0 1px #007acc;
+            background-color: #333 !important;
+        }
+
+        .webhook-trigger-select option {
+            background: #2a2a2a !important;
+            color: #fff !important;
+            padding: 6px 8px;
+            font-size: 12px;
+        }
+
+        .webhook-confidence-slider {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #444;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .webhook-confidence-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #007acc;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .confidence-value {
+            color: #007acc;
+            font-weight: bold;
+        }
+
+        .webhook-url-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .webhook-url-input {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #333;
+            color: #fff;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .webhook-url-input.url-masked {
+            color: #888;
+            font-style: italic;
+        }
+
+        .url-visibility-toggle {
+            padding: 4px 6px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #444;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .url-visibility-toggle:hover {
+            background: #555;
+        }
+
+        .webhook-payload-input {
+            width: 100%;
+            min-height: 80px;
+            padding: 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #333;
+            color: #fff;
+            font-size: 11px;
+            font-family: monospace;
+            resize: vertical;
+            line-height: 1.4;
+        }
+
+        .webhook-variables-help {
+            margin-top: 4px;
+        }
+
+        .webhook-variables-help small {
+            color: #888;
+            font-size: 10px;
+        }
+
+        /* History Screenshot Improvements */
+        .screenshot-detail {
+            margin: 12px 0;
+        }
+
+        .screenshot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .screenshot-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .screenshot-container {
+            position: relative;
+            display: inline-block;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #222;
+            border: 1px solid #444;
+        }
+
+        .history-screenshot-thumbnail {
+            max-width: 200px;
+            max-height: 120px;
+            width: auto;
+            height: auto;
+            display: block;
+            cursor: zoom-in;
+            transition: transform 0.1s ease-out;
+            transform-origin: center;
+        }
+
+        .history-screenshot-thumbnail:hover {
+            cursor: zoom-in;
+        }
+
+        /* Copy Button Improvements */
+        .copy-btn-float {
+            float: right;
+            margin-left: 8px;
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #444;
+            color: #ccc;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-btn-float:hover {
+            background: #555;
+            color: #fff;
+            border-color: #666;
+        }
+
+        .copy-data-btn {
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #444;
+            color: #ccc;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-data-btn:hover {
+            background: #555;
+            color: #fff;
+            border-color: #666;
+        }
+
+        /* Data Section Header Improvements */
+        .data-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            cursor: pointer;
+        }
+
+        .data-header::after {
+            content: '▼';
+            font-size: 10px;
+            color: #888;
+            transition: transform 0.2s;
+        }
+
+        .data-section[open] .data-header::after {
+            transform: rotate(180deg);
+        }
+
+        /* General UI Consistency */
+        .small-button {
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #444;
+            color: #ccc;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .small-button:hover {
+            background: #555;
+            color: #fff;
+            border-color: #666;
+        }
+
+        .small-button.danger {
+            background: #662;
+            border-color: #883;
+            color: #ffa;
+        }
+
+        .small-button.danger:hover {
+            background: #884;
+            border-color: #aa5;
+        }
+
+        /* Field Status Improvements */
+        .field-status {
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .field-status:hover {
+            opacity: 0.8;
+        }
+
+        .status.pending {
+            color: #ff9500;
+        }
+
+        .status.true {
+            color: #00ff00;
+        }
+
+        .status.false {
+            color: #ff4444;
+        }
+
+        .status.error {
+            color: #ff4444;
+        }
+
+        .status.none {
+            color: #888;
+        }
+    </style>
+
+    <script type="module" src="components/HistoryManager.js"></script>
     <script type="module" src="popup-main.js"></script>
 </body>
 

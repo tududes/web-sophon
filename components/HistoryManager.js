@@ -258,7 +258,19 @@ export class HistoryManager {
         if (filteredEvents.length === 0) {
             this.elements.historyContainer.innerHTML = `
               <div class="history-empty">
-                ${this.showTrueOnly ? 'No events with TRUE results yet' : 'No capture events yet'}
+                <div class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <h3>No History Yet</h3>
+                    <p>${this.showTrueOnly ? 'No events with TRUE results found.' : 'No capture events recorded yet.'}</p>
+                    <div class="empty-actions">
+                        <p>To get started:</p>
+                        <ol>
+                            <li>Add some fields in the Fields tab</li>
+                            <li>Enable WebSophon for this domain</li>
+                            <li>Click "Capture Screenshot Now"</li>
+                        </ol>
+                    </div>
+                </div>
               </div>
             `;
             return;
@@ -310,13 +322,15 @@ export class HistoryManager {
                   ${event.error ? `<div class="detail-item"><strong>Error:</strong> ${event.error}</div>` : ''}
                   
                   ${event.screenshot ? `
-                    <div class="detail-item">
-                      <strong>Screenshot:</strong>
-                      <div class="screenshot-controls">
-                        <button class="download-screenshot-btn small-button" data-screenshot="${event.screenshot}" data-timestamp="${event.timestamp}">💾 Download</button>
+                    <div class="detail-item screenshot-detail">
+                      <div class="screenshot-header">
+                        <strong>Screenshot:</strong>
+                        <div class="screenshot-controls">
+                          <button class="download-screenshot-btn small-button" data-screenshot="${event.screenshot}" data-timestamp="${event.timestamp}">💾 Download</button>
+                        </div>
                       </div>
-                      <div class="screenshot-container" data-screenshot="${event.screenshot}">
-                        <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot">
+                      <div class="screenshot-container">
+                        <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (400% magnification for fine print reading)">
                       </div>
                     </div>
                   ` : ''}
@@ -325,7 +339,7 @@ export class HistoryManager {
                     <details class="data-section">
                       <summary class="data-header">
                         <strong>Request Data</strong>
-                        <button class="copy-data-btn small-button" data-content="${encodeURIComponent(JSON.stringify(event.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
+                        <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(JSON.stringify(event.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
                       </summary>
                       <div class="data-content">
                         <pre class="json-display">${JSON.stringify(event.request, null, 2)}</pre>
@@ -342,7 +356,7 @@ export class HistoryManager {
                     <details class="data-section">
                       <summary class="data-header">
                         <strong>Response Data</strong>
-                        <button class="copy-data-btn small-button" data-content="${encodeURIComponent(event.response)}" title="Copy to clipboard">📋 Copy</button>
+                        <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(event.response)}" title="Copy to clipboard">📋 Copy</button>
                       </summary>
                       <div class="data-content">
                         ${formatResponseData(event.response)}
@@ -361,12 +375,12 @@ export class HistoryManager {
                       <div class="data-content">
                         <div class="webhook-request">
                           <strong>Request:</strong>
-                          <button class="copy-data-btn small-button" data-content="${encodeURIComponent(JSON.stringify(webhook.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
+                          <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(JSON.stringify(webhook.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
                           <pre class="json-display">${JSON.stringify(webhook.request, null, 2)}</pre>
                         </div>
                         <div class="webhook-response">
                           <strong>Response:</strong>
-                          <button class="copy-data-btn small-button" data-content="${encodeURIComponent(webhook.response)}" title="Copy to clipboard">📋 Copy</button>
+                          <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(webhook.response)}" title="Copy to clipboard">📋 Copy</button>
                           <div class="response-display">
                             ${formatResponseData(webhook.response)}
                           </div>
@@ -411,7 +425,7 @@ export class HistoryManager {
         });
 
         // Prevent propagation on interactive elements
-        document.querySelectorAll('.history-screenshot').forEach(img => {
+        document.querySelectorAll('.history-screenshot-thumbnail').forEach(img => {
             img.addEventListener('click', (e) => {
                 e.stopPropagation();
             });
@@ -479,4 +493,7 @@ export class HistoryManager {
             });
         });
     }
-} 
+}
+
+// Make HistoryManager available globally
+window.HistoryManager = HistoryManager; 
