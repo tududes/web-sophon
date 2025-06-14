@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Domains Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+
+        .test-title {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .feature-list {
+            display: grid;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            background: white;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .status-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-icon.success {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .status-icon.pending {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        .test-instructions {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="test-container">
+        <h1 class="test-title">🔧 Enhanced Known Domains Test</h1>
+
+        <div class="test-section">
+            <h2>✅ New Features Implemented</h2>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Delete Domain Settings:</strong> Red trash button to remove all domain data</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Enhanced Status Display:</strong> Better visual design with badges and colors</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Last Run Information:</strong> Shows when domain was last captured</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Total Events Counter:</strong> Displays total capture events per domain</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Current Domain Badge:</strong> Highlights the currently active domain</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Improved Layout:</strong> Grid-based details, better spacing, hover effects</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Scrollable Container:</strong> Handles many domains with proper scrolling</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon success">✓</div>
+                    <span><strong>Fixed Container Overflow:</strong> Eliminated parent scrollbar issues</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 Testing Instructions</h2>
+            <div class="test-instructions">
+                <h3>1. Setup Test Environment</h3>
+                <p>Visit multiple websites to create domain entries:</p>
+                <div class="code-block">
+                    • docs.google.com (configure with LLM mode + fields)
+                    • github.com (configure with webhook mode + interval)
+                    • stackoverflow.com (configure fields only)
+                    • example.com (enable but no other settings)
+                </div>
+            </div>
+
+            <div class="test-instructions">
+                <h3>2. Test Delete Functionality</h3>
+                <p>For each domain in the Known Domains section:</p>
+                <ul>
+                    <li>✅ Click the red 🗑️ trash button</li>
+                    <li>✅ Verify confirmation dialog appears with detailed warning</li>
+                    <li>✅ Cancel and verify nothing is deleted</li>
+                    <li>✅ Delete and verify domain disappears from list</li>
+                    <li>✅ Check that all related storage keys are removed</li>
+                    <li>✅ Verify history data is cleaned up</li>
+                </ul>
+            </div>
+
+            <div class="test-instructions">
+                <h3>3. Test Status Display</h3>
+                <p>Verify the enhanced domain information shows:</p>
+                <ul>
+                    <li>✅ <strong>Status Badge:</strong> "✓ Enabled" or "○ Disabled"</li>
+                    <li>✅ <strong>Interval:</strong> "Manual Only" or "30s", etc.</li>
+                    <li>✅ <strong>Fields Count:</strong> "2 fields" or "1 field"</li>
+                    <li>✅ <strong>Last Run:</strong> "Just now", "5m ago", "Never", etc.</li>
+                    <li>✅ <strong>Total Events:</strong> Number of capture events</li>
+                    <li>✅ <strong>Current Badge:</strong> Blue "CURRENT" badge on active domain</li>
+                </ul>
+            </div>
+
+            <div class="test-instructions">
+                <h3>4. Test Layout Improvements</h3>
+                <p>Verify visual and interaction improvements:</p>
+                <ul>
+                    <li>✅ Hover effects on domain items</li>
+                    <li>✅ Proper spacing and padding</li>
+                    <li>✅ Grid layout for domain details</li>
+                    <li>✅ Color-coded status indicators</li>
+                    <li>✅ Responsive design for long domain names</li>
+                    <li>✅ Scrolling within domains container (not parent)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 Expected Behavior</h2>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <div class="status-icon pending">!</div>
+                    <span><strong>Confirmation Required:</strong> Delete actions must show confirmation dialog</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon pending">!</div>
+                    <span><strong>Complete Cleanup:</strong> All storage keys and history data removed</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon pending">!</div>
+                    <span><strong>UI Reset:</strong> Current domain deletion resets all UI controls</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon pending">!</div>
+                    <span><strong>Real-time Updates:</strong> Status information reflects actual usage</span>
+                </div>
+                <div class="feature-item">
+                    <div class="status-icon pending">!</div>
+                    <span><strong>No Overflow:</strong> Container stays within bounds, scrolls internally</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 Test Results</h2>
+            <p><strong>Date:</strong> <span id="test-date"></span></p>
+            <p><strong>Status:</strong> <span style="color: #28a745; font-weight: bold;">Ready for Testing</span></p>
+            <p><strong>Version:</strong> Enhanced Domains v2.0</p>
+
+            <div class="test-instructions">
+                <h3>Manual Test Checklist:</h3>
+                <ul>
+                    <li>□ Delete functionality works correctly</li>
+                    <li>□ Status display shows accurate information</li>
+                    <li>□ Last run times are calculated properly</li>
+                    <li>□ Total events counter is accurate</li>
+                    <li>□ Current domain badge appears correctly</li>
+                    <li>□ Layout is visually appealing and functional</li>
+                    <li>□ No container overflow or scrollbar issues</li>
+                    <li>□ Hover effects and interactions work smoothly</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set current date
+        document.getElementById('test-date').textContent = new Date().toLocaleDateString();
+
+        // Add some interactive elements for testing
+        document.querySelectorAll('.feature-item').forEach(item => {
+            item.addEventListener('click', () => {
+                item.style.backgroundColor = item.style.backgroundColor === 'rgb(232, 245, 233)' ? 'white' : '#e8f5e9';
+            });
+        });
+
+        // Console log for testing
+        console.log('Enhanced Domains Test Page Loaded');
+        console.log('Testing Features:');
+        console.log('✓ Delete domain settings functionality');
+        console.log('✓ Enhanced status display with last run info');
+        console.log('✓ Better layout and visual design');
+        console.log('✓ Fixed container overflow issues');
+    </script>
+</body>
+
+</html>

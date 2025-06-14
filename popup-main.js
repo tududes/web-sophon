@@ -18,48 +18,181 @@ class SimplePopupController {
             // Get DOM elements FIRST
             this.getDOMElements();
 
-            // Then get current tab (so elements are available for updating)
-            await this.getCurrentTab();
+            // Initialize tab system
+            this.initializeTabSystem();
+
+            // Get current tab with retries (fixes loading issues)
+            await this.getCurrentTabWithRetry();
 
             // Set up event listeners
             this.setupEventListeners();
 
-            // Load basic settings
-            await this.loadBasicSettings();
-
-            // Load field state after domain is set
-            await this.loadFieldsState();
-
-            // Load presets into dropdown
-            await this.loadPresets();
-
-            // Load known domains
-            await this.loadKnownDomains();
+            // Load all settings and state concurrently (prevents race conditions)
+            await Promise.allSettled([
+                this.loadBasicSettings(),
+                this.loadFieldsState(),
+                this.loadPresets(),
+                this.loadKnownDomains()
+            ]);
 
             // Initialize theme
             this.initializeTheme();
 
-            // Initialize history manager
-            await this.initializeHistoryManager();
-
-            // Set up history event listeners
-            this.setupHistoryEventListeners();
-
-            // Test history integration
-            this.testHistoryIntegration();
+            // Initialize history manager with better error handling
+            await this.initializeHistoryManagerSafely();
 
             console.log('SimplePopupController initialized successfully');
         } catch (error) {
             console.error('Failed to initialize SimplePopupController:', error);
+            this.showError('Failed to load extension. Please refresh and try again.');
         }
+    }
+
+    // Tab System Implementation
+    initializeTabSystem() {
+        console.log('Initializing tab system...');
+
+        // Set up tab switching
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabPanels = document.querySelectorAll('.tab-panel');
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.dataset.tab;
+                this.switchTab(targetTab);
+            });
+        });
+
+        // Set default active tab
+        this.switchTab('capture');
+        console.log('Tab system initialized');
+    }
+
+    switchTab(tabName) {
+        console.log(`Switching to tab: ${tabName}`);
+
+        // Update tab buttons
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.classList.remove('active');
+            if (button.dataset.tab === tabName) {
+                button.classList.add('active');
+            }
+        });
+
+        // Update tab panels
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.remove('active');
+            if (panel.id === `${tabName}-tab`) {
+                panel.classList.add('active');
+            }
+        });
+
+        // Handle tab-specific loading
+        this.handleTabSpecificLoading(tabName);
+    }
+
+    handleTabSpecificLoading(tabName) {
+        switch (tabName) {
+            case 'history':
+                // Reload history when history tab is opened
+                if (this.historyManager) {
+                    this.historyManager.loadHistory();
+                }
+                break;
+            case 'settings':
+                // Refresh known domains when settings tab is opened
+                this.loadKnownDomains();
+                break;
+        }
+    }
+
+    // Improved getCurrentTab with retry mechanism
+    async getCurrentTabWithRetry(retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                console.log(`Getting current tab (attempt ${i + 1}/${retries})...`);
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+                if (tab && tab.url) {
+                    const url = new URL(tab.url);
+                    this.currentDomain = url.hostname;
+                    this.currentTabId = tab.id;
+
+                    console.log('Current domain:', this.currentDomain);
+
+                    if (this.elements.currentDomain) {
+                        this.elements.currentDomain.textContent = this.currentDomain;
+                    }
+                    return; // Success
+                } else {
+                    throw new Error('No active tab found');
+                }
+            } catch (error) {
+                console.error(`Failed to get current tab (attempt ${i + 1}):`, error);
+
+                if (i === retries - 1) {
+                    // Last attempt failed
+                    this.currentDomain = 'unknown';
+                    this.currentTabId = null;
+                    if (this.elements.currentDomain) {
+                        this.elements.currentDomain.textContent = 'Unable to detect domain';
+                    }
+                    console.warn('Using fallback domain after all retries failed');
+                } else {
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+        }
+    }
+
+    // Safer history manager initialization
+    async initializeHistoryManagerSafely() {
+        try {
+            console.log('Initializing HistoryManager safely...');
+
+            // Import the HistoryManager
+            const { HistoryManager } = await import('./components/HistoryManager.js');
+            console.log('HistoryManager imported successfully');
+
+            // Create and initialize the manager
+            this.historyManager = new HistoryManager();
+            this.historyManager.setElements(this.elements);
+            console.log('HistoryManager created and elements set');
+
+            // Set up history event listeners
+            this.setupHistoryEventListeners();
+
+            // Load history with a reasonable delay to ensure DOM is ready
+            await new Promise(resolve => setTimeout(resolve, 50));
+            this.historyManager.loadHistory();
+
+            console.log('HistoryManager initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize HistoryManager:', error);
+            this.createFallbackHistoryManager();
+        }
+    }
+
+    createFallbackHistoryManager() {
+        console.log('Creating fallback history manager...');
+        this.historyManager = {
+            loadHistory: () => {
+                if (this.elements.historyContainer) {
+                    this.elements.historyContainer.innerHTML = '<div class="history-empty">History functionality unavailable. Please refresh the extension.</div>';
+                }
+            },
+            setShowTrueOnly: () => { },
+            clearHistory: () => ({ success: true, message: 'History cleared' }),
+            renderHistory: () => { },
+            scrollToEvent: () => { },
+            updateEvent: () => { }
+        };
     }
 
     getDOMElements() {
         const elementMap = {
             currentDomain: 'current-domain',
-            webhookUrl: 'webhook-url',
-            llmModeToggle: 'llm-mode-toggle',
-            llmConfigSection: 'llm-config-section',
             llmApiUrl: 'llm-api-url',
             llmApiKey: 'llm-api-key',
             llmModel: 'llm-model',
@@ -85,9 +218,9 @@ class SimplePopupController {
             historyContainer: 'history-container',
             showTrueOnly: 'show-true-only',
             clearHistoryBtn: 'clear-history-btn',
-            testEventsBtn: 'test-events-btn',
             // Field status
-            fieldStatus: 'field-status'
+            fieldStatus: 'field-status',
+            fullPageCaptureToggle: 'full-page-capture-toggle'
         };
 
         for (const [key, id] of Object.entries(elementMap)) {
@@ -101,31 +234,7 @@ class SimplePopupController {
         }
     }
 
-    async getCurrentTab() {
-        try {
-            console.log('Getting current tab...');
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-            if (tab && tab.url) {
-                const url = new URL(tab.url);
-                this.currentDomain = url.hostname;
-                this.currentTabId = tab.id;
-
-                console.log('Current domain:', this.currentDomain);
-
-                if (this.elements.currentDomain) {
-                    this.elements.currentDomain.textContent = this.currentDomain;
-                }
-            } else {
-                throw new Error('No tab found');
-            }
-        } catch (error) {
-            console.error('Failed to get current tab:', error);
-            if (this.elements.currentDomain) {
-                this.elements.currentDomain.textContent = 'Unable to detect domain';
-            }
-        }
-    }
 
     setupEventListeners() {
         console.log('Setting up event listeners...');
@@ -139,26 +248,7 @@ class SimplePopupController {
             console.log('Theme toggle listener added');
         }
 
-        // Webhook URL
-        if (this.elements.webhookUrl) {
-            this.elements.webhookUrl.addEventListener('change', async () => {
-                const webhookUrl = this.elements.webhookUrl.value.trim();
-                if (webhookUrl) {
-                    await this.saveWebhookUrl(webhookUrl);
-                    this.showStatus('Webhook URL saved', 'success');
-                }
-            });
-        }
 
-        // LLM Mode Toggle
-        if (this.elements.llmModeToggle) {
-            this.elements.llmModeToggle.addEventListener('change', async () => {
-                const isLlmMode = this.elements.llmModeToggle.checked;
-                await this.saveLlmMode(isLlmMode);
-                this.updateLlmModeUI();
-                this.showStatus(`${isLlmMode ? 'LLM' : 'Webhook'} mode enabled`, 'success');
-            });
-        }
 
         // LLM Configuration inputs
         if (this.elements.llmApiUrl) {
@@ -265,6 +355,15 @@ class SimplePopupController {
             });
         }
 
+        // Full page capture toggle
+        if (this.elements.fullPageCaptureToggle) {
+            this.elements.fullPageCaptureToggle.addEventListener('change', async () => {
+                const fullPageEnabled = this.elements.fullPageCaptureToggle.checked;
+                await this.saveFullPageCaptureSetting(fullPageEnabled);
+                this.showStatus(`Full page capture ${fullPageEnabled ? 'enabled' : 'disabled'}`, 'success');
+            });
+        }
+
         // Consent toggle - now enables WebSophon for domain (both manual and automatic)
         if (this.elements.consentToggle) {
             this.elements.consentToggle.addEventListener('change', async () => {
@@ -332,21 +431,16 @@ class SimplePopupController {
             if (!this.currentDomain) return;
 
             const keys = [
-                'webhookUrl',
                 `consent_${this.currentDomain}`,
                 `interval_${this.currentDomain}`,
                 `refreshPage_${this.currentDomain}`,
                 `captureDelay_${this.currentDomain}`,
-                `llmMode_${this.currentDomain}`,
                 `llmConfig_${this.currentDomain}`,
-                `fields_${this.currentDomain}`
+                `fields_${this.currentDomain}`,
+                'fullPageCapture'
             ];
 
             const data = await chrome.storage.local.get(keys);
-
-            if (data.webhookUrl && this.elements.webhookUrl) {
-                this.elements.webhookUrl.value = data.webhookUrl;
-            }
 
             if (data[`consent_${this.currentDomain}`] !== undefined && this.elements.consentToggle) {
                 this.elements.consentToggle.checked = data[`consent_${this.currentDomain}`];
@@ -364,11 +458,11 @@ class SimplePopupController {
                 this.elements.captureDelay.value = data[`captureDelay_${this.currentDomain}`];
             }
 
-            // Load LLM settings
-            if (data[`llmMode_${this.currentDomain}`] !== undefined && this.elements.llmModeToggle) {
-                this.elements.llmModeToggle.checked = data[`llmMode_${this.currentDomain}`];
+            if (data.fullPageCapture !== undefined && this.elements.fullPageCaptureToggle) {
+                this.elements.fullPageCaptureToggle.checked = data.fullPageCapture;
             }
 
+            // Load LLM settings
             const llmConfig = data[`llmConfig_${this.currentDomain}`] || {};
             if (llmConfig.apiUrl && this.elements.llmApiUrl) {
                 this.elements.llmApiUrl.value = llmConfig.apiUrl;
@@ -409,22 +503,12 @@ class SimplePopupController {
             // Load saved fields
             await this.loadFieldsState();
 
-            // Update UI based on manual mode and LLM mode
+            // Update UI based on manual mode
             this.updateManualModeUI();
-            this.updateLlmModeUI();
 
             console.log('Settings loaded:', data);
         } catch (error) {
             console.error('Failed to load settings:', error);
-        }
-    }
-
-    async saveWebhookUrl(url) {
-        try {
-            await chrome.storage.local.set({ webhookUrl: url });
-            console.log('Webhook URL saved:', url);
-        } catch (error) {
-            console.error('Failed to save webhook URL:', error);
         }
     }
 
@@ -474,13 +558,12 @@ class SimplePopupController {
         }
     }
 
-    async saveLlmMode(enabled) {
+    async saveFullPageCaptureSetting(enabled) {
         try {
-            if (!this.currentDomain) return;
-            await chrome.storage.local.set({ [`llmMode_${this.currentDomain}`]: enabled });
-            console.log('LLM mode saved:', enabled);
+            await chrome.storage.local.set({ fullPageCapture: enabled });
+            console.log('Full page capture setting saved:', enabled);
         } catch (error) {
-            console.error('Failed to save LLM mode:', error);
+            console.error('Failed to save full page capture setting:', error);
         }
     }
 
@@ -502,77 +585,23 @@ class SimplePopupController {
         }
     }
 
-    updateLlmModeUI() {
-        const isLlmMode = this.elements.llmModeToggle?.checked || false;
 
-        if (this.elements.llmConfigSection) {
-            if (isLlmMode) {
-                this.elements.llmConfigSection.style.display = 'block';
-                this.elements.llmConfigSection.classList.add('visible');
-            } else {
-                this.elements.llmConfigSection.style.display = 'none';
-                this.elements.llmConfigSection.classList.remove('visible');
-            }
-        }
-
-        // Update capture button text to indicate mode
-        if (this.elements.captureNow) {
-            const baseText = '📸 Capture Screenshot Now';
-            const modeText = isLlmMode ? ' (LLM Analysis)' : ' (Webhook)';
-            this.elements.captureNow.textContent = baseText + modeText;
-        }
-    }
 
     addBasicField() {
-        if (!this.elements.fieldsContainer) return;
-
-        const fieldId = Date.now();
+        const fieldId = Date.now().toString();
         const fieldHtml = `
             <div class="field-item" data-field-id="${fieldId}">
                 <div class="field-header">
-                    <input type="text" class="field-name-input" placeholder="Field Name">
-                    <div class="field-last-result" id="last-result-${fieldId}">
-                        <span class="result-text">No results yet</span>
-                    </div>
+                    <input type="text" class="field-name-input" placeholder="Field Name" />
                     <button class="remove-field-btn" data-field-id="${fieldId}">✕</button>
                 </div>
                 <textarea class="field-description" placeholder="Describe what to evaluate..."></textarea>
-                <div class="field-webhook-config">
-                    <div class="webhook-toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" class="webhook-toggle">
-                            <span class="slider"></span>
-                        </label>
-                        <div class="webhook-config-text">
-                            <span>Fire webhook on </span>
-                            <select class="webhook-trigger-dropdown">
-                                <option value="true">TRUE</option>
-                                <option value="false">FALSE</option>
-                            </select>
-                            <span> result</span>
-                        </div>
-                    </div>
-                    
-                    <div class="webhook-url-group" style="display: none;">
-                        <label>Webhook URL:</label>
-                        <div class="webhook-url-input-group">
-                            <input type="url" class="webhook-url-input" placeholder="https://webhook.url/endpoint">
-                            <button class="toggle-url-visibility" title="Show/Hide URL" style="display: none;">👁️</button>
-                        </div>
-                    </div>
-                    
-                    <div class="webhook-payload-group" style="display: none;">
-                        <label>Custom Payload (JSON):</label>
-                        <textarea class="webhook-payload-input" placeholder='{"key": "value"}'></textarea>
-                    </div>
-                </div>
             </div>
         `;
 
         this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
 
         // Add event listeners for the new field
-        this.setupFieldWebhookListeners(fieldId);
         this.setupFieldRemoveListener(fieldId);
 
         this.showFieldStatus('Field added', 'success');
@@ -729,29 +758,63 @@ class SimplePopupController {
             } else {
                 const sortedDomains = Array.from(domains).sort();
 
-                sortedDomains.forEach(domain => {
+                for (const domain of sortedDomains) {
                     const isCurrentDomain = domain === this.currentDomain;
                     const consentEnabled = allData[`consent_${domain}`] || false;
                     const interval = allData[`interval_${domain}`] || 'manual';
                     const fieldsCount = (allData[`fields_${domain}`] || []).length;
 
+                    // Get last run information from history
+                    const lastRunInfo = await this.getDomainLastRun(domain);
+
                     const domainHtml = `
-                        <div class="domain-item ${isCurrentDomain ? 'current-domain-item' : ''}">
+                        <div class="domain-item ${isCurrentDomain ? 'current-domain-item' : ''}" data-domain="${domain}">
                             <div class="domain-header">
-                                <span class="domain-name">${domain} ${isCurrentDomain ? '(current)' : ''}</span>
-                                <span class="domain-status ${consentEnabled ? 'enabled' : 'disabled'}">
-                                    ${consentEnabled ? '✓ Enabled' : '○ Disabled'}
-                                </span>
+                                <div class="domain-name-section">
+                                    <div class="domain-name">
+                                        ${domain}
+                                        ${isCurrentDomain ? '<span class="domain-current-badge">CURRENT</span>' : ''}
+                                    </div>
+                                </div>
+                                <div class="domain-actions">
+                                    <span class="domain-status ${consentEnabled ? 'enabled' : 'disabled'}">
+                                        ${consentEnabled ? '✓ Enabled' : '○ Disabled'}
+                                    </span>
+                                    <button class="domain-delete-btn" data-domain="${domain}" title="Delete all settings for ${domain}">
+                                        🗑️
+                                    </button>
+                                </div>
                             </div>
                             <div class="domain-details">
-                                <span class="domain-interval">Interval: ${interval === 'manual' ? 'Manual only' : interval + 's'}</span>
-                                <span class="domain-fields">Fields: ${fieldsCount}</span>
+                                <div class="domain-detail-item">
+                                    <div class="domain-detail-label">Interval</div>
+                                    <div class="domain-detail-value domain-interval-value">
+                                        ${interval === 'manual' ? 'Manual Only' : interval + 's'}
+                                    </div>
+                                </div>
+                                <div class="domain-detail-item">
+                                    <div class="domain-detail-label">Fields</div>
+                                    <div class="domain-detail-value domain-fields-value">${fieldsCount} field${fieldsCount !== 1 ? 's' : ''}</div>
+                                </div>
+                                <div class="domain-detail-item">
+                                    <div class="domain-detail-label">Last Run</div>
+                                    <div class="domain-detail-value domain-last-run-value ${lastRunInfo.never ? 'never' : ''}">
+                                        ${lastRunInfo.display}
+                                    </div>
+                                </div>
+                                <div class="domain-detail-item">
+                                    <div class="domain-detail-label">Total Events</div>
+                                    <div class="domain-detail-value">${lastRunInfo.totalEvents}</div>
+                                </div>
                             </div>
                         </div>
                     `;
 
                     this.elements.domainsContainer.insertAdjacentHTML('beforeend', domainHtml);
-                });
+                }
+
+                // Add event listeners for delete buttons
+                this.setupDomainDeleteListeners();
             }
 
             console.log(`Loaded ${domains.size} known domains`);
@@ -760,6 +823,142 @@ class SimplePopupController {
             if (this.elements.domainsContainer) {
                 this.elements.domainsContainer.innerHTML = '<p class="no-domains">Error loading domains</p>';
             }
+        }
+    }
+
+    async getDomainLastRun(domain) {
+        try {
+            // Get history from storage
+            const { captureHistory = [] } = await chrome.storage.local.get(['captureHistory']);
+
+            // Filter events for this domain
+            const domainEvents = captureHistory.filter(event => event.domain === domain);
+
+            if (domainEvents.length === 0) {
+                return {
+                    display: 'Never',
+                    never: true,
+                    totalEvents: 0
+                };
+            }
+
+            // Sort by timestamp (newest first)
+            domainEvents.sort((a, b) => b.timestamp - a.timestamp);
+
+            const lastEvent = domainEvents[0];
+            const lastRunTime = new Date(lastEvent.timestamp);
+            const now = new Date();
+            const diffMs = now - lastRunTime;
+
+            let display;
+            if (diffMs < 60000) { // Less than 1 minute
+                display = 'Just now';
+            } else if (diffMs < 3600000) { // Less than 1 hour
+                const minutes = Math.floor(diffMs / 60000);
+                display = `${minutes}m ago`;
+            } else if (diffMs < 86400000) { // Less than 1 day
+                const hours = Math.floor(diffMs / 3600000);
+                display = `${hours}h ago`;
+            } else { // More than 1 day
+                const days = Math.floor(diffMs / 86400000);
+                display = `${days}d ago`;
+            }
+
+            return {
+                display,
+                never: false,
+                totalEvents: domainEvents.length
+            };
+        } catch (error) {
+            console.error('Error getting domain last run:', error);
+            return {
+                display: 'Unknown',
+                never: true,
+                totalEvents: 0
+            };
+        }
+    }
+
+    setupDomainDeleteListeners() {
+        const deleteButtons = this.elements.domainsContainer.querySelectorAll('.domain-delete-btn');
+
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const domain = button.dataset.domain;
+
+                // Confirm deletion
+                const confirmMessage = `Delete all WebSophon settings for "${domain}"?\n\nThis will remove:\n• Domain consent settings\n• Capture interval\n• Field configurations\n• LLM settings\n• History data\n\nThis action cannot be undone.`;
+
+                if (confirm(confirmMessage)) {
+                    await this.deleteDomainSettings(domain);
+                }
+            });
+        });
+    }
+
+    async deleteDomainSettings(domain) {
+        try {
+            console.log(`Deleting all settings for domain: ${domain}`);
+
+            // Get all storage data
+            const allData = await chrome.storage.local.get();
+
+            // Find all keys related to this domain
+            const keysToDelete = Object.keys(allData).filter(key => {
+                return key.startsWith(`consent_${domain}`) ||
+                    key.startsWith(`interval_${domain}`) ||
+                    key.startsWith(`fields_${domain}`) ||
+                    key.startsWith(`llmConfig_${domain}`) ||
+                    key.startsWith(`llmMode_${domain}`) ||
+                    key.startsWith(`refreshPage_${domain}`) ||
+                    key.startsWith(`captureDelay_${domain}`);
+            });
+
+            // Delete domain-specific storage keys
+            if (keysToDelete.length > 0) {
+                await chrome.storage.local.remove(keysToDelete);
+                console.log(`Deleted ${keysToDelete.length} storage keys:`, keysToDelete);
+            }
+
+            // Clean up history data for this domain
+            const { captureHistory = [] } = await chrome.storage.local.get(['captureHistory']);
+            const filteredHistory = captureHistory.filter(event => event.domain !== domain);
+
+            if (filteredHistory.length !== captureHistory.length) {
+                await chrome.storage.local.set({ captureHistory: filteredHistory });
+                console.log(`Removed ${captureHistory.length - filteredHistory.length} history events for domain`);
+            }
+
+            // Stop any automatic capture for this domain if it's the current domain
+            if (domain === this.currentDomain) {
+                this.stopAutomaticCapture();
+
+                // Reset UI to defaults
+                if (this.elements.consentToggle) this.elements.consentToggle.checked = false;
+                if (this.elements.captureInterval) this.elements.captureInterval.value = 'manual';
+                if (this.elements.refreshPageToggle) this.elements.refreshPageToggle.checked = false;
+                if (this.elements.captureDelay) this.elements.captureDelay.value = '0';
+                if (this.elements.fieldsContainer) this.elements.fieldsContainer.innerHTML = '';
+
+                this.updateManualModeUI();
+            }
+
+            // Refresh the domains list
+            await this.loadKnownDomains();
+
+            // Refresh history if we're on the history tab
+            if (this.historyManager && this.historyManager.loadHistory) {
+                this.historyManager.loadHistory();
+            }
+
+            this.showStatus(`All settings for "${domain}" have been deleted`, 'success');
+
+        } catch (error) {
+            console.error('Failed to delete domain settings:', error);
+            this.showStatus(`Failed to delete settings for "${domain}"`, 'error');
         }
     }
 
@@ -811,7 +1010,7 @@ class SimplePopupController {
         }
     }
 
-    // Get all field data including webhook configurations
+    // Get all field data for LLM-only operation
     getAllFieldsFromDOM() {
         const fields = [];
         const fieldItems = Array.from(document.querySelectorAll('.field-item'))
@@ -821,10 +1020,6 @@ class SimplePopupController {
             const fieldId = item.dataset.fieldId || Date.now() + index;
             const nameInput = item.querySelector('.field-name-input');
             const descriptionInput = item.querySelector('.field-description');
-            const webhookToggle = item.querySelector('.webhook-toggle');
-            const webhookUrlInput = item.querySelector('.webhook-url-input');
-            const webhookPayloadInput = item.querySelector('.webhook-payload-input');
-            const webhookTriggerDropdown = item.querySelector('.webhook-trigger-dropdown');
 
             if (nameInput && descriptionInput && nameInput.isConnected && descriptionInput.isConnected) {
                 const name = nameInput.value.trim();
@@ -867,10 +1062,6 @@ class SimplePopupController {
                         id: fieldId,
                         name: name,
                         description: description,
-                        webhookEnabled: webhookToggle ? webhookToggle.checked : false,
-                        webhookTrigger: webhookTriggerDropdown ? webhookTriggerDropdown.value === 'true' : true,
-                        webhookUrl: webhookUrlInput ? webhookUrlInput.value.trim() : '',
-                        webhookPayload: webhookPayloadInput ? webhookPayloadInput.value.trim() : '',
                         lastResult: lastResult,
                         eventId: eventId
                     });
@@ -888,21 +1079,11 @@ class SimplePopupController {
             return;
         }
 
-        const isLlmMode = this.elements.llmModeToggle?.checked || false;
-
-        // Validate configuration based on mode
-        if (isLlmMode) {
-            const llmConfig = await this.getLlmConfig();
-            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
-                this.showStatus('Please configure LLM API URL and API Key first', 'error');
-                return;
-            }
-        } else {
-            const webhookUrl = this.elements.webhookUrl?.value.trim();
-            if (!webhookUrl) {
-                this.showStatus('Please enter a webhook URL first', 'error');
-                return;
-            }
+        // Validate LLM configuration
+        const llmConfig = await this.getLlmConfig();
+        if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+            this.showStatus('Please configure LLM API URL and API Key first', 'error');
+            return;
         }
 
         // Get fields and save them before capture
@@ -918,7 +1099,7 @@ class SimplePopupController {
         // Update button state
         if (this.elements.captureNow) {
             this.elements.captureNow.disabled = true;
-            this.elements.captureNow.textContent = isLlmMode ? '⏳ Analyzing with LLM...' : '⏳ Capturing...';
+            this.elements.captureNow.textContent = '⏳ Analyzing with LLM...';
         }
 
         try {
@@ -931,37 +1112,23 @@ class SimplePopupController {
             // Save state to ensure pending status persists
             await this.saveFieldsState();
 
-            // Prepare message based on mode
-            let message;
-            if (isLlmMode) {
-                const llmConfig = await this.getLlmConfig();
-                message = {
-                    action: 'captureLLM',
-                    domain: this.currentDomain,
-                    tabId: this.currentTabId,
-                    llmConfig: llmConfig,
-                    fields: fields,
-                    refreshPage: this.elements.refreshPageToggle?.checked || false,
-                    captureDelay: parseInt(this.elements.captureDelay?.value || '0')
-                };
-            } else {
-                const webhookUrl = this.elements.webhookUrl.value.trim();
-                message = {
-                    action: 'captureNow',
-                    domain: this.currentDomain,
-                    tabId: this.currentTabId,
-                    webhookUrl: webhookUrl,
-                    fields: fields,
-                    refreshPage: this.elements.refreshPageToggle?.checked || false,
-                    captureDelay: parseInt(this.elements.captureDelay?.value || '0')
-                };
-            }
+            // Prepare LLM capture message
+            const message = {
+                action: 'captureLLM',
+                domain: this.currentDomain,
+                tabId: this.currentTabId,
+                llmConfig: llmConfig,
+                fields: fields,
+                refreshPage: this.elements.refreshPageToggle?.checked || false,
+                captureDelay: parseInt(this.elements.captureDelay?.value || '0'),
+                fullPageCapture: this.elements.fullPageCaptureToggle?.checked || false
+            };
 
             // Send to background script
             const response = await this.sendMessageToBackground(message);
 
             if (response && response.success) {
-                this.showStatus(isLlmMode ? 'Screenshot analyzed with LLM!' : 'Screenshot captured and sent!', 'success');
+                this.showStatus('Screenshot analyzed with LLM!', 'success');
 
                 // Store event ID with fields if available
                 if (response.eventId) {
@@ -970,7 +1137,7 @@ class SimplePopupController {
                     });
                 }
             } else {
-                this.showStatus(`${isLlmMode ? 'LLM analysis' : 'Capture'} failed: ${response?.error || 'Unknown error'}`, 'error');
+                this.showStatus(`LLM analysis failed: ${response?.error || 'Unknown error'}`, 'error');
 
                 // Set fields to error state
                 fields.forEach(field => {
@@ -984,9 +1151,7 @@ class SimplePopupController {
             // Restore button
             if (this.elements.captureNow) {
                 this.elements.captureNow.disabled = false;
-                const baseText = '📸 Capture Screenshot Now';
-                const modeText = isLlmMode ? ' (LLM Analysis)' : ' (Webhook)';
-                this.elements.captureNow.textContent = baseText + modeText;
+                this.elements.captureNow.textContent = '📸 Capture Screenshot Now';
             }
         }
     }
@@ -1237,34 +1402,12 @@ class SimplePopupController {
                 });
             }
 
-            if (this.elements.testEventsBtn && this.historyManager) {
-                this.elements.testEventsBtn.addEventListener('click', () => {
-                    console.log('Test events button clicked');
-                    if (this.historyManager.createTestEvents) {
-                        const result = this.historyManager.createTestEvents(this.currentDomain);
-                        if (result && result.success) {
-                            this.showStatus(result.message, 'info');
-                        }
-                    }
-                });
-            }
         } catch (error) {
             console.error('Failed to setup history event listeners:', error);
         }
     }
 
-    testHistoryIntegration() {
-        console.log('Testing history integration...');
-        console.log('History container:', this.elements.historyContainer);
 
-        if (this.elements.historyContainer) {
-            // Set initial message to show container is working
-            this.elements.historyContainer.innerHTML = '<div class="history-empty">History container connected - waiting for events...</div>';
-            console.log('History container test message set successfully');
-        } else {
-            console.error('History container not found during test!');
-        }
-    }
 
     startAutomaticCapture() {
         const interval = this.elements.captureInterval?.value;
@@ -1288,65 +1431,8 @@ class SimplePopupController {
     }
 
     stopAutomaticCapture() {
-        this.sendMessageToBackground({
-            action: 'stopCapture',
-            domain: this.currentDomain,
-            tabId: this.currentTabId
-        });
-    }
-
-    setupFieldWebhookListeners(fieldId) {
-        const fieldElement = document.querySelector(`[data-field-id="${fieldId}"]`);
-        if (!fieldElement) return;
-
-        const webhookToggle = fieldElement.querySelector('.webhook-toggle');
-        const webhookTriggerDropdown = fieldElement.querySelector('.webhook-trigger-dropdown');
-        const webhookUrlGroup = fieldElement.querySelector('.webhook-url-group');
-        const webhookPayloadGroup = fieldElement.querySelector('.webhook-payload-group');
-        const urlInput = fieldElement.querySelector('.webhook-url-input');
-        const payloadInput = fieldElement.querySelector('.webhook-payload-input');
-        const nameInput = fieldElement.querySelector('.field-name-input');
-        const descriptionInput = fieldElement.querySelector('.field-description');
-
-        if (webhookToggle) {
-            webhookToggle.addEventListener('change', () => {
-                const isEnabled = webhookToggle.checked;
-
-                if (webhookUrlGroup) {
-                    webhookUrlGroup.style.display = isEnabled ? 'block' : 'none';
-                }
-                if (webhookPayloadGroup) {
-                    webhookPayloadGroup.style.display = isEnabled ? 'block' : 'none';
-                }
-
-                // Use debounced save
-                this.debouncedSaveFieldsState();
-                console.log(`Webhook toggle for field ${fieldId}:`, isEnabled);
-            });
-        }
-
-        // Add change listener for webhook trigger dropdown
-        if (webhookTriggerDropdown) {
-            webhookTriggerDropdown.addEventListener('change', () => {
-                const triggerValue = webhookTriggerDropdown.value;
-                console.log(`Webhook trigger for field ${fieldId}:`, triggerValue);
-                this.debouncedSaveFieldsState();
-            });
-        }
-
-        // Add change listeners to save field state (use debounced saves)
-        if (nameInput) {
-            nameInput.addEventListener('input', () => this.debouncedSaveFieldsState());
-        }
-        if (descriptionInput) {
-            descriptionInput.addEventListener('input', () => this.debouncedSaveFieldsState());
-        }
-        if (urlInput) {
-            urlInput.addEventListener('input', () => this.debouncedSaveFieldsState());
-        }
-        if (payloadInput) {
-            payloadInput.addEventListener('input', () => this.debouncedSaveFieldsState());
-        }
+        chrome.runtime.sendMessage({ action: 'stopTimer' });
+        console.log('Stopped automatic capture');
     }
 
     setupFieldRemoveListener(fieldId) {
@@ -1505,7 +1591,6 @@ class SimplePopupController {
         this.elements.fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
 
         // Add event listeners for the recreated field
-        this.setupFieldWebhookListeners(fieldData.id);
         this.setupFieldRemoveListener(fieldData.id);
 
         // Restore event ID and make clickable if present

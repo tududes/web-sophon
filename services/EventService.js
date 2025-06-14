@@ -246,6 +246,26 @@ export class EventService {
         this.notifyEventUpdate(eventId, event);
     }
 
+    // Update an existing event's request data
+    updateEventRequestData(eventId, fullRequestData) {
+        // Find the event
+        const eventIndex = this.recentEvents.findIndex(e => e.id === eventId);
+        if (eventIndex === -1) {
+            console.error('Event not found for request data update:', eventId);
+            return;
+        }
+
+        const event = this.recentEvents[eventIndex];
+
+        // Update the request data with the full LLM payload
+        event.request = fullRequestData;
+
+        console.log(`Updated request data for event ${eventId} with full LLM payload`);
+
+        // Save updated events
+        this.saveEventsToStorage();
+    }
+
     // Notify about event updates
     notifyEventUpdate(eventId, event) {
         // First try runtime message (for popup)

@@ -92,8 +92,13 @@ export class WebhookService {
                 }
             }
 
+            // Get full page preference from storage
+            const { fullPageCapture = false } = await new Promise(resolve => {
+                chrome.storage.local.get(['fullPageCapture'], resolve);
+            });
+
             // Capture screenshot using CaptureService
-            const captureResult = await this.captureService.captureScreenshot(tabId);
+            const captureResult = await this.captureService.captureScreenshot(tabId, fullPageCapture);
             const { dataUrl, tab } = captureResult;
 
             // Convert dataURL to blob

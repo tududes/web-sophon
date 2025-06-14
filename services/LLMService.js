@@ -37,8 +37,42 @@ Return only JSON.`;
 
             // Validate LLM configuration
             if (!llmConfig || !llmConfig.apiUrl || !llmConfig.apiKey) {
-                throw new Error('LLM configuration missing: apiUrl and apiKey required');
+                const missingFields = [];
+                if (!llmConfig) missingFields.push('entire config');
+                else {
+                    if (!llmConfig.apiUrl) missingFields.push('apiUrl');
+                    if (!llmConfig.apiKey) missingFields.push('apiKey');
+                }
+
+                console.error('LLM Config validation failed!');
+                console.error('Missing fields:', missingFields);
+                console.error('Full llmConfig object:', llmConfig);
+
+                const errorMessage = `LLM configuration incomplete. Missing: ${missingFields.join(', ')}`;
+
+                this.eventService.trackEvent(null, domain, tab ? tab.url : '', false, null, errorMessage,
+                    dataUrl, { error: 'Configuration incomplete', config: llmConfig }, errorMessage, eventId);
+
+                if (isManual) {
+                    chrome.runtime.sendMessage({
+                        action: 'captureComplete',
+                        success: false,
+                        error: errorMessage
+                    });
+                }
+
+                return { success: false, error: errorMessage };
             }
+
+            console.log('=== LLM CONFIG DEBUG ===');
+            console.log('Domain:', domain);
+            console.log('LLM Config object:', llmConfig);
+            console.log('API URL:', llmConfig.apiUrl);
+            console.log('API Key present:', !!llmConfig.apiKey);
+            console.log('API Key length:', llmConfig.apiKey ? llmConfig.apiKey.length : 0);
+            console.log('API Key prefix:', llmConfig.apiKey ? llmConfig.apiKey.substring(0, 10) + '...' : 'NOT SET');
+            console.log('Model:', llmConfig.model);
+            console.log('========================');
 
             // Handle page refresh if enabled
             if (refreshPage) {
@@ -104,8 +138,13 @@ Return only JSON.`;
                 }
             }
 
+            // Get full page preference from storage
+            const { fullPageCapture = false } = await new Promise(resolve => {
+                chrome.storage.local.get(['fullPageCapture'], resolve);
+            });
+
             // Capture screenshot using CaptureService
-            const captureResult = await this.captureService.captureScreenshot(tabId);
+            const captureResult = await this.captureService.captureScreenshot(tabId, fullPageCapture);
             const { dataUrl, tab } = captureResult;
 
             // Convert dataURL to base64 (remove data:image/png;base64, prefix)
@@ -198,6 +237,36 @@ Return only JSON.`;
                 if (llmConfig.maxTokens !== undefined) {
                     requestPayload.max_tokens = llmConfig.maxTokens;
                 }
+
+                console.log('=== LLM REQUEST DEBUG ===');
+                console.log('URL:', llmConfig.apiUrl);
+                console.log('Method: POST');
+                console.log('Headers:', {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${llmConfig.apiKey.substring(0, 10)}...`,
+                    ...(llmConfig.customHeaders || {})
+                });
+                console.log('Payload:', JSON.stringify(requestPayload, null, 2));
+                console.log('Full Authorization header:', `Bearer ${llmConfig.apiKey}`);
+                console.log('========================');
+
+                // Update the event with the full LLM request payload for history
+                const fullRequestData = {
+                    ...requestData, // Keep the original metadata
+                    llmRequestPayload: {
+                        url: llmConfig.apiUrl,
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${llmConfig.apiKey.substring(0, 20)}...`
+                        },
+                        body: requestPayload,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+
+                // Update the tracked event with the full request data
+                this.eventService.updateEventRequestData(eventId, fullRequestData);
 
                 // Send request to LLM API
                 llmResponse = await fetch(llmConfig.apiUrl, {

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toggle Switches Conversion Test</title>
+    <link rel="stylesheet" href="assets/styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header-section">
+            <div class="header-content">
+                <h1>🎛️ Toggle Switches Conversion</h1>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>✅ Converted Checkboxes to Toggle Switches</h2>
+            <p>The previously misaligned checkboxes are now consistent toggle switches:</p>
+
+            <div class="capture-controls">
+                <div class="form-group">
+                    <label for="capture-interval">Capture Interval:</label>
+                    <select id="capture-interval">
+                        <option value="manual" selected>Manual Only</option>
+                        <option value="10">Every 10 seconds</option>
+                        <option value="30">Every 30 seconds</option>
+                        <option value="60">Every 1 minute</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <div class="domain-consent-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="refresh-page-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="consent-label">Refresh page before screenshot</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="capture-delay">Delay after page load:</label>
+                    <select id="capture-delay">
+                        <option value="0">0 seconds</option>
+                        <option value="1" selected>1 second</option>
+                        <option value="3">3 seconds</option>
+                        <option value="5">5 seconds</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <div class="domain-consent-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="full-page-capture-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="consent-label">📄 Capture full page (instead of just viewport)</span>
+                    </div>
+                </div>
+
+                <button class="capture-button">
+                    📸 Capture Screenshot Now
+                </button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔄 Before vs After Comparison</h2>
+
+            <div
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); margin: var(--space-lg) 0;">
+                <div>
+                    <h3 style="color: var(--danger); margin-bottom: var(--space-md);">❌ Before (Misaligned Checkboxes)
+                    </h3>
+                    <div
+                        style="background-color: var(--bg-secondary); padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--border-primary);">
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked disabled>
+                                <span>Refresh page before screenshot</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked disabled>
+                                <span>📄 Capture full page (instead of just viewport)</span>
+                            </label>
+                        </div>
+                        <p style="font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-sm);">
+                            ⚠️ Checkboxes were not properly aligned horizontally with their labels
+                        </p>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="color: var(--success); margin-bottom: var(--space-md);">✅ After (Consistent Toggle
+                        Switches)</h3>
+                    <div
+                        style="background-color: var(--bg-secondary); padding: var(--space-md); border-radius: var(--radius-md); border: 1px solid var(--border-primary);">
+                        <div class="form-group">
+                            <div class="domain-consent-group">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" checked disabled>
+                                    <span class="slider"></span>
+                                </label>
+                                <span class="consent-label">Refresh page before screenshot</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="domain-consent-group">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" checked disabled>
+                                    <span class="slider"></span>
+                                </label>
+                                <span class="consent-label">📄 Capture full page (instead of just viewport)</span>
+                            </div>
+                        </div>
+                        <p style="font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-sm);">
+                            ✨ Toggle switches provide consistent, professional appearance
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🎯 Benefits of Toggle Switches</h2>
+            <div class="status-message success">
+                <strong>Improvements Achieved:</strong><br><br>
+                ✅ <strong>Perfect Alignment:</strong> Toggle switches and labels are perfectly aligned<br>
+                ✅ <strong>Consistent Design:</strong> Matches the domain consent toggle pattern<br>
+                ✅ <strong>Better UX:</strong> More intuitive on/off visual feedback<br>
+                ✅ <strong>Professional Appearance:</strong> Modern toggle switches vs basic checkboxes<br>
+                ✅ <strong>Touch-Friendly:</strong> Larger interaction area for better usability<br>
+                ✅ <strong>Visual Clarity:</strong> Clear on/off states with smooth animations
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔧 Technical Implementation</h2>
+            <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.6;">
+                <li><strong>Replaced:</strong> <code>checkbox-label</code> class with <code>domain-consent-group</code>
+                </li>
+                <li><strong>Added:</strong> <code>toggle-switch</code> container with <code>slider</code> element</li>
+                <li><strong>Updated:</strong> Label class from <code>span</code> to <code>consent-label</code></li>
+                <li><strong>Maintained:</strong> Original checkbox input element IDs for JavaScript compatibility</li>
+                <li><strong>Consistent:</strong> Now matches the domain toggle design pattern exactly</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Add interactivity to demonstrate the toggle switches
+        document.querySelectorAll('.toggle-switch input[type="checkbox"]:not([disabled])').forEach(toggle => {
+            toggle.addEventListener('change', function () {
+                const label = this.closest('.domain-consent-group').querySelector('.consent-label');
+                if (label) {
+                    label.style.color = this.checked ? 'var(--accent-primary)' : 'var(--text-primary)';
+                    label.style.fontWeight = this.checked ? '600' : '500';
+                }
+                console.log(`${this.id}: ${this.checked ? 'ENABLED' : 'DISABLED'}`);
+            });
+        });
+    </script>
+</body>
+
+</html>

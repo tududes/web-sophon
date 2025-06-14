@@ -20,219 +20,227 @@
             </div>
         </div>
 
-        <div class="section">
-            <h2>Current Domain</h2>
-            <div class="domain-consent-group">
-                <label class="toggle-switch">
-                    <input type="checkbox" id="consent-toggle">
-                    <span class="slider"></span>
-                </label>
-                <span class="consent-label">Enable WebSophon for this domain</span>
-            </div>
-            <div id="current-domain" class="domain-display">Loading...</div>
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" data-tab="capture">📸 Capture</button>
+            <button class="tab-button" data-tab="fields">⚙️ Fields</button>
+            <button class="tab-button" data-tab="history">📊 History</button>
+            <button class="tab-button" data-tab="settings">🔧 Settings</button>
         </div>
 
-        <div class="section">
-            <h2>Capture Settings</h2>
-
-            <div class="form-group">
-                <label for="webhook-url">n8n Webhook URL:</label>
-                <input type="url" id="webhook-url" placeholder="https://your-n8n.com/webhook/..." />
-            </div>
-
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="llm-mode-toggle">
-                    <span>Use LLM Analysis instead of webhook</span>
-                </label>
-            </div>
-
-            <div id="llm-config-section" class="llm-config-section" style="display: none;">
-                <div class="form-group">
-                    <label for="llm-api-url">LLM API URL:</label>
-                    <input type="url" id="llm-api-url" placeholder="https://openrouter.ai/api/v1/chat/completions"
-                        value="https://openrouter.ai/api/v1/chat/completions" />
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- Capture Tab -->
+            <div class="tab-panel active" id="capture-tab">
+                <div class="domain-section">
+                    <h3>Current Domain</h3>
+                    <div class="domain-consent-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="consent-toggle">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="consent-label">Enable WebSophon for this domain</span>
+                    </div>
+                    <div id="current-domain" class="domain-display">Loading...</div>
                 </div>
 
-                <div class="form-group">
-                    <label for="llm-api-key">API Key:</label>
-                    <input type="password" id="llm-api-key" placeholder="Enter your API key..." />
-                </div>
+                <div class="capture-controls">
+                    <div class="form-group">
+                        <label for="capture-interval">Capture Interval:</label>
+                        <select id="capture-interval">
+                            <option value="manual" selected>Manual Only</option>
+                            <option value="10">Every 10 seconds</option>
+                            <option value="15">Every 15 seconds</option>
+                            <option value="30">Every 30 seconds</option>
+                            <option value="60">Every 1 minute</option>
+                            <option value="300">Every 5 minutes</option>
+                            <option value="600">Every 10 minutes</option>
+                            <option value="900">Every 15 minutes</option>
+                            <option value="1800">Every 30 minutes</option>
+                            <option value="3600">Every 1 hour</option>
+                            <option value="14400">Every 4 hours</option>
+                            <option value="21600">Every 6 hours</option>
+                            <option value="43200">Every 12 hours</option>
+                            <option value="86400">Every 1 day</option>
+                        </select>
+                    </div>
 
-                <div class="form-group">
-                    <label for="llm-model">Model:</label>
-                    <select id="llm-model">
-                        <optgroup label="🆓 Free Vision Models (OpenRouter)">
-                            <option value="opengvlab/internvl3-14b:free" selected>OpenGVLab InternVL3 14B ⭐ (Free)
-                            </option>
-                            <option value="opengvlab/internvl3-2b:free">OpenGVLab InternVL3 2B (Free)</option>
-                            <option value="qwen/qwen2.5-vl-72b-instruct:free">Qwen 2.5 VL 72B (Free)</option>
-                            <option value="qwen/qwen2.5-vl-32b-instruct:free">Qwen 2.5 VL 32B (Free)</option>
-                            <option value="qwen/qwen2.5-vl-7b-instruct:free">Qwen 2.5 VL 7B (Free)</option>
-                            <option value="qwen/qwen-2.5-vl-7b-instruct:free">Qwen 2.5 VL 7B Alt (Free)</option>
-                            <option value="qwen/qwen2.5-vl-3b-instruct:free">Qwen 2.5 VL 3B (Free)</option>
-                            <option value="meta-llama/llama-3.2-11b-vision-instruct:free">Meta Llama 3.2 11B Vision
-                                (Free)</option>
-                            <option value="google/gemini-2.5-pro-exp-03-25">Google Gemini 2.5 Pro Exp (Free)</option>
-                            <option value="google/gemini-2.0-flash-exp:free">Google Gemini 2.0 Flash Exp (Free)</option>
-                            <option value="moonshotai/kimi-vl-a3b-thinking:free">Moonshot Kimi VL A3B Thinking (Free)
-                            </option>
-                        </optgroup>
-                        <optgroup label="🔥 Premium Vision Models (OpenRouter)">
-                            <option value="openai/gpt-4o">OpenAI GPT-4o</option>
-                            <option value="openai/gpt-4o-mini">OpenAI GPT-4o Mini</option>
-                            <option value="openai/gpt-4-vision-preview">OpenAI GPT-4 Vision Preview</option>
-                            <option value="anthropic/claude-3.5-sonnet">Anthropic Claude 3.5 Sonnet</option>
-                            <option value="anthropic/claude-3-opus">Anthropic Claude 3 Opus</option>
-                            <option value="anthropic/claude-3-haiku">Anthropic Claude 3 Haiku</option>
-                            <option value="google/gemini-pro-vision">Google Gemini Pro Vision</option>
-                            <option value="meta-llama/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
-                        </optgroup>
-                        <optgroup label="🏢 Direct API Models">
-                            <option value="gpt-4o">GPT-4o (Direct OpenAI)</option>
-                            <option value="gpt-4o-mini">GPT-4o Mini (Direct OpenAI)</option>
-                            <option value="gpt-4-vision-preview">GPT-4 Vision (Direct OpenAI)</option>
-                            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Direct Anthropic)</option>
-                            <option value="claude-3-opus-20240229">Claude 3 Opus (Direct Anthropic)</option>
-                        </optgroup>
-                        <optgroup label="🏠 Local/Self-hosted">
-                            <option value="llava">LLaVA (Local)</option>
-                            <option value="moondream">Moondream (Local)</option>
-                            <option value="cogvlm">CogVLM (Local)</option>
-                        </optgroup>
-                        <optgroup label="🆓 Free Non-Vision Models">
-                            <option value="meta-llama/llama-4-maverick:free">Meta Llama 4 Maverick (Free)</option>
-                            <option value="meta-llama/llama-4-scout:free">Meta Llama 4 Scout (Free)</option>
-                            <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (Free)
-                            </option>
-                            <option value="google/gemma-3-27b-it:free">Google Gemma 3 27B (Free)</option>
-                            <option value="google/gemma-3-12b-it:free">Google Gemma 3 12B (Free)</option>
-                            <option value="google/gemma-3-4b-it:free">Google Gemma 3 4B (Free)</option>
-                            <option value="google/gemma-3-1b-it:free">Google Gemma 3 1B (Free)</option>
-                        </optgroup>
-                        <option value="custom">Other/Custom Model...</option>
-                    </select>
-                </div>
+                    <div class="form-group">
+                        <div class="domain-consent-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="refresh-page-toggle">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="consent-label">Refresh page before screenshot</span>
+                        </div>
+                    </div>
 
-                <div class="form-group" id="custom-model-group" style="display: none;">
-                    <label for="llm-custom-model">Custom Model Name:</label>
-                    <input type="text" id="llm-custom-model" placeholder="e.g., your-custom-model-name" />
-                </div>
+                    <div class="form-group">
+                        <label for="capture-delay">Delay after page load:</label>
+                        <select id="capture-delay">
+                            <option value="0" selected>0 seconds</option>
+                            <option value="1">1 second</option>
+                            <option value="3">3 seconds</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                            <option value="15">15 seconds</option>
+                            <option value="30">30 seconds</option>
+                            <option value="60">60 seconds</option>
+                        </select>
+                    </div>
 
-                <div class="form-group">
-                    <label for="llm-temperature">Temperature (0.0-1.0):</label>
-                    <input type="number" id="llm-temperature" min="0" max="1" step="0.1" value="0.1" />
-                </div>
+                    <div class="form-group">
+                        <div class="domain-consent-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="full-page-capture-toggle">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="consent-label">📄 Capture full page (instead of just viewport)</span>
+                        </div>
+                    </div>
 
-                <div class="form-group">
-                    <label for="llm-max-tokens">Max Tokens:</label>
-                    <input type="number" id="llm-max-tokens" min="100" max="4000" step="100" value="1000" />
+                    <button id="capture-now" class="capture-button">
+                        📸 Capture Screenshot Now
+                    </button>
+
+                    <div id="status" class="status-message"></div>
                 </div>
             </div>
 
-            <div class="form-group">
-                <label for="capture-interval">Capture Interval:</label>
-                <select id="capture-interval">
-                    <option value="manual" selected>Manual Only</option>
-                    <option value="10">Every 10 seconds</option>
-                    <option value="15">Every 15 seconds</option>
-                    <option value="30">Every 30 seconds</option>
-                    <option value="60">Every 1 minute</option>
-                    <option value="300">Every 5 minutes</option>
-                    <option value="600">Every 10 minutes</option>
-                    <option value="900">Every 15 minutes</option>
-                    <option value="1800">Every 30 minutes</option>
-                    <option value="3600">Every 1 hour</option>
-                    <option value="14400">Every 4 hours</option>
-                    <option value="21600">Every 6 hours</option>
-                    <option value="43200">Every 12 hours</option>
-                    <option value="86400">Every 1 day</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="refresh-page-toggle">
-                    <span>Refresh page before screenshot</span>
-                </label>
-            </div>
-
-            <div class="form-group">
-                <label for="capture-delay">Delay after page load:</label>
-                <select id="capture-delay">
-                    <option value="0" selected>0 seconds</option>
-                    <option value="1">1 second</option>
-                    <option value="3">3 seconds</option>
-                    <option value="5">5 seconds</option>
-                    <option value="10">10 seconds</option>
-                    <option value="15">15 seconds</option>
-                    <option value="30">30 seconds</option>
-                    <option value="60">60 seconds</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Evaluation Fields</h2>
-
-            <div class="preset-controls">
-                <div class="preset-dropdown-group">
-                    <select id="preset-selector">
-                        <option value="">Select a preset...</option>
-                    </select>
+            <!-- Fields Tab -->
+            <div class="tab-panel" id="fields-tab">
+                <div class="preset-controls">
+                    <div class="preset-dropdown-group">
+                        <select id="preset-selector">
+                            <option value="">Select a preset...</option>
+                        </select>
+                    </div>
+                    <div class="preset-buttons-group">
+                        <button id="save-preset-btn" class="small-button">💾 Save</button>
+                        <button id="delete-preset-btn" class="small-button danger">🗑️ Delete</button>
+                    </div>
                 </div>
-                <div class="preset-buttons-group">
-                    <button id="save-preset-btn" class="small-button">💾 Save</button>
-                    <button id="delete-preset-btn" class="small-button danger">🗑️ Delete</button>
+
+                <div id="fields-container" class="fields-container">
+                    <!-- Fields will be dynamically added here -->
+                </div>
+
+                <button id="add-field-btn" class="add-field-button">
+                    ➕ Add Field
+                </button>
+
+                <div id="field-status" class="status-message"></div>
+            </div>
+
+            <!-- History Tab -->
+            <div class="tab-panel" id="history-tab">
+                <div class="history-controls">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="show-true-only">
+                        <span>Show only TRUE events</span>
+                    </label>
+                    <button id="clear-history-btn" class="small-button danger">Clear History</button>
+                </div>
+
+                <div id="history-container" class="history-container">
+                    <!-- History items will be dynamically added here -->
                 </div>
             </div>
 
-            <div id="fields-container" class="fields-container">
-                <!-- Fields will be dynamically added here -->
-            </div>
+            <!-- Settings Tab -->
+            <div class="tab-panel" id="settings-tab">
+                <div class="settings-section">
+                    <h3>LLM Configuration</h3>
+                    <div class="form-group">
+                        <label for="llm-api-url">LLM API URL:</label>
+                        <input type="url" id="llm-api-url" placeholder="https://openrouter.ai/api/v1/chat/completions"
+                            value="https://openrouter.ai/api/v1/chat/completions" />
+                    </div>
 
-            <button id="add-field-btn" class="add-field-button">
-                ➕ Add Field
-            </button>
+                    <div class="form-group">
+                        <label for="llm-api-key">API Key:</label>
+                        <input type="password" id="llm-api-key" placeholder="Enter your API key..." />
+                    </div>
 
-            <div id="field-status" class="status-message"></div>
-        </div>
+                    <div class="form-group">
+                        <label for="llm-model">Model:</label>
+                        <select id="llm-model">
+                            <optgroup label="🆓 Free Vision Models (OpenRouter)">
+                                <option value="opengvlab/internvl3-14b:free" selected>OpenGVLab InternVL3 14B ⭐ (Free)
+                                </option>
+                                <option value="opengvlab/internvl3-2b:free">OpenGVLab InternVL3 2B (Free)</option>
+                                <option value="qwen/qwen2.5-vl-72b-instruct:free">Qwen 2.5 VL 72B (Free)</option>
+                                <option value="qwen/qwen2.5-vl-32b-instruct:free">Qwen 2.5 VL 32B (Free)</option>
+                                <option value="qwen/qwen2.5-vl-7b-instruct:free">Qwen 2.5 VL 7B (Free)</option>
+                                <option value="qwen/qwen-2.5-vl-7b-instruct:free">Qwen 2.5 VL 7B Alt (Free)</option>
+                                <option value="qwen/qwen2.5-vl-3b-instruct:free">Qwen 2.5 VL 3B (Free)</option>
+                                <option value="meta-llama/llama-3.2-11b-vision-instruct:free">Meta Llama 3.2 11B Vision
+                                    (Free)</option>
+                                <option value="google/gemini-2.5-pro-exp-03-25">Google Gemini 2.5 Pro Exp (Free)
+                                </option>
+                                <option value="google/gemini-2.0-flash-exp:free">Google Gemini 2.0 Flash Exp (Free)
+                                </option>
+                                <option value="moonshotai/kimi-vl-a3b-thinking:free">Moonshot Kimi VL A3B Thinking
+                                    (Free)</option>
+                            </optgroup>
+                            <optgroup label="🔥 Premium Vision Models (OpenRouter)">
+                                <option value="openai/gpt-4o">OpenAI GPT-4o</option>
+                                <option value="openai/gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                                <option value="openai/gpt-4-vision-preview">OpenAI GPT-4 Vision Preview</option>
+                                <option value="anthropic/claude-3.5-sonnet">Anthropic Claude 3.5 Sonnet</option>
+                                <option value="anthropic/claude-3-opus">Anthropic Claude 3 Opus</option>
+                                <option value="anthropic/claude-3-haiku">Anthropic Claude 3 Haiku</option>
+                                <option value="google/gemini-pro-vision">Google Gemini Pro Vision</option>
+                                <option value="meta-llama/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
+                            </optgroup>
+                            <optgroup label="🏢 Direct API Models">
+                                <option value="gpt-4o">GPT-4o (Direct OpenAI)</option>
+                                <option value="gpt-4o-mini">GPT-4o Mini (Direct OpenAI)</option>
+                                <option value="gpt-4-vision-preview">GPT-4 Vision (Direct OpenAI)</option>
+                                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Direct Anthropic)</option>
+                                <option value="claude-3-opus-20240229">Claude 3 Opus (Direct Anthropic)</option>
+                            </optgroup>
+                            <optgroup label="🏠 Local/Self-hosted">
+                                <option value="llava">LLaVA (Local)</option>
+                                <option value="moondream">Moondream (Local)</option>
+                                <option value="cogvlm">CogVLM (Local)</option>
+                            </optgroup>
+                            <optgroup label="🆓 Free Non-Vision Models">
+                                <option value="meta-llama/llama-4-maverick:free">Meta Llama 4 Maverick (Free)</option>
+                                <option value="meta-llama/llama-4-scout:free">Meta Llama 4 Scout (Free)</option>
+                                <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B
+                                    (Free)</option>
+                                <option value="google/gemma-3-27b-it:free">Google Gemma 3 27B (Free)</option>
+                                <option value="google/gemma-3-12b-it:free">Google Gemma 3 12B (Free)</option>
+                                <option value="google/gemma-3-4b-it:free">Google Gemma 3 4B (Free)</option>
+                                <option value="google/gemma-3-1b-it:free">Google Gemma 3 1B (Free)</option>
+                            </optgroup>
+                            <option value="custom">Other/Custom Model...</option>
+                        </select>
+                    </div>
 
-        <div class="section">
-            <h2>Capture Control</h2>
+                    <div class="form-group" id="custom-model-group" style="display: none;">
+                        <label for="llm-custom-model">Custom Model Name:</label>
+                        <input type="text" id="llm-custom-model" placeholder="e.g., your-custom-model-name" />
+                    </div>
 
-            <button id="capture-now" class="capture-button">
-                📸 Capture Screenshot Now
-            </button>
+                    <div class="form-group">
+                        <label for="llm-temperature">Temperature (0.0-1.0):</label>
+                        <input type="number" id="llm-temperature" min="0" max="1" step="0.1" value="0.1" />
+                    </div>
 
-            <div id="status" class="status-message"></div>
+                    <div class="form-group">
+                        <label for="llm-max-tokens">Max Tokens:</label>
+                        <input type="number" id="llm-max-tokens" min="100" max="4000" step="100" value="1000" />
+                    </div>
+                </div>
 
-            <div id="results-container" class="results-container">
-                <!-- Results will be displayed here -->
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Known Domains</h2>
-            <div id="domains-container" class="domains-container">
-                <!-- Domain items will be dynamically added here -->
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Event History</h2>
-
-            <div class="history-controls">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="show-true-only">
-                    <span>Show only TRUE events</span>
-                </label>
-                <button id="clear-history-btn" class="small-button danger">Clear History</button>
-                <button id="test-events-btn" class="small-button">🧪 Test Events</button>
-            </div>
-
-            <div id="history-container" class="history-container">
-                <!-- History items will be dynamically added here -->
+                <div class="settings-section">
+                    <h3>Known Domains</h3>
+                    <div id="domains-container" class="domains-container">
+                        <!-- Domain items will be dynamically added here -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

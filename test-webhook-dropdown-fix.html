@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook Dropdown Layout Fix Test</title>
+    <link rel="stylesheet" href="assets/styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header-section">
+            <div class="header-content">
+                <h1>🔗 Webhook Dropdown Layout Fix</h1>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>✅ Fixed Webhook Trigger Dropdown Layout</h2>
+            <p>The webhook configuration now has proper spacing and positioning:</p>
+
+            <div class="field-item">
+                <div class="field-header">
+                    <input type="text" class="field-name-input" value="Test Field" readonly>
+                    <div class="field-name-sanitized">test_field</div>
+                </div>
+
+                <textarea class="field-description"
+                    readonly>This is a test field to demonstrate the improved webhook dropdown layout.</textarea>
+
+                <div class="field-webhook-config">
+                    <div class="webhook-toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" class="webhook-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <div class="webhook-config-text">
+                            <span>Fire webhook on</span>
+                            <select class="webhook-trigger-dropdown">
+                                <option value="false">FALSE</option>
+                                <option value="true">TRUE</option>
+                            </select>
+                            <span>result</span>
+                        </div>
+                    </div>
+
+                    <div class="webhook-url-group">
+                        <label>Webhook URL:</label>
+                        <div class="webhook-url-input-group">
+                            <input type="url" class="webhook-url-input" value="https://example.com/webhook" readonly>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-header">
+                    <input type="text" class="field-name-input" value="Another Test Field" readonly>
+                    <div class="field-name-sanitized">another_test_field</div>
+                </div>
+
+                <textarea class="field-description"
+                    readonly>Another field to show multiple webhook configurations working correctly.</textarea>
+
+                <div class="field-webhook-config">
+                    <div class="webhook-toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" class="webhook-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <div class="webhook-config-text">
+                            <span>Fire webhook on</span>
+                            <select class="webhook-trigger-dropdown">
+                                <option value="true">TRUE</option>
+                                <option value="false">FALSE</option>
+                            </select>
+                            <span>result</span>
+                        </div>
+                    </div>
+
+                    <div class="webhook-url-group">
+                        <label>Webhook URL:</label>
+                        <div class="webhook-url-input-group">
+                            <input type="url" class="webhook-url-input" value="https://n8n.example.com/webhook/abc123"
+                                readonly>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🎯 What Was Fixed</h2>
+            <div class="status-message success">
+                <strong>Webhook Dropdown Layout Issues Resolved:</strong><br><br>
+                ✅ <strong>Removed overlapping:</strong> Toggle switch and dropdown no longer overlap<br>
+                ✅ <strong>Wider dropdown:</strong> Minimum 80px width with proper padding<br>
+                ✅ <strong>Right positioning:</strong> Content flows properly from left to right<br>
+                ✅ <strong>Better spacing:</strong> Increased gap between toggle and text elements<br>
+                ✅ <strong>Custom dropdown arrow:</strong> Styled with proper positioning<br>
+                ✅ <strong>Improved focus states:</strong> Clear visual feedback on interaction
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔧 Technical Changes Made</h2>
+            <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.6;">
+                <li><strong>.webhook-toggle-group:</strong> Increased gap from sm to md, added position relative</li>
+                <li><strong>.webhook-config-text:</strong> Added flex: 1 and justify-content: flex-end</li>
+                <li><strong>.webhook-trigger-dropdown:</strong>
+                    <ul style="margin-left: 20px; margin-top: 8px;">
+                        <li>Increased padding and min-width to 80px</li>
+                        <li>Added custom dropdown arrow with proper positioning</li>
+                        <li>Centered text alignment</li>
+                        <li>Enhanced border radius and transitions</li>
+                        <li>Proper focus and hover states maintained</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity to test the dropdowns
+        document.querySelectorAll('.webhook-trigger-dropdown').forEach(dropdown => {
+            dropdown.addEventListener('change', function () {
+                console.log(`Webhook trigger changed to: ${this.value}`);
+
+                // Update the text to show the change
+                const span = this.parentNode.querySelector('span:last-child');
+                if (span) {
+                    span.style.color = 'var(--accent-primary)';
+                    span.style.fontWeight = '600';
+                    setTimeout(() => {
+                        span.style.color = '';
+                        span.style.fontWeight = '';
+                    }, 1000);
+                }
+            });
+        });
+
+        // Test toggle switches
+        document.querySelectorAll('.webhook-toggle').forEach(toggle => {
+            toggle.addEventListener('change', function () {
+                console.log(`Webhook enabled: ${this.checked}`);
+
+                const configText = this.closest('.webhook-toggle-group').querySelector('.webhook-config-text');
+                if (configText) {
+                    configText.style.opacity = this.checked ? '1' : '0.5';
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
