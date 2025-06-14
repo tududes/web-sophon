@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Exact Response Format</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .debug-output {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Test Exact LLM Response Format</h1>
+        <p>Testing the exact response format provided by the user to see if it processes correctly.</p>
+
+        <button onclick="testExactResponse()">Test Exact Response</button>
+        <div id="result" class="debug-output"></div>
+    </div>
+
+    <script>
+        function testExactResponse() {
+            // Exact response content from user
+            const llmResponseContent = `\`\`\`json
+{
+  "is_crazy": [false, 0.90],
+  "bullish_on_btc": [true, 0.95],
+  "reason": "The tweet at the top of the page mentions 'Model S & X are now even better – launch Beast' which does not indicate erratic behavior. However, Elon Musk is hosting a live event related to Bitcoin, indicating a bullish stance on BTC."
+}
+\`\`\``;
+
+            let result = "=== TESTING EXACT USER RESPONSE ===\n\n";
+
+            result += "1. Original LLM content:\n";
+            result += llmResponseContent + "\n\n";
+
+            // Step 1: Clean markdown (like n8n)
+            let cleanedContent = llmResponseContent
+                .replaceAll("```json", "")
+                .replaceAll("```", "")
+                .trim();
+
+            result += "2. After cleaning markdown:\n";
+            result += cleanedContent + "\n\n";
+
+            // Step 2: Parse JSON
+            let parsedData;
+            try {
+                parsedData = JSON.parse(cleanedContent);
+                result += "3. Parsed JSON successfully:\n";
+                result += JSON.stringify(parsedData, null, 2) + "\n\n";
+            } catch (error) {
+                result += "3. JSON parsing FAILED:\n";
+                result += error.message + "\n\n";
+                document.getElementById('result').textContent = result;
+                return;
+            }
+
+            // Step 3: Check field detection logic
+            result += "4. Field detection analysis:\n";
+            const fieldResults = {};
+            let hasActualFields = false;
+
+            for (const [key, value] of Object.entries(parsedData)) {
+                result += `   Field "${key}": value=${JSON.stringify(value)}, isArray=${Array.isArray(value)}, length=${Array.isArray(value) ? value.length : 'N/A'}\n`;
+
+                if (key !== 'reason' && Array.isArray(value) && value.length >= 1) {
+                    fieldResults[key] = value;
+                    hasActualFields = true;
+                    result += `   ✓ Added to fieldResults\n`;
+                } else {
+                    result += `   ✗ Skipped (${key === 'reason' ? 'reason field' : !Array.isArray(value) ? 'not array' : 'too short'})\n`;
+                }
+            }
+
+            result += `\n5. Field detection results:\n`;
+            result += `   hasActualFields: ${hasActualFields}\n`;
+            result += `   fieldResults: ${JSON.stringify(fieldResults, null, 2)}\n\n`;
+
+            // Step 4: Check popup processing
+            result += "6. Popup processing simulation:\n";
+            let fieldsProcessed = 0;
+
+            Object.entries(parsedData).forEach(([fieldName, fieldData]) => {
+                if (fieldName === 'reason') {
+                    result += `   Skipping "${fieldName}" (reason field)\n`;
+                    return;
+                }
+
+                result += `   Processing "${fieldName}": ${JSON.stringify(fieldData)}\n`;
+
+                if (Array.isArray(fieldData) && fieldData.length >= 1) {
+                    const resultValue = fieldData[0];
+                    const probabilityValue = fieldData.length > 1 ? fieldData[1] : null;
+
+                    if (typeof resultValue === 'boolean') {
+                        fieldsProcessed++;
+                        result += `   ✓ Valid field: result=${resultValue}, probability=${probabilityValue}\n`;
+                    } else {
+                        result += `   ✗ Invalid: result not boolean (${typeof resultValue})\n`;
+                    }
+                } else {
+                    result += `   ✗ Invalid: not array or too short\n`;
+                }
+            });
+
+            result += `\n7. Final result:\n`;
+            result += `   Fields that would be processed: ${fieldsProcessed}\n`;
+            result += `   Expected: 2 (is_crazy, bullish_on_btc)\n`;
+            result += `   Status: ${fieldsProcessed === 2 ? '✅ SUCCESS' : '❌ FAILED'}\n`;
+
+            if (fieldsProcessed === 2) {
+                result += `\n🎉 This response format should work perfectly!\n`;
+                result += `The extension should update both fields with:\n`;
+                result += `- is_crazy: FALSE (90%)\n`;
+                result += `- bullish_on_btc: TRUE (95%)\n`;
+            } else {
+                result += `\n❌ There's still an issue in the processing logic.\n`;
+            }
+
+            document.getElementById('result').textContent = result;
+        }
+
+        // Run test on page load
+        window.onload = function () {
+            testExactResponse();
+        };
+    </script>
+</body>
+
+</html>
