@@ -62,83 +62,18 @@ export class UIManager {
         fieldEl.className = 'field-item';
         fieldEl.dataset.fieldId = field.id;
 
-        const sanitizedName = this.fieldManager.sanitizeFieldName(field.friendlyName || field.name);
+        const sanitizedName = field.name;  // Use the actual field name (already sanitized and unique)
         // Show full URL if toggled to show OR if it hasn't been saved yet
         const displayWebhookUrl = (field.showWebhookUrl || !field.webhookUrlSaved) ? field.webhookUrl : this.fieldManager.maskWebhookUrl(field.webhookUrl);
 
-        // Format enhanced status display
-        let statusDisplayHtml = '';
-        if (field.lastRequestTime || field.lastStatus) {
-            const statusClass = field.isPending ? 'pending' : field.lastStatus || 'unknown';
-            let statusText = '';
-            let statusIcon = '';
-            let detailsText = '';
-
-            if (field.isPending) {
-                statusIcon = '⏳';
-                statusText = 'Request pending...';
-                if (field.lastRequestTime) {
-                    const timeAgo = getTimeAgo(new Date(field.lastRequestTime));
-                    detailsText = `Started ${timeAgo}`;
-                }
-            } else if (field.lastStatus === 'success' && field.result !== null) {
-                statusIcon = field.result ? '✅' : '❌';
-                statusText = field.result ? 'TRUE' : 'FALSE';
-                if (field.probability !== null) {
-                    detailsText = `${(field.probability * 100).toFixed(0)}% confidence`;
-                }
-                if (field.lastResponseTime) {
-                    const timeAgo = getTimeAgo(new Date(field.lastResponseTime));
-                    detailsText += detailsText ? ` • ${timeAgo}` : timeAgo;
-                }
-            } else if (field.lastStatus === 'error') {
-                statusIcon = '🚫';
-                statusText = 'Request failed';
-                if (field.lastHttpStatus) {
-                    detailsText = `HTTP ${field.lastHttpStatus}`;
-                }
-                if (field.lastError) {
-                    detailsText += detailsText ? ` • ${field.lastError}` : field.lastError;
-                }
-                if (field.lastResponseTime) {
-                    const timeAgo = getTimeAgo(new Date(field.lastResponseTime));
-                    detailsText += detailsText ? ` • ${timeAgo}` : timeAgo;
-                }
-            } else if (field.lastStatus === 'cancelled') {
-                statusIcon = '🛑';
-                statusText = 'Cancelled';
-                if (field.lastResponseTime) {
-                    const timeAgo = getTimeAgo(new Date(field.lastResponseTime));
-                    detailsText = timeAgo;
-                }
-            }
-
-            statusDisplayHtml = `
-                <div class="field-status-display ${statusClass} ${field.isPending ? 'animated-pulse' : ''}" 
-                     data-event-id="${field.lastEventId || ''}"
-                     title="Click to view in history">
-                    <div class="status-main">
-                        <span class="status-icon">${statusIcon}</span>
-                        <span class="status-text">${statusText}</span>
-                    </div>
-                    ${detailsText ? `<div class="status-details">${detailsText}</div>` : ''}
-                    ${field.isPending ? `<div class="status-cancel">
-                        <button class="cancel-field-request" data-event-id="${field.lastEventId}">Cancel</button>
-                    </div>` : ''}
-                </div>
-            `;
-        }
-
         fieldEl.innerHTML = `
-        ${statusDisplayHtml}
-        
         <div class="field-header">
           <input type="text" 
                  class="field-name-input" 
                  placeholder="Field Name" 
                  value="${field.friendlyName || field.name}"
                  title="Enter a friendly name for this field">
-          <span class="field-name-sanitized" title="Backend field name">${sanitizedName}</span>
+          <span class="field-name-sanitized" title="LLM field identifier: ${sanitizedName}">${sanitizedName}</span>
           <button class="remove-field-btn">✕</button>
         </div>
         
@@ -151,9 +86,19 @@ export class UIManager {
               <input type="checkbox" class="webhook-toggle" ${field.webhookEnabled ? 'checked' : ''}>
               <span class="slider"></span>
             </label>
-            <span>Fire webhook on TRUE result</span>
+            <span>Fire webhook on result</span>
             ${field.webhookLogs && field.webhookLogs.length > 0 ?
                 `<button class="view-logs-btn" title="View webhook logs">📋 Logs (${field.webhookLogs.length})</button>` : ''}
+          </div>
+          
+          <div class="webhook-settings" style="${field.webhookEnabled ? '' : 'display: none;'}">
+            <div class="webhook-trigger-group">
+              <label class="webhook-setting-label">Trigger when result is:</label>
+              <select class="webhook-trigger-dropdown">
+                <option value="true" ${field.webhookTrigger !== false ? 'selected' : ''}>TRUE</option>
+                <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
+              </select>
+            </div>
           </div>
           
           <div class="webhook-url-group" style="${field.webhookEnabled || field.webhookUrl ? '' : 'display: none;'}">
@@ -166,9 +111,17 @@ export class UIManager {
               ${field.showWebhookUrl ? '🙈' : '👁️'}
             </button>
           </div>
+
+          <div class="webhook-confidence-group" style="${field.webhookEnabled || field.webhookUrl ? '' : 'display: none;'}">
+            <label class="webhook-setting-label">Minimum Confidence: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
+            <input type="range" 
+                   class="webhook-confidence-slider" 
+                   min="0" max="100" step="5"
+                   value="${field.webhookMinConfidence || 75}">
+          </div>
           
           <textarea class="webhook-payload-input" 
-                    placeholder='{"key": "value"}'
+                    placeholder='{ "content": "message" }'
                     style="${field.webhookEnabled || field.webhookPayload !== '{}' ? '' : 'display: none;'}">${field.webhookPayload}</textarea>
           
           <div class="webhook-logs" style="display: none;">
@@ -204,69 +157,90 @@ export class UIManager {
         const descInput = fieldEl.querySelector('.field-description');
         const removeBtn = fieldEl.querySelector('.remove-field-btn');
         const webhookToggle = fieldEl.querySelector('.webhook-toggle');
+        const webhookTriggerDropdown = fieldEl.querySelector('.webhook-trigger-dropdown');
+        const webhookSettings = fieldEl.querySelector('.webhook-settings');
         const webhookUrlGroup = fieldEl.querySelector('.webhook-url-group');
+        const webhookConfidenceGroup = fieldEl.querySelector('.webhook-confidence-group');
+        const webhookConfidenceSlider = fieldEl.querySelector('.webhook-confidence-slider');
+        const confidenceValueSpan = fieldEl.querySelector('.confidence-value');
         const webhookUrlInput = fieldEl.querySelector('.webhook-url-input');
         const webhookPayloadInput = fieldEl.querySelector('.webhook-payload-input');
         const toggleUrlBtn = fieldEl.querySelector('.toggle-url-visibility');
         const viewLogsBtn = fieldEl.querySelector('.view-logs-btn');
         const webhookLogs = fieldEl.querySelector('.webhook-logs');
         const closeLogsBtn = fieldEl.querySelector('.close-logs-btn');
-        const statusDisplayEl = fieldEl.querySelector('.field-status-display');
-        const cancelBtn = fieldEl.querySelector('.cancel-field-request');
-
-        // Click status display to view in history
-        if (statusDisplayEl) {
-            statusDisplayEl.addEventListener('click', (e) => {
-                // Don't trigger if clicking the cancel button
-                if (e.target.closest('.cancel-field-request')) return;
-
-                const eventId = statusDisplayEl.dataset.eventId;
-                if (eventId && this.onLastResultClick) {
-                    this.onLastResultClick(eventId);
-                }
-            });
-        }
-
-        // Handle cancel button for pending requests
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const eventId = cancelBtn.dataset.eventId;
-                if (eventId && this.onCancelRequest) {
-                    this.onCancelRequest(parseInt(eventId));
-                }
-            });
-        }
 
         // Update field name
         nameInput.addEventListener('input', () => {
-            field.friendlyName = nameInput.value;
-            field.name = this.fieldManager.sanitizeFieldName(nameInput.value);
-            sanitizedSpan.textContent = field.name;
+            const newFriendlyName = nameInput.value;
+
+            // Get the actual field from the manager to ensure we're updating the right reference
+            const actualField = this.fieldManager.getField(field.id);
+            if (!actualField) return;
+
+            // Update the friendly name
+            actualField.friendlyName = newFriendlyName;
+
+            // Generate new sanitized name with uniqueness check
+            const baseSanitizedName = this.fieldManager.sanitizeFieldName(newFriendlyName);
+            let sanitizedName = baseSanitizedName;
+            let incrementer = 1;
+
+            // Ensure uniqueness (excluding this field)
+            while (this.fieldManager.fields.some(f => f.name === sanitizedName && f.id !== actualField.id)) {
+                sanitizedName = `${baseSanitizedName}_${incrementer}`;
+                incrementer++;
+            }
+
+            // Update the sanitized name
+            actualField.name = sanitizedName;
+
+            // Update the displayed sanitized name
+            sanitizedSpan.textContent = sanitizedName;
+
+            // Save to storage
             this.fieldManager.saveToStorage();
         });
 
         // Update description
         descInput.addEventListener('input', () => {
-            field.description = descInput.value;
+            // Get the actual field from the manager to ensure we're updating the right reference
+            const actualField = this.fieldManager.getField(field.id);
+            if (!actualField) return;
+
+            actualField.description = descInput.value;
             this.fieldManager.saveToStorage();
         });
 
         // Remove field
         removeBtn.addEventListener('click', () => {
-            if (confirm(`Remove field "${field.friendlyName}"?`)) {
+            if (confirm(`Remove field "${field.friendlyName || field.name}"?`)) {
+                // Remove from field manager
                 this.fieldManager.removeField(field.id);
+                // Remove from DOM
                 fieldEl.remove();
+                // Save to storage
                 this.fieldManager.saveToStorage();
             }
         });
 
         // Toggle webhook
         webhookToggle.addEventListener('change', () => {
-            field.webhookEnabled = webhookToggle.checked;
-            if (field.webhookEnabled || field.webhookUrl) {
+            // Get the actual field from the manager to ensure we're updating the right reference
+            const actualField = this.fieldManager.getField(field.id);
+            if (!actualField) return;
+
+            actualField.webhookEnabled = webhookToggle.checked;
+            if (actualField.webhookEnabled || actualField.webhookUrl) {
+                if (webhookSettings) webhookSettings.style.display = '';
                 webhookUrlGroup.style.display = '';
+                webhookConfidenceGroup.style.display = '';
                 webhookPayloadInput.style.display = '';
+            } else {
+                if (webhookSettings) webhookSettings.style.display = 'none';
+                webhookUrlGroup.style.display = 'none';
+                webhookConfidenceGroup.style.display = 'none';
+                webhookPayloadInput.style.display = 'none';
             }
             this.fieldManager.saveToStorage();
         });
@@ -274,15 +248,19 @@ export class UIManager {
         // Toggle URL visibility
         if (toggleUrlBtn) {
             toggleUrlBtn.addEventListener('click', () => {
-                field.showWebhookUrl = !field.showWebhookUrl;
-                if (field.showWebhookUrl) {
-                    webhookUrlInput.value = field.webhookUrl;
+                // Get the actual field from the manager
+                const actualField = this.fieldManager.getField(field.id);
+                if (!actualField) return;
+
+                actualField.showWebhookUrl = !actualField.showWebhookUrl;
+                if (actualField.showWebhookUrl) {
+                    webhookUrlInput.value = actualField.webhookUrl;
                     webhookUrlInput.classList.remove('masked');
                     webhookUrlInput.removeAttribute('readonly');
                     toggleUrlBtn.textContent = '🙈';
                     toggleUrlBtn.title = 'Hide URL';
                 } else {
-                    webhookUrlInput.value = this.fieldManager.maskWebhookUrl(field.webhookUrl);
+                    webhookUrlInput.value = this.fieldManager.maskWebhookUrl(actualField.webhookUrl);
                     webhookUrlInput.classList.add('masked');
                     webhookUrlInput.setAttribute('readonly', '');
                     toggleUrlBtn.textContent = '👁️';
@@ -294,20 +272,28 @@ export class UIManager {
 
         // Update webhook URL
         webhookUrlInput.addEventListener('input', () => {
-            if (!field.showWebhookUrl && field.webhookUrlSaved) return; // Don't update if masked and saved
-            field.webhookUrl = webhookUrlInput.value;
+            // Get the actual field from the manager
+            const actualField = this.fieldManager.getField(field.id);
+            if (!actualField) return;
+
+            if (!actualField.showWebhookUrl && actualField.webhookUrlSaved) return; // Don't update if masked and saved
+            actualField.webhookUrl = webhookUrlInput.value;
             this.fieldManager.saveToStorage();
         });
 
         // Handle URL field blur to mark as saved and mask
         webhookUrlInput.addEventListener('blur', () => {
-            if (field.webhookUrl && !field.webhookUrlSaved) {
-                field.webhookUrlSaved = true;
-                field.showWebhookUrl = false;
+            // Get the actual field from the manager
+            const actualField = this.fieldManager.getField(field.id);
+            if (!actualField) return;
+
+            if (actualField.webhookUrl && !actualField.webhookUrlSaved) {
+                actualField.webhookUrlSaved = true;
+                actualField.showWebhookUrl = false;
 
                 // Update UI to show masked URL
                 setTimeout(() => {
-                    webhookUrlInput.value = this.fieldManager.maskWebhookUrl(field.webhookUrl);
+                    webhookUrlInput.value = this.fieldManager.maskWebhookUrl(actualField.webhookUrl);
                     webhookUrlInput.classList.add('masked');
                     webhookUrlInput.setAttribute('readonly', '');
                     if (toggleUrlBtn) {
@@ -323,7 +309,11 @@ export class UIManager {
 
         // Update webhook payload
         webhookPayloadInput.addEventListener('input', () => {
-            field.webhookPayload = webhookPayloadInput.value;
+            // Get the actual field from the manager
+            const actualField = this.fieldManager.getField(field.id);
+            if (!actualField) return;
+
+            actualField.webhookPayload = webhookPayloadInput.value;
             this.fieldManager.saveToStorage();
         });
 
@@ -340,15 +330,31 @@ export class UIManager {
                 webhookLogs.style.display = 'none';
             });
         }
-    }
 
-    // Set callback for last result click (to be provided by main popup)
-    setLastResultClickHandler(callback) {
-        this.onLastResultClick = callback;
-    }
+        // Update confidence slider
+        if (webhookConfidenceSlider && confidenceValueSpan) {
+            webhookConfidenceSlider.addEventListener('input', () => {
+                // Get the actual field from the manager
+                const actualField = this.fieldManager.getField(field.id);
+                if (!actualField) return;
 
-    // Set callback for cancel request (to be provided by main popup)
-    setCancelRequestHandler(callback) {
-        this.onCancelRequest = callback;
+                const confidence = parseInt(webhookConfidenceSlider.value);
+                actualField.webhookMinConfidence = confidence;
+                confidenceValueSpan.textContent = `${confidence}%`;
+                this.fieldManager.saveToStorage();
+            });
+        }
+
+        // Update webhook trigger (TRUE/FALSE)
+        if (webhookTriggerDropdown) {
+            webhookTriggerDropdown.addEventListener('change', () => {
+                // Get the actual field from the manager
+                const actualField = this.fieldManager.getField(field.id);
+                if (!actualField) return;
+
+                actualField.webhookTrigger = webhookTriggerDropdown.value === 'true';
+                this.fieldManager.saveToStorage();
+            });
+        }
     }
 } 

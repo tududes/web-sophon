@@ -309,8 +309,13 @@ export class HistoryManager {
             return `
               <div class="history-item ${unreadClass} ${errorClass}" data-event-index="${index}" data-event-id="${event.id}">
                 <div class="history-header">
-                  <div class="history-domain">${event.domain}</div>
-                  <div class="history-time">${timeAgo}</div>
+                  <div class="history-header-left">
+                    <div class="history-domain">${event.domain}</div>
+                  </div>
+                  <div class="history-header-right">
+                    <div class="history-time">${timeAgo}</div>
+                    <div class="history-header-caret">▶</div>
+                  </div>
                 </div>
                 ${statusHtml}
                 <div class="history-fields">${fieldsHtml}</div>
@@ -338,8 +343,14 @@ export class HistoryManager {
                   ${event.request ? `
                     <details class="data-section">
                       <summary class="data-header">
-                        <strong>Request Data</strong>
-                        <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(JSON.stringify(event.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
+                        <div class="data-header-content">
+                          <span class="data-header-title">Request</span>
+                          <span class="data-header-status status-200">200 OK</span>
+                        </div>
+                        <div class="data-header-actions">
+                          <button class="copy-data-btn" data-content="${encodeURIComponent(JSON.stringify(event.request, null, 2))}" title="Copy to clipboard">📋</button>
+                          <span class="data-header-caret">▶</span>
+                        </div>
                       </summary>
                       <div class="data-content">
                         <pre class="json-display">${JSON.stringify(event.request, null, 2)}</pre>
@@ -349,14 +360,25 @@ export class HistoryManager {
                   
                   ${event.status === 'pending' ? `
                     <div class="response-pending">
-                      <strong>Response:</strong> <span class="pending-text">⏳ Waiting for webhook response...</span>
+                      <div class="data-header">
+                        <div class="data-header-content">
+                          <span class="data-header-title">Response</span>
+                          <span class="data-header-status status-pending">⏳ Pending</span>
+                        </div>
+                      </div>
                       <button class="cancel-request-btn small-button danger" data-event-id="${event.id}">Cancel Request</button>
                     </div>
                   ` : event.response ? `
                     <details class="data-section">
                       <summary class="data-header">
-                        <strong>Response Data</strong>
-                        <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(event.response)}" title="Copy to clipboard">📋 Copy</button>
+                        <div class="data-header-content">
+                          <span class="data-header-title">Response</span>
+                          <span class="data-header-status ${this.getStatusClass(event.httpStatus || 200)}">${event.httpStatus || 200} ${this.getStatusText(event.httpStatus || 200)}</span>
+                        </div>
+                        <div class="data-header-actions">
+                          <button class="copy-data-btn" data-content="${encodeURIComponent(event.response)}" title="Copy to clipboard">📋</button>
+                          <span class="data-header-caret">▶</span>
+                        </div>
                       </summary>
                       <div class="data-content">
                         ${formatResponseData(event.response)}
@@ -367,20 +389,22 @@ export class HistoryManager {
                   ${event.fieldWebhooks && event.fieldWebhooks.length > 0 ? event.fieldWebhooks.map(webhook => `
                     <details class="data-section field-webhook">
                       <summary class="data-header">
-                        <strong>Field Webhook: ${webhook.fieldName}</strong>
-                        <span class="webhook-status ${webhook.success ? 'success' : 'error'}">
-                          ${webhook.success ? `✓ ${webhook.httpStatus}` : `❌ ${webhook.error || 'Failed'}`}
-                        </span>
+                        <div class="data-header-content">
+                          <span class="data-header-title">Webhook: ${webhook.fieldName}</span>
+                          <span class="data-header-status ${this.getStatusClass(webhook.httpStatus)}">${webhook.httpStatus || (webhook.success ? '200' : '500')} ${this.getStatusText(webhook.httpStatus || (webhook.success ? 200 : 500))}</span>
+                        </div>
+                        <div class="data-header-actions">
+                          <button class="copy-data-btn" data-content="${encodeURIComponent(JSON.stringify({ request: webhook.request, response: webhook.response }, null, 2))}" title="Copy webhook data">📋</button>
+                          <span class="data-header-caret">▶</span>
+                        </div>
                       </summary>
                       <div class="data-content">
                         <div class="webhook-request">
                           <strong>Request:</strong>
-                          <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(JSON.stringify(webhook.request, null, 2))}" title="Copy to clipboard">📋 Copy</button>
                           <pre class="json-display">${JSON.stringify(webhook.request, null, 2)}</pre>
                         </div>
                         <div class="webhook-response">
                           <strong>Response:</strong>
-                          <button class="copy-data-btn copy-btn-float" data-content="${encodeURIComponent(webhook.response)}" title="Copy to clipboard">📋 Copy</button>
                           <div class="response-display">
                             ${formatResponseData(webhook.response)}
                           </div>
@@ -492,6 +516,32 @@ export class HistoryManager {
                 });
             });
         });
+    }
+
+    // Helper methods for status handling
+    getStatusClass(httpStatus) {
+        if (!httpStatus) return 'status-pending';
+        if (httpStatus >= 200 && httpStatus < 300) return 'status-200';
+        if (httpStatus >= 400 && httpStatus < 500) return 'status-4xx';
+        if (httpStatus >= 500) return 'status-5xx';
+        return 'status-200'; // Default for other cases
+    }
+
+    getStatusText(httpStatus) {
+        if (!httpStatus) return 'Pending';
+        if (httpStatus === 200) return 'OK';
+        if (httpStatus === 201) return 'Created';
+        if (httpStatus === 400) return 'Bad Request';
+        if (httpStatus === 401) return 'Unauthorized';
+        if (httpStatus === 403) return 'Forbidden';
+        if (httpStatus === 404) return 'Not Found';
+        if (httpStatus === 500) return 'Internal Server Error';
+        if (httpStatus === 502) return 'Bad Gateway';
+        if (httpStatus === 503) return 'Service Unavailable';
+        if (httpStatus >= 200 && httpStatus < 300) return 'Success';
+        if (httpStatus >= 400 && httpStatus < 500) return 'Client Error';
+        if (httpStatus >= 500) return 'Server Error';
+        return 'Unknown';
     }
 }
 

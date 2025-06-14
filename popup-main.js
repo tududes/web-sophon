@@ -3,46 +3,54 @@
 
 class CleanPopupController {
     constructor() {
-        // Initialize field manager first
+        this.currentDomain = '';
+        this.currentTab = 'fields';
+        this.elements = {};
+
+        // Initialize field manager
         this.fieldManager = new FieldManagerLLM();
 
-        // Other instance variables
-        this.currentDomain = '';
-        this.currentTab = 'capture'; // Track current tab
-        this.elements = {};
+        // UI manager will be initialized in initialize()
+        this.uiManager = null;
+
         this.historyManager = null;
         this.saveDebounceTimer = null;
     }
 
     async initialize() {
         try {
-            // 1. Get current domain and display it
+            // 1. Get current domain first (needed for field loading)
             this.currentDomain = await this.getCurrentDomain();
-            this.displayCurrentDomain();
+            console.log('Current domain:', this.currentDomain);
 
             // 2. Get DOM elements
             this.getDOMElements();
 
-            // 3. Load data
+            // 3. Initialize UI manager with field manager and set its elements
+            const { UIManager } = await import('./components/UIManager.js');
+            this.uiManager = new UIManager(this.fieldManager);
+            this.uiManager.setElements(this.elements);
+
+            // 4. Load field state from storage
             this.fieldManager.currentDomain = this.currentDomain;
             await this.fieldManager.loadFromStorage();
 
-            // 4. Setup UI
+            // 5. Setup event listeners
             this.setupEventListeners();
+
+            // 6. Initialize UI components
             this.initializeTabSystem();
             this.setupMessageListener();
 
-            // 5. Load settings and history manager
+            // 7. Load basic settings and display domain
             await this.loadBasicSettings();
-            await this.initializeHistoryManager();
+            this.displayCurrentDomain();
 
-            // 6. Load initial tab content
-            this.switchTab('capture');
-
-            console.log('Clean popup initialized successfully');
+            console.log('Popup controller initialized successfully');
 
         } catch (error) {
-            console.error('Failed to initialize popup:', error);
+            console.error('Failed to initialize popup controller:', error);
+            throw error;
         }
     }
 
@@ -226,21 +234,24 @@ class CleanPopupController {
     }
 
     async handleTabSpecificLoading(tabName) {
-        try {
-            if (tabName === 'fields') {
+        console.log('Loading tab-specific content for:', tabName);
+
+        switch (tabName) {
+            case 'fields':
                 this.renderFields();
-                this.renderPresets();
-            } else if (tabName === 'history') {
-                if (this.historyManager?.loadHistory) {
+                break;
+            case 'history':
+                if (!this.historyManager) {
+                    await this.initializeHistoryManager();
+                }
+                if (this.historyManager && this.historyManager.loadHistory) {
                     this.historyManager.loadHistory();
                 }
-            } else if (tabName === 'settings') {
-                await this.loadKnownDomains();
-            } else if (tabName === 'capture') {
-                // No special loading needed for capture tab
-            }
-        } catch (error) {
-            console.error(`Error loading tab ${tabName}:`, error);
+                break;
+            case 'settings':
+                this.renderPresets();
+                this.loadKnownDomains();
+                break;
         }
     }
 
@@ -311,23 +322,21 @@ class CleanPopupController {
 
     updateField(fieldId, updates) {
         try {
-            console.log(`Updating field ${fieldId}:`, updates);
-
-            // 1. Update field state
+            // Update field in the field manager
             const success = this.fieldManager.updateField(fieldId, updates);
             if (!success) {
                 console.warn('Field not found:', fieldId);
                 return;
             }
 
-            // 2. Save state atomically
-            this.debouncedSave();
+            // Save to storage after update
+            this.fieldManager.saveToStorage();
 
-            // 3. Update field display if needed
-            this.updateFieldDisplay(fieldId);
+            this.showFieldStatus('Field updated', 'success');
 
         } catch (error) {
             console.error('Error updating field:', error);
+            this.showFieldStatus('Failed to update field', 'error');
         }
     }
 
@@ -455,95 +464,32 @@ class CleanPopupController {
     // === RESULT UPDATES (Single Path) ===
 
     handleCaptureResults(results, eventId) {
+        if (!results) return;
+
         try {
-            console.log('=== CAPTURE RESULTS DEBUG START ===');
-            console.log('Raw results received:', results);
-            console.log('Event ID:', eventId);
-            console.log('Current fields before update:', this.fieldManager.fields.map(f => ({
-                id: f.id,
-                name: f.name,
-                friendlyName: f.friendlyName,
-                isPending: f.isPending,
-                lastEventId: f.lastEventId
-            })));
+            // Process the results directly - the LLM returns field data mixed with metadata
+            const fieldsData = {};
 
-            // The LLMService sends results in this format:
-            // results = raw LLM response like { "field_name": [true, 0.95], "reason": "..." }
-            // We need to format it as { fields: { "field_name": [true, 0.95] } }
-
-            let formattedResults;
-            if (results && typeof results === 'object') {
-                // Check if results already has the expected structure
-                if (results.fields) {
-                    formattedResults = results;
-                    console.log('Results already have .fields structure');
-                } else {
-                    // Convert raw LLM response to expected format
-                    const fields = {};
-                    Object.keys(results).forEach(key => {
-                        // Skip non-field properties like 'reason', 'timestamp', etc.
-                        if (key !== 'reason' && key !== 'timestamp' && key !== 'url' &&
-                            key !== 'domain' && key !== 'screenshot' && !key.startsWith('_')) {
-                            fields[key] = results[key];
-                            console.log(`Extracted field result: ${key} = ${JSON.stringify(results[key])}`);
-                        }
-                    });
-                    formattedResults = { fields };
-                    console.log('Converted raw results to structured format');
-                }
-            } else {
-                console.warn('Invalid results format, using empty fields');
-                formattedResults = { fields: {} };
-            }
-
-            console.log('Final formatted results for FieldManager:', formattedResults);
-
-            // Update field manager with results
-            const beforeUpdateFields = JSON.parse(JSON.stringify(this.fieldManager.fields));
-            this.fieldManager.updateResults(formattedResults, eventId);
-            const afterUpdateFields = this.fieldManager.fields;
-
-            console.log('Fields comparison:');
-            beforeUpdateFields.forEach((beforeField, index) => {
-                const afterField = afterUpdateFields[index];
-                if (afterField) {
-                    console.log(`Field ${beforeField.friendlyName}:`, {
-                        before: {
-                            isPending: beforeField.isPending,
-                            result: beforeField.result,
-                            lastStatus: beforeField.lastStatus
-                        },
-                        after: {
-                            isPending: afterField.isPending,
-                            result: afterField.result,
-                            lastStatus: afterField.lastStatus
-                        },
-                        changed: beforeField.isPending !== afterField.isPending ||
-                            beforeField.result !== afterField.result ||
-                            beforeField.lastStatus !== afterField.lastStatus
-                    });
+            // Extract only field results, skip metadata like 'reason'
+            Object.keys(results).forEach(key => {
+                if (key !== 'reason' && key !== 'timestamp' && key !== 'domain') {
+                    fieldsData[key] = results[key];
                 }
             });
 
-            // Save and re-render
-            console.log('Saving to storage and re-rendering...');
+            // Update fields with results
+            this.fieldManager.updateResults(fieldsData, eventId);
+
+            // Save to storage
             this.fieldManager.saveToStorage();
+
+            // Re-render fields to ensure UI is in sync
             this.renderFields();
-            console.log('Fields re-rendered');
 
-            // Update Known Domains display if we're on the settings tab
-            if (this.currentTab === 'settings') {
-                this.loadKnownDomains();
-            }
-
-            this.showStatus('Capture completed successfully', 'success');
-            console.log('=== CAPTURE RESULTS DEBUG END ===');
+            this.showStatus('Fields updated successfully', 'success');
 
         } catch (error) {
-            console.error('Error handling capture results:', error);
-            this.fieldManager.markFieldsError(error.message, null, eventId);
-            this.fieldManager.saveToStorage();
-            this.renderFields();
+            console.error('Error processing results:', error);
             this.showError(`Error processing results: ${error.message}`);
         }
     }
@@ -555,271 +501,15 @@ class CleanPopupController {
 
         console.log('Rendering fields from state:', this.fieldManager.fields.length);
 
-        // Clear container
-        this.elements.fieldsContainer.innerHTML = '';
-
-        // Render each field from current state
-        this.fieldManager.fields.forEach(field => {
-            this.renderField(field.id);
-        });
-    }
-
-    renderField(fieldId) {
-        const field = this.fieldManager.getField(fieldId);
-        if (!field) return;
-
-        // Helper function to get domain from URL
-        const getDomainFromUrl = (url) => {
-            if (!url) return '';
-            try {
-                const urlObj = new URL(url);
-                return urlObj.hostname;
-            } catch {
-                return url; // Return original if not a valid URL
-            }
-        };
-
-        // Check if URL should show domain only (has been saved before)
-        const showDomainOnly = field.webhookUrl && field.webhookUrl.startsWith('http');
-        const displayUrl = showDomainOnly ? getDomainFromUrl(field.webhookUrl) : field.webhookUrl;
-
-        const fieldHtml = `
-            <div class="field-item" data-field-id="${fieldId}">
-                <div class="field-header">
-                    <input type="text" 
-                           class="field-name-input" 
-                           placeholder="Field Name" 
-                           value="${this.escapeHtml(field.friendlyName || '')}"
-                           data-field-id="${fieldId}">
-                    
-                    <div class="field-status">
-                        ${this.renderFieldStatus(field)}
-                    </div>
-                    
-                    <button class="remove-field-btn" data-field-id="${fieldId}" title="Remove field">
-                        ✕
-                    </button>
-                </div>
-                
-                <textarea class="field-description" 
-                          placeholder="Describe what to evaluate..." 
-                          data-field-id="${fieldId}">${this.escapeHtml(field.description || '')}</textarea>
-                
-                <!-- Webhook Toggle (just below field) -->
-                <div class="webhook-toggle-section">
-                    <label class="webhook-toggle-switch">
-                        <input type="checkbox" class="webhook-enabled" 
-                               data-field-id="${fieldId}" 
-                               ${field.webhookEnabled ? 'checked' : ''}>
-                        <span class="webhook-slider"></span>
-                        <span class="webhook-label">🔗 Webhook Integration</span>
-                    </label>
-                </div>
-                
-                <!-- Webhook Configuration (expanded when enabled) -->
-                <div class="webhook-config-panel ${field.webhookEnabled ? 'webhook-panel-visible' : 'webhook-panel-hidden'}">
-                    
-                    <div class="webhook-setting-row">
-                        <label class="webhook-setting-label">Fire webhook when result is:</label>
-                        <select class="webhook-trigger-select" data-field-id="${fieldId}">
-                            <option value="true" ${(field.webhookTrigger === true || field.webhookTrigger === undefined) ? 'selected' : ''}>TRUE</option>
-                            <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
-                        </select>
-                    </div>
-                    
-                    <div class="webhook-setting-row">
-                        <label class="webhook-setting-label">Minimum Confidence: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
-                        <input type="range" 
-                               class="webhook-confidence-slider" 
-                               min="0" max="100" step="5"
-                               value="${field.webhookMinConfidence || 75}"
-                               data-field-id="${fieldId}">
-                    </div>
-                    
-                    <div class="webhook-setting-row">
-                        <label class="webhook-setting-label">Webhook URL:</label>
-                        <div class="webhook-url-container">
-                            <input type="text" 
-                                   class="webhook-url-input ${showDomainOnly ? 'url-masked' : ''}" 
-                                   placeholder="https://discord.com/api/webhooks/..." 
-                                   value="${this.escapeHtml(displayUrl)}"
-                                   data-field-id="${fieldId}"
-                                   data-full-url="${this.escapeHtml(field.webhookUrl || '')}">
-                            ${showDomainOnly ? `
-                                <button type="button" class="url-visibility-toggle" data-field-id="${fieldId}" title="Show/hide full URL">
-                                    👁️
-                                </button>
-                            ` : ''}
-                        </div>
-                    </div>
-                    
-                    <div class="webhook-setting-row webhook-payload-row">
-                        <label class="webhook-setting-label">Payload (JSON):</label>
-                        <textarea class="webhook-payload-input" 
-                                  placeholder='{"content": "Field **${field.friendlyName || 'FieldName'}** result: **{{result}}** ({{confidence}}% confidence)\\nDomain: {{domain}} | Time: {{timestamp}}"}'
-                                  data-field-id="${fieldId}">${this.escapeHtml(field.webhookPayload || '')}</textarea>
-                        <div class="webhook-variables-help">
-                            <small>Available variables: {{fieldName}}, {{result}}, {{confidence}}, {{timestamp}}, {{domain}}</small>
-                        </div>
-                    </div>
-                    
-                </div>
-            </div>
-        `;
-
-        const container = this.elements.fieldsContainer;
-        const existingField = container.querySelector(`[data-field-id="${fieldId}"]`);
-
-        if (existingField) {
-            existingField.outerHTML = fieldHtml;
+        // Use the UIManager to render fields (which has proper event handling)
+        if (this.uiManager) {
+            this.uiManager.renderFields();
         } else {
-            container.insertAdjacentHTML('beforeend', fieldHtml);
-        }
-
-        this.setupFieldEventHandlers(fieldId);
-    }
-
-    renderFieldStatus(field) {
-        if (field.isPending) {
-            return '<span class="status pending">⏳ Pending</span>';
-        }
-
-        if (field.lastStatus === 'error') {
-            const errorMsg = field.lastError ? ` (${field.lastError})` : '';
-            return `<span class="status error" title="Error${errorMsg}">❌ Error</span>`;
-        }
-
-        if (field.result !== null) {
-            const percentage = field.probability ? ` (${(field.probability * 100).toFixed(0)}%)` : '';
-            const statusClass = field.result ? 'true' : 'false';
-            const statusText = field.result ? 'TRUE' : 'FALSE';
-            return `<span class="status ${statusClass}" title="Click to view in history">${statusText}${percentage}</span>`;
-        }
-
-        return '<span class="status none">No results yet</span>';
-    }
-
-    updateFieldDisplay(fieldId) {
-        const field = this.fieldManager.getField(fieldId);
-        if (!field) return;
-
-        // Update status display
-        const statusEl = document.querySelector(`.field-status[data-field-id="${fieldId}"]`);
-        if (statusEl) {
-            statusEl.innerHTML = this.renderFieldStatus(field);
+            console.warn('UIManager not available for field rendering');
         }
     }
 
     // === EVENT HANDLERS (ID-Based) ===
-
-    setupFieldEventHandlers(fieldId) {
-        // Name input
-        const nameInput = document.querySelector(`input.field-name-input[data-field-id="${fieldId}"]`);
-        nameInput?.addEventListener('input', (e) => {
-            this.updateField(fieldId, {
-                friendlyName: e.target.value
-            });
-        });
-
-        // Description input  
-        const descInput = document.querySelector(`textarea.field-description[data-field-id="${fieldId}"]`);
-        descInput?.addEventListener('input', (e) => {
-            this.updateField(fieldId, {
-                description: e.target.value
-            });
-        });
-
-        // Remove button
-        const removeBtn = document.querySelector(`button.remove-field-btn[data-field-id="${fieldId}"]`);
-        removeBtn?.addEventListener('click', () => {
-            this.removeField(fieldId);
-        });
-
-        // Status click (for history navigation)
-        const statusEl = document.querySelector(`.field-status[data-field-id="${fieldId}"]`);
-        statusEl?.addEventListener('click', () => {
-            const field = this.fieldManager.getField(fieldId);
-            if (field?.lastEventId) {
-                this.navigateToHistoryEvent(field.lastEventId);
-            }
-        });
-
-        // Webhook controls
-        const webhookEnabled = document.querySelector(`input.webhook-enabled[data-field-id="${fieldId}"]`);
-        webhookEnabled?.addEventListener('change', (e) => {
-            this.updateField(fieldId, {
-                webhookEnabled: e.target.checked
-            });
-            // Show/hide webhook config
-            const config = document.querySelector(`.field-item[data-field-id="${fieldId}"] .webhook-config-panel`);
-            if (config) {
-                config.className = `webhook-config-panel ${e.target.checked ? 'webhook-panel-visible' : 'webhook-panel-hidden'}`;
-            }
-        });
-
-        const webhookTrigger = document.querySelector(`select.webhook-trigger-select[data-field-id="${fieldId}"]`);
-        webhookTrigger?.addEventListener('change', (e) => {
-            this.updateField(fieldId, {
-                webhookTrigger: e.target.value === 'true'
-            });
-        });
-
-        const webhookUrl = document.querySelector(`input.webhook-url-input[data-field-id="${fieldId}"]`);
-        webhookUrl?.addEventListener('input', (e) => {
-            this.updateField(fieldId, {
-                webhookUrl: e.target.value
-            });
-        });
-
-        // URL visibility toggle
-        const urlVisibilityToggle = document.querySelector(`button.url-visibility-toggle[data-field-id="${fieldId}"]`);
-        urlVisibilityToggle?.addEventListener('click', (e) => {
-            e.preventDefault();
-            const urlInput = document.querySelector(`input.webhook-url-input[data-field-id="${fieldId}"]`);
-            if (urlInput) {
-                const isCurrentlyMasked = urlInput.classList.contains('url-masked');
-                if (isCurrentlyMasked) {
-                    // Show full URL
-                    urlInput.value = urlInput.dataset.fullUrl || '';
-                    urlInput.classList.remove('url-masked');
-                    e.target.textContent = '🙈';
-                } else {
-                    // Show domain only
-                    const fullUrl = urlInput.value;
-                    urlInput.dataset.fullUrl = fullUrl;
-                    try {
-                        const urlObj = new URL(fullUrl);
-                        urlInput.value = urlObj.hostname;
-                    } catch {
-                        // If not a valid URL, keep as is
-                    }
-                    urlInput.classList.add('url-masked');
-                    e.target.textContent = '👁️';
-                }
-            }
-        });
-
-        const webhookPayload = document.querySelector(`textarea.webhook-payload-input[data-field-id="${fieldId}"]`);
-        webhookPayload?.addEventListener('input', (e) => {
-            this.updateField(fieldId, {
-                webhookPayload: e.target.value
-            });
-        });
-
-        // Webhook minimum confidence slider
-        const webhookMinConfidenceSlider = document.querySelector(`input.webhook-confidence-slider[data-field-id="${fieldId}"]`);
-        webhookMinConfidenceSlider?.addEventListener('input', (e) => {
-            const confidence = parseInt(e.target.value);
-            this.updateField(fieldId, {
-                webhookMinConfidence: confidence
-            });
-            // Update the displayed value
-            const valueDisplay = document.querySelector(`.field-item[data-field-id="${fieldId}"] .confidence-value`);
-            if (valueDisplay) {
-                valueDisplay.textContent = `${confidence}%`;
-            }
-        });
-    }
 
     focusField(fieldId) {
         setTimeout(() => {
@@ -1521,10 +1211,21 @@ class FieldManagerLLM {
     }
 
     addField(data = {}) {
+        const friendlyName = data.friendlyName || data.name || '';
+        const baseSanitizedName = this.sanitizeFieldName(friendlyName);
+
+        // Ensure unique sanitized name by adding incrementer if needed
+        let sanitizedName = baseSanitizedName;
+        let incrementer = 1;
+        while (this.fields.some(f => f.name === sanitizedName)) {
+            sanitizedName = `${baseSanitizedName}_${incrementer}`;
+            incrementer++;
+        }
+
         const field = {
             id: this.generateFieldId(),
-            name: this.sanitizeFieldName(data.friendlyName || data.name || ''),
-            friendlyName: data.friendlyName || data.name || '',
+            name: sanitizedName,  // This is the unique identifier used for LLM communication
+            friendlyName: friendlyName,  // This is for display only
             description: data.description || '',
             result: null,
             probability: null,
@@ -1544,11 +1245,15 @@ class FieldManagerLLM {
     }
 
     sanitizeFieldName(friendlyName) {
-        if (!friendlyName) return 'unnamed_field';
-        return friendlyName.toLowerCase()
-            .replace(/[^a-z0-9_]/g, '_')
-            .replace(/^_+|_+$/g, '')
-            .replace(/_+/g, '_') || 'unnamed_field';
+        if (!friendlyName || !friendlyName.trim()) return 'unnamed_field';
+
+        return friendlyName
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9]/g, '_')  // Replace non-alphanumeric with underscores
+            .replace(/^_+|_+$/g, '')     // Remove leading/trailing underscores
+            .replace(/_+/g, '_')         // Replace multiple underscores with single
+            || 'unnamed_field';
     }
 
     removeField(fieldId) {
@@ -1559,12 +1264,22 @@ class FieldManagerLLM {
         const field = this.fields.find(f => f.id === fieldId);
         if (!field) return false;
 
-        Object.assign(field, updates);
+        // If friendly name is being updated, regenerate the sanitized name
+        if (updates.friendlyName !== undefined) {
+            const baseSanitizedName = this.sanitizeFieldName(updates.friendlyName);
 
-        if (updates.name || updates.friendlyName) {
-            field.name = this.sanitizeFieldName(field.friendlyName || field.name);
+            // Ensure unique sanitized name by adding incrementer if needed
+            let sanitizedName = baseSanitizedName;
+            let incrementer = 1;
+            while (this.fields.some(f => f.name === sanitizedName && f.id !== fieldId)) {
+                sanitizedName = `${baseSanitizedName}_${incrementer}`;
+                incrementer++;
+            }
+
+            updates.name = sanitizedName;
         }
 
+        Object.assign(field, updates);
         return true;
     }
 
@@ -1576,7 +1291,7 @@ class FieldManagerLLM {
         return this.fields
             .filter(f => f.friendlyName && f.description)
             .map(f => ({
-                name: f.name,
+                name: f.name,  // Use the sanitized name for LLM communication
                 criteria: f.description.trim()
             }));
     }
@@ -1592,76 +1307,35 @@ class FieldManagerLLM {
     }
 
     updateResults(results, eventId = null) {
-        if (!results || !results.fields) {
-            console.warn('Invalid results format:', results);
-            return;
-        }
-
-        console.log('=== UpdateResults Debug ===');
-        console.log('Results fields:', results.fields);
-        console.log('Current fields in manager:', this.fields.map(f => ({
-            id: f.id,
-            name: f.name,
-            friendlyName: f.friendlyName,
-            isPending: f.isPending
-        })));
-
-        // Track which fields were updated
-        const updatedFields = [];
-        const missingFields = [];
-
         this.fields.forEach(field => {
-            console.log(`Processing field: ${field.friendlyName} (${field.name})`);
+            // Skip if this field doesn't belong to this event
+            if (eventId && field.lastEventId !== eventId) {
+                return;
+            }
 
-            const result = results.fields[field.name];
-            if (result !== undefined) {
-                let resultValue = null;
-                let probabilityValue = null;
+            // Look for the result using the field's sanitized name (which is what LLM returns)
+            const fieldResult = results[field.name];
 
-                if (Array.isArray(result) && result.length >= 2) {
-                    resultValue = result[0];
-                    probabilityValue = result[1];
-                } else if (typeof result === 'object' && result !== null) {
-                    resultValue = result.boolean !== undefined ? result.boolean : result.result;
-                    probabilityValue = result.probability;
-                } else {
-                    resultValue = result;
+            if (fieldResult !== null && fieldResult !== undefined) {
+                // Parse the result format: [boolean, probability] or {boolean: true, probability: 0.95}
+                if (Array.isArray(fieldResult) && fieldResult.length >= 2) {
+                    field.result = fieldResult[0];
+                    field.probability = fieldResult[1];
+                } else if (typeof fieldResult === 'object' && fieldResult.boolean !== undefined) {
+                    field.result = fieldResult.boolean;
+                    field.probability = fieldResult.probability || null;
+                } else if (typeof fieldResult === 'boolean') {
+                    field.result = fieldResult;
+                    field.probability = null;
                 }
 
-                // Update field properties
-                field.result = resultValue;
-                field.probability = probabilityValue;
-                field.lastStatus = 'success';
-                field.lastError = null;
+                // Update field status
                 field.isPending = false;
-                field.lastEventId = eventId;
-                field.lastResultTime = new Date().toISOString();
-
-                updatedFields.push(field.name);
-
-                console.log(`✓ Updated field "${field.friendlyName}" (${field.name}):`, {
-                    result: resultValue,
-                    probability: probabilityValue,
-                    eventId: eventId
-                });
-            } else {
-                // Field was pending but no result received
-                if (field.isPending) {
-                    field.isPending = false;
-                    field.lastStatus = 'error';
-                    field.lastError = 'No result received';
-                    field.lastResultTime = new Date().toISOString();
-                }
-                missingFields.push(field.name);
-                console.log(`✗ No result for field "${field.friendlyName}" (${field.name})`);
+                field.lastStatus = 'success';
+                field.lastResponseTime = new Date().toISOString();
+                field.lastError = null;
             }
         });
-
-        console.log('Updated fields:', updatedFields);
-        console.log('Missing fields:', missingFields);
-        console.log('=== End UpdateResults Debug ===');
-
-        this.lastResults = results;
     }
 
     markFieldsError(error, httpStatus = null, eventId = null) {
@@ -1783,7 +1457,7 @@ class FieldManagerLLM {
                 lastError: field.lastError || null,
                 lastEventId: field.lastEventId || null,
                 lastResultTime: field.lastResultTime || null,
-                isPending: field.isPending || false,
+                isPending: false, // Always clear pending state on load - no requests active after restart
                 // Add webhook properties for backwards compatibility
                 webhookEnabled: field.webhookEnabled || false,
                 webhookTrigger: field.webhookTrigger !== undefined ? field.webhookTrigger : true,
@@ -1835,17 +1509,18 @@ class FieldManagerLLM {
     }
 }
 
-// Initialize when DOM is ready
+// Initialize popup when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('DOM loaded, starting clean popup...');
-    const popup = new CleanPopupController();
-    window.popupController = popup;
+    console.log('DOM loaded, initializing popup...');
+    try {
+        const popup = new CleanPopupController();
+        await popup.initialize();
 
-    // Add debug methods to window for console access
-    window.debugFields = () => popup.debugFieldStates();
-    window.debugFieldManager = () => popup.fieldManager;
-
-    await popup.initialize();
+        console.log('Popup initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize popup:', error);
+        document.body.innerHTML = '<div style="padding: 20px; color: red;">Failed to initialize popup. Check console for details.</div>';
+    }
 });
 
 // Export for testing

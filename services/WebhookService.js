@@ -378,11 +378,26 @@ export class WebhookService {
                 // Get field configuration
                 const fieldConfig = fieldConfigMap[fieldName];
                 if (fieldConfig && fieldConfig.webhookEnabled && fieldConfig.webhookUrl) {
+                    // Get probability/confidence
+                    let probability = null;
+                    if ('probability' in fieldData) {
+                        probability = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
+                    }
+
+                    // Check minimum confidence threshold (default to 75% if not set)
+                    const minConfidence = fieldConfig.webhookMinConfidence !== undefined ? fieldConfig.webhookMinConfidence : 75;
+                    const confidencePercent = probability ? probability * 100 : 0;
+
+                    if (confidencePercent < minConfidence) {
+                        console.log(`Field "${fieldName}" confidence ${confidencePercent.toFixed(1)}% is below minimum ${minConfidence}% - skipping webhook`);
+                        continue;
+                    }
+
                     // Check webhookTrigger setting (defaults to true for backward compatibility)
                     const shouldTriggerOnTrue = fieldConfig.webhookTrigger !== false; // Default to true if undefined
                     const shouldFireWebhook = shouldTriggerOnTrue ? result === true : result === false;
 
-                    console.log(`Field "${fieldName}": result=${result}, trigger on TRUE=${shouldTriggerOnTrue}, should fire=${shouldFireWebhook}`);
+                    console.log(`Field "${fieldName}": result=${result}, trigger on ${shouldTriggerOnTrue ? 'TRUE' : 'FALSE'}, confidence=${confidencePercent.toFixed(1)}%, should fire=${shouldFireWebhook}`);
 
                     if (shouldFireWebhook) {
                         console.log(`Field "${fieldName}" matches trigger condition (${shouldTriggerOnTrue ? 'TRUE' : 'FALSE'}) - firing webhook:`, fieldConfig.webhookUrl);

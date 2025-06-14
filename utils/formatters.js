@@ -30,12 +30,14 @@ export function formatResponseData(responseText) {
     try {
         // Try to parse as JSON
         const jsonData = JSON.parse(responseText);
-        return `<pre class="json-display">${JSON.stringify(jsonData, null, 2)}</pre>`;
+        return `<pre class="json-display formatted">${JSON.stringify(jsonData, null, 2)}</pre>`;
     } catch (e) {
-        // Not valid JSON, show as raw text
+        // Not valid JSON, show as raw text with better formatting
         return `
-            <div class="raw-response-note">⚠️ Raw response (not valid JSON):</div>
-            <pre class="raw-response">${responseText}</pre>
+            <div class="raw-response-container">
+                <div class="raw-response-note">⚠️ Raw response (not valid JSON)</div>
+                <pre class="raw-response">${responseText}</pre>
+            </div>
         `;
     }
 }

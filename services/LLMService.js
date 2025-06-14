@@ -547,6 +547,15 @@ Return only JSON.`;
                 console.log(`Field "${fieldName}" config lookup result:`, fieldConfig ? 'FOUND' : 'NOT FOUND');
 
                 if (fieldConfig && fieldConfig.webhookEnabled && fieldConfig.webhookUrl) {
+                    // Check minimum confidence threshold (default to 75% if not set)
+                    const minConfidence = fieldConfig.webhookMinConfidence !== undefined ? fieldConfig.webhookMinConfidence : 75;
+                    const confidencePercent = probability ? probability * 100 : 0;
+
+                    if (confidencePercent < minConfidence) {
+                        console.log(`LLM Field "${fieldName}" confidence ${confidencePercent.toFixed(1)}% is below minimum ${minConfidence}% - skipping webhook`);
+                        continue;
+                    }
+
                     const shouldTriggerOnTrue = fieldConfig.webhookTrigger !== false;
                     const shouldFireWebhook = shouldTriggerOnTrue ? result === true : result === false;
 
