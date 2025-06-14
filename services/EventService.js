@@ -38,12 +38,20 @@ export class EventService {
                     }
                 }
             } else {
-                // New format: results.fieldName.result or results.fieldName.boolean
+                // New format: results.fieldName.result or results.fieldName.boolean OR LLM array format
                 for (const [fieldName, fieldData] of Object.entries(results)) {
-                    if (fieldData && typeof fieldData === 'object' && fieldName !== 'reason') {
-                        let resultValue = null;
-                        let probabilityValue = null;
+                    if (fieldName === 'reason') continue; // Skip reason field
 
+                    let resultValue = null;
+                    let probabilityValue = null;
+
+                    // Handle LLM array format: [boolean, probability]
+                    if (Array.isArray(fieldData) && fieldData.length >= 1) {
+                        resultValue = fieldData[0]; // boolean result
+                        probabilityValue = fieldData.length > 1 ? fieldData[1] : null; // probability
+                    }
+                    // Handle object format: {result: boolean, probability: number}
+                    else if (fieldData && typeof fieldData === 'object') {
                         // Check for 'result' or 'boolean' property
                         if ('result' in fieldData) {
                             resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
@@ -55,16 +63,16 @@ export class EventService {
                         if ('probability' in fieldData) {
                             probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
                         }
+                    }
 
-                        if (resultValue !== null) {
-                            fieldResults.push({
-                                name: fieldName,
-                                result: resultValue,
-                                probability: probabilityValue
-                            });
-                            if (resultValue === true) {
-                                hasTrueResult = true;
-                            }
+                    if (resultValue !== null && typeof resultValue === 'boolean') {
+                        fieldResults.push({
+                            name: fieldName,
+                            result: resultValue,
+                            probability: probabilityValue
+                        });
+                        if (resultValue === true) {
+                            hasTrueResult = true;
                         }
                     }
                 }
@@ -151,12 +159,21 @@ export class EventService {
                     }
                 }
             } else {
-                // New format: results.fieldName.result or results.fieldName.boolean
+                // New format: results.fieldName.result or results.fieldName.boolean OR LLM array format
                 for (const [fieldName, fieldData] of Object.entries(results)) {
-                    if (fieldData && typeof fieldData === 'object' && fieldName !== 'reason') {
-                        let resultValue = null;
-                        let probabilityValue = null;
+                    if (fieldName === 'reason') continue; // Skip reason field
 
+                    let resultValue = null;
+                    let probabilityValue = null;
+
+                    // Handle LLM array format: [boolean, probability]
+                    if (Array.isArray(fieldData) && fieldData.length >= 1) {
+                        resultValue = fieldData[0]; // boolean result
+                        probabilityValue = fieldData.length > 1 ? fieldData[1] : null; // probability
+                        console.log(`LLM array format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
+                    }
+                    // Handle object format: {result: boolean, probability: number}
+                    else if (fieldData && typeof fieldData === 'object') {
                         // Check for 'result' or 'boolean' property
                         if ('result' in fieldData) {
                             resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
@@ -168,17 +185,21 @@ export class EventService {
                         if ('probability' in fieldData) {
                             probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
                         }
+                        console.log(`Object format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
+                    }
 
-                        if (resultValue !== null) {
-                            event.fields.push({
-                                name: fieldName,
-                                result: resultValue,
-                                probability: probabilityValue
-                            });
-                            if (resultValue === true) {
-                                hasTrueResult = true;
-                            }
+                    if (resultValue !== null && typeof resultValue === 'boolean') {
+                        event.fields.push({
+                            name: fieldName,
+                            result: resultValue,
+                            probability: probabilityValue
+                        });
+                        if (resultValue === true) {
+                            hasTrueResult = true;
                         }
+                        console.log(`✓ Added field "${fieldName}" to event: result=${resultValue}, probability=${probabilityValue}`);
+                    } else {
+                        console.warn(`✗ Skipped field "${fieldName}": invalid data format`, fieldData);
                     }
                 }
             }

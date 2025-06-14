@@ -1562,7 +1562,8 @@ class SimplePopupController {
 
             const nameInput = item.querySelector('.field-name-input');
             if (nameInput) {
-                const sanitizedFieldValue = nameInput.value.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                // Use the same sanitization logic as CaptureService.sanitizeFieldName()
+                const sanitizedFieldValue = this.sanitizeFieldName(nameInput.value);
 
                 if (sanitizedFieldValue === fieldName) {
                     const resultContainer = item.querySelector('.field-last-result');
@@ -1610,34 +1611,40 @@ class SimplePopupController {
     }
 
     updateFieldLastResult(fieldName, result) {
+        console.log(`=== UPDATE FIELD LAST RESULT DEBUG ===`);
         console.log(`Looking for field "${fieldName}" to update with result:`, result);
 
         // Find field by name and update its last result
         const fieldItems = document.querySelectorAll('.field-item');
+        console.log(`Found ${fieldItems.length} field items in DOM`);
         let found = false;
 
-        fieldItems.forEach(item => {
+        fieldItems.forEach((item, index) => {
             // Ensure the item is still connected to the DOM
             if (!item.isConnected) {
-                console.log('Skipping disconnected field item');
+                console.log(`Skipping disconnected field item ${index}`);
                 return;
             }
 
             const nameInput = item.querySelector('.field-name-input');
             if (nameInput) {
                 const fieldValue = nameInput.value;
-                const sanitizedFieldValue = fieldValue.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                // Use the same sanitization logic as CaptureService.sanitizeFieldName()
+                const sanitizedFieldValue = this.sanitizeFieldName(fieldValue);
 
-                console.log(`Checking field: original="${fieldValue}", sanitized="${sanitizedFieldValue}", looking for="${fieldName}"`);
+                console.log(`Field ${index}: original="${fieldValue}", sanitized="${sanitizedFieldValue}", looking for="${fieldName}"`);
 
                 if (sanitizedFieldValue === fieldName) {
                     found = true;
+                    console.log(`✓ MATCH FOUND for field "${fieldName}"`);
+
                     const resultContainer = item.querySelector('.field-last-result');
                     const resultText = resultContainer?.querySelector('.result-text');
 
                     if (resultContainer && resultText) {
-                        resultText.innerHTML = this.formatLastResult(result);
-                        console.log(`Updated field "${fieldValue}" with result`);
+                        const formattedResult = this.formatLastResult(result);
+                        resultText.innerHTML = formattedResult;
+                        console.log(`Updated field "${fieldValue}" with formatted result: ${formattedResult}`);
 
                         // Make container clickable
                         if (!resultContainer.onclick && resultContainer.dataset.eventId) {
@@ -1661,14 +1668,34 @@ class SimplePopupController {
 
                         // Use debounced save instead of timeout
                         this.debouncedSaveFieldsState();
+                    } else {
+                        console.warn(`Field "${fieldValue}" found but result container or text element missing`);
+                        console.warn('resultContainer:', resultContainer);
+                        console.warn('resultText:', resultText);
                     }
+                } else {
+                    console.log(`✗ No match: "${sanitizedFieldValue}" !== "${fieldName}"`);
                 }
+            } else {
+                console.log(`Field item ${index} has no name input`);
             }
         });
 
         if (!found) {
-            console.warn(`Field "${fieldName}" not found in DOM`);
+            console.warn(`❌ Field "${fieldName}" not found in DOM`);
+            console.log('Available fields in DOM:');
+            fieldItems.forEach((item, index) => {
+                const nameInput = item.querySelector('.field-name-input');
+                if (nameInput) {
+                    const fieldValue = nameInput.value;
+                    const sanitized = this.sanitizeFieldName(fieldValue);
+                    console.log(`  ${index}: "${fieldValue}" → "${sanitized}"`);
+                }
+            });
+        } else {
+            console.log(`✓ Successfully updated field "${fieldName}"`);
         }
+        console.log(`=== END UPDATE FIELD LAST RESULT DEBUG ===`);
     }
 
     // Add utility method to force clean storage
@@ -1743,6 +1770,15 @@ class SimplePopupController {
         console.log('=== END VALIDATION ===');
 
         return domFields;
+    }
+
+    // Field name sanitization - MUST match CaptureService.sanitizeFieldName() exactly
+    sanitizeFieldName(friendlyName) {
+        if (!friendlyName) return 'unnamed_field';
+        return friendlyName.toLowerCase()
+            .replace(/[^a-z0-9_]/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .replace(/_+/g, '_') || 'unnamed_field';
     }
 }
 
@@ -2014,18 +2050,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 break;
             case 'captureResults':
+                console.log('=== POPUP CAPTURE RESULTS DEBUG ===');
                 console.log('captureResults message received:', message);
+                console.log('message.results:', message.results);
+                console.log('message.fieldResults:', message.fieldResults);
+                console.log('message.hasActualFields:', message.hasActualFields);
+                console.log('typeof message.results:', typeof message.results);
+
                 if (message.results) {
-                    console.log('Capture results:', message.results);
+                    console.log('Processing capture results...');
+                    console.log('Object.keys(message.results):', Object.keys(message.results));
 
                     // Handle the response structure where fields are directly in results
                     const fields = message.results;
-                    Object.entries(fields).forEach(([fieldName, fieldData]) => {
-                        if (fieldData && typeof fieldData === 'object') {
-                            // Handle both 'boolean' and 'result' property names
-                            let resultValue = null;
-                            let probabilityValue = null;
+                    let fieldsProcessed = 0;
 
+                    Object.entries(fields).forEach(([fieldName, fieldData]) => {
+                        console.log(`=== Processing field: "${fieldName}" ===`);
+                        console.log('Field data:', fieldData);
+                        console.log('Field data type:', typeof fieldData);
+                        console.log('Field data isArray:', Array.isArray(fieldData));
+
+                        // Skip the 'reason' field as it's not a field result
+                        if (fieldName === 'reason') {
+                            console.log(`Skipping reason field: ${fieldData}`);
+                            return;
+                        }
+
+                        let resultValue = null;
+                        let probabilityValue = null;
+
+                        // Handle array format from LLM: [boolean, probability]
+                        if (Array.isArray(fieldData) && fieldData.length >= 1) {
+                            resultValue = fieldData[0]; // boolean result
+                            probabilityValue = fieldData.length > 1 ? fieldData[1] : null; // probability
+                            console.log(`Array format - Field "${fieldName}": result=${resultValue} (type: ${typeof resultValue}), probability=${probabilityValue} (type: ${typeof probabilityValue})`);
+                        }
+                        // Handle object format: {result: boolean, probability: number}
+                        else if (fieldData && typeof fieldData === 'object') {
                             // Check for 'result' or 'boolean' property
                             if ('result' in fieldData) {
                                 resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
@@ -2037,23 +2099,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             if ('probability' in fieldData) {
                                 probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
                             }
-
-                            // Only update if we have a result
-                            if (resultValue !== null) {
-                                const processedResult = {
-                                    result: resultValue,
-                                    probability: probabilityValue
-                                };
-                                console.log(`Updating field ${fieldName} with result:`, processedResult);
-                                window.popupController.updateFieldLastResult(fieldName, processedResult);
-
-                                // Store event ID if available
-                                if (message.eventId) {
-                                    window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
-                                }
-                            }
+                            console.log(`Object format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
                         }
+
+                        // Only update if we have a valid result
+                        if (resultValue !== null && typeof resultValue === 'boolean') {
+                            fieldsProcessed++;
+                            const processedResult = {
+                                result: resultValue,
+                                probability: probabilityValue
+                            };
+                            console.log(`Updating field "${fieldName}" with result:`, processedResult);
+                            console.log(`Calling updateFieldLastResult("${fieldName}", processedResult)`);
+                            window.popupController.updateFieldLastResult(fieldName, processedResult);
+
+                            // Store event ID if available
+                            if (message.eventId) {
+                                console.log(`Setting field status for "${fieldName}" to complete with eventId: ${message.eventId}`);
+                                window.popupController.updateFieldStatus(fieldName, 'complete', message.eventId);
+                            }
+                        } else {
+                            console.warn(`Invalid field data for "${fieldName}":`, fieldData);
+                            console.warn(`resultValue: ${resultValue} (type: ${typeof resultValue})`);
+                            console.warn(`Expected: boolean, got: ${typeof resultValue}`);
+                        }
+                        console.log(`=== End processing field: "${fieldName}" ===`);
                     });
+
+                    console.log(`Processed ${fieldsProcessed} field results from captureResults message`);
+                    console.log('=== END POPUP CAPTURE RESULTS DEBUG ===');
+
+                    if (fieldsProcessed === 0) {
+                        console.warn('No valid field results found in captureResults message');
+                        console.warn('This means either:');
+                        console.warn('1. No fields in message.results');
+                        console.warn('2. Fields are not in expected format [boolean, probability]');
+                        console.warn('3. Field names don\'t match configured fields');
+                    }
+                } else {
+                    console.error('captureResults message received but message.results is missing!');
                 }
                 break;
         }

@@ -11,12 +11,21 @@ export class LLMService {
     getSystemPrompt(fields) {
         const fieldsJson = JSON.stringify(fields, null, 2);
 
-        return `Your job is very important and the results you provide will serve as a gatekeeper for actions taken in an automated system. You will behave as a highly accurate frame-by-frame screenshot processing engine, where you will be passed an image and a set of one or more fields accompanied by a value for each which is the key criteria necessary to evaluate for a boolean true or false value according to your image analysis.
+        return `Analyze this screenshot and return JSON with your evaluation for each field.
 
-You will respond in pure parseable JSON string from start to finish without any markdown containing all original field(s), each accompanied by an array of the resulting boolean, and resulting probability represented by a floating point number between 0 and 1 that your analysis resulted in a boolean that is 100% correct according to the screenshot. Then at the end of the json response, you will append an additional field named "reason" which will contain a brief explanation of what you saw in the image and the state of the screenshot.
+For each field, return: "field_name": [boolean_result, confidence_0_to_1]
 
-Here are the fields and their criteria for evaluation:
-${fieldsJson}`;
+Fields to evaluate:
+${fieldsJson}
+
+Response format:
+{
+  "field_name": [true, 0.95],
+  "another_field": [false, 0.80],
+  "reason": "Brief explanation"
+}
+
+Return only JSON.`;
     }
 
     // Capture screenshot and send to LLM API
@@ -178,7 +187,8 @@ ${fieldsJson}`;
                         }
                     ],
                     max_tokens: 1000,
-                    temperature: 0.1 // Low temperature for consistent results
+                    temperature: 0.1, // Low temperature for consistent results
+                    stream: false // Disable streaming to avoid chunked responses
                 };
 
                 // Add additional parameters if specified in config
@@ -235,30 +245,21 @@ ${fieldsJson}`;
                         }
 
                         // Parse the JSON content from the LLM
-                        // First, try to extract JSON from markdown code blocks if present
-                        let jsonContent = content;
+                        // Remove markdown code blocks using simple string replacement (like n8n approach)
+                        let jsonContent = content
+                            .replaceAll("```json", "")
+                            .replaceAll("```", "")
+                            .trim();
 
-                        // Check if content is wrapped in markdown code blocks
-                        const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/;
-                        const codeBlockMatch = content.match(codeBlockRegex);
-                        if (codeBlockMatch) {
-                            jsonContent = codeBlockMatch[1].trim();
-                            console.log('Extracted JSON from markdown code blocks:', jsonContent);
-                        }
-
-                        // If no code blocks, try to find JSON object directly
-                        if (!codeBlockMatch) {
-                            const jsonObjectRegex = /\{[\s\S]*\}/;
-                            const jsonMatch = content.match(jsonObjectRegex);
-                            if (jsonMatch) {
-                                jsonContent = jsonMatch[0];
-                                console.log('Extracted JSON object from content:', jsonContent);
-                            }
-                        }
+                        console.log('Cleaned JSON content after removing markdown:', jsonContent);
 
                         try {
-                            responseData = JSON.parse(jsonContent);
-                            console.log('Parsed LLM field results:', responseData);
+                            const rawResponseData = JSON.parse(jsonContent);
+                            console.log('Raw parsed LLM response:', rawResponseData);
+
+                            // Normalize the response to handle various LLM formats
+                            responseData = this.normalizeFieldResults(rawResponseData, fields);
+                            console.log('Normalized LLM field results:', responseData);
                         } catch (contentParseError) {
                             console.log('Failed to parse LLM content as JSON:', contentParseError);
                             console.log('Original content:', content);
@@ -325,16 +326,65 @@ ${fieldsJson}`;
             // Send results to popup if response contains field evaluations
             const hasFields = responseData && typeof responseData === 'object' && !responseData.error;
 
+            // Check for actual field results (excluding 'reason' field)
+            const fieldResults = {};
+            let hasActualFields = false;
+
+            console.log('=== FIELD DETECTION DEBUG ===');
+            console.log('responseData type:', typeof responseData);
+            console.log('responseData:', responseData);
+
             if (hasFields) {
-                chrome.runtime.sendMessage({
+                console.log('hasFields is true, processing field entries...');
+                for (const [key, value] of Object.entries(responseData)) {
+                    console.log(`Processing field: "${key}" with value:`, value, 'type:', typeof value, 'isArray:', Array.isArray(value));
+
+                    if (key !== 'reason' && Array.isArray(value) && value.length >= 1) {
+                        fieldResults[key] = value;
+                        hasActualFields = true;
+                        console.log(`✓ Added field "${key}" to results:`, value);
+                    } else {
+                        console.log(`✗ Skipped field "${key}" - reason: ${key === 'reason' ? 'is reason field' : !Array.isArray(value) ? 'not array' : 'array too short'}`);
+                    }
+                }
+            } else {
+                console.log('hasFields is false, skipping field processing');
+            }
+
+            console.log('=== FIELD DETECTION RESULTS ===');
+            console.log('Field detection results:', {
+                hasFields,
+                hasActualFields,
+                fieldCount: Object.keys(fieldResults).length,
+                fieldResults
+            });
+            console.log('================================');
+
+            if (hasActualFields) {
+                const message = {
                     action: 'captureResults',
                     results: responseData,
+                    fieldResults: fieldResults,
+                    hasActualFields: hasActualFields,
                     eventId: eventId
-                });
+                };
+
+                console.log('=== LLM RESULTS DEBUG ===');
+                console.log('Raw LLM response data:', responseData);
+                console.log('Field results extracted:', fieldResults);
+                console.log('Has actual fields:', hasActualFields);
+                console.log('Field result keys:', Object.keys(fieldResults));
+                console.log('Sending captureResults message to popup:', message);
+                console.log('========================');
+
+                chrome.runtime.sendMessage(message);
+            } else {
+                console.log('Not sending captureResults - no actual field results found');
+                console.log('Debug info:', { hasFields, hasActualFields, fieldResultsCount: Object.keys(fieldResults).length });
             }
 
             // Fire field-level webhooks for TRUE results if configured
-            if (hasFields && responseData) {
+            if (hasActualFields && responseData) {
                 await this.fireFieldWebhooks(eventId, domain, responseData);
             }
 
@@ -381,31 +431,52 @@ ${fieldsJson}`;
     // Fire webhooks for individual fields (reused from WebhookService)
     async fireFieldWebhooks(eventId, domain, mainResponseData) {
         console.log('Checking for field webhooks to fire after LLM analysis...');
+        console.log('LLM Response Data:', mainResponseData);
 
         const storage = await chrome.storage.local.get([`fields_${domain}`]);
         const fieldConfigs = storage[`fields_${domain}`] || [];
 
         console.log('Field configurations from storage:', fieldConfigs);
 
+        // Create multiple lookup maps for robust field matching
         const fieldConfigMap = {};
+        const fieldConfigMapBySanitized = {};
         fieldConfigs.forEach(field => {
             if (field.name) {
+                const originalName = field.name;
                 const sanitizedName = field.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-                fieldConfigMap[sanitizedName] = field;
+
+                // Map both original and sanitized names
+                fieldConfigMap[originalName] = field;
+                fieldConfigMap[originalName.toLowerCase()] = field;
+                fieldConfigMapBySanitized[sanitizedName] = field;
+
+                console.log(`Field mapping: "${originalName}" -> sanitized: "${sanitizedName}"`);
             }
         });
 
+        console.log('Field config maps:', { fieldConfigMap, fieldConfigMapBySanitized });
+
         const fieldWebhooks = [];
+        let fieldResultsFound = false;
 
         // Process field results from the LLM response
         for (const [fieldName, fieldResult] of Object.entries(mainResponseData)) {
             if (fieldName !== 'reason' && Array.isArray(fieldResult) && fieldResult.length >= 1) {
+                fieldResultsFound = true;
                 const result = fieldResult[0]; // boolean result
                 const probability = fieldResult.length > 1 ? fieldResult[1] : null;
 
                 console.log(`LLM Field "${fieldName}" result:`, result, 'probability:', probability);
 
-                const fieldConfig = fieldConfigMap[fieldName];
+                // Try multiple lookup strategies
+                let fieldConfig = fieldConfigMap[fieldName] ||
+                    fieldConfigMap[fieldName.toLowerCase()] ||
+                    fieldConfigMapBySanitized[fieldName] ||
+                    fieldConfigMapBySanitized[fieldName.toLowerCase()];
+
+                console.log(`Field "${fieldName}" config lookup result:`, fieldConfig ? 'FOUND' : 'NOT FOUND');
+
                 if (fieldConfig && fieldConfig.webhookEnabled && fieldConfig.webhookUrl) {
                     const shouldTriggerOnTrue = fieldConfig.webhookTrigger !== false;
                     const shouldFireWebhook = shouldTriggerOnTrue ? result === true : result === false;
@@ -445,9 +516,15 @@ ${fieldsJson}`;
             }
         }
 
+        console.log(`Field processing summary: Found ${fieldResultsFound ? 'YES' : 'NO'} field results, Fired ${fieldWebhooks.length} webhooks`);
+
         if (fieldWebhooks.length > 0) {
             console.log(`Fired ${fieldWebhooks.length} field webhooks after LLM analysis`);
             this.eventService.addFieldWebhooksToEvent(eventId, fieldWebhooks);
+        } else if (fieldResultsFound) {
+            console.log('Field results were found but no webhooks were fired (webhooks may not be configured for these fields)');
+        } else {
+            console.log('No field results found in LLM response');
         }
     }
 
@@ -548,5 +625,88 @@ ${fieldsJson}`;
     // Get all pending request IDs
     getPendingRequestIds() {
         return Array.from(this.pendingRequests.keys());
+    }
+
+    // Normalize field results to handle various LLM response formats
+    normalizeFieldResults(rawResponseData, fields) {
+        const normalized = {};
+        const fieldNames = fields.map(f => f.name);
+
+        console.log('Normalizing response for fields:', fieldNames);
+        console.log('Raw response data:', rawResponseData);
+
+        // Handle various LLM response formats
+        for (const fieldName of fieldNames) {
+            let result = null;
+            let probability = null;
+
+            // Format 1: Correct format - "field_name": [boolean, probability]
+            if (rawResponseData[fieldName] && Array.isArray(rawResponseData[fieldName])) {
+                const fieldArray = rawResponseData[fieldName];
+                result = fieldArray[0];
+                probability = fieldArray.length > 1 ? fieldArray[1] : null;
+                console.log(`Field "${fieldName}" - Format 1 (correct): result=${result}, probability=${probability}`);
+            }
+            // Format 2: Boolean only - "field_name": [boolean] + separate probability array
+            else if (rawResponseData[fieldName] && Array.isArray(rawResponseData[fieldName]) && rawResponseData[fieldName].length === 1) {
+                result = rawResponseData[fieldName][0];
+
+                // Look for separate probability array
+                if (rawResponseData.probability && Array.isArray(rawResponseData.probability)) {
+                    const fieldIndex = fieldNames.indexOf(fieldName);
+                    if (fieldIndex >= 0 && fieldIndex < rawResponseData.probability.length) {
+                        probability = rawResponseData.probability[fieldIndex];
+                    }
+                }
+                console.log(`Field "${fieldName}" - Format 2 (separate probability): result=${result}, probability=${probability}`);
+            }
+            // Format 3: Separate probability fields - "probability_field_name": number
+            else if (rawResponseData[fieldName] && Array.isArray(rawResponseData[fieldName]) && rawResponseData[fieldName].length === 1) {
+                result = rawResponseData[fieldName][0];
+
+                // Look for separate probability field
+                const probField = `probability_${fieldName}`;
+                if (rawResponseData[probField] !== undefined) {
+                    probability = rawResponseData[probField];
+                }
+                console.log(`Field "${fieldName}" - Format 3 (separate prob field): result=${result}, probability=${probability}`);
+            }
+            // Format 4: Direct boolean - "field_name": boolean
+            else if (rawResponseData[fieldName] !== undefined && typeof rawResponseData[fieldName] === 'boolean') {
+                result = rawResponseData[fieldName];
+                probability = 0.8; // Default probability
+                console.log(`Field "${fieldName}" - Format 4 (direct boolean): result=${result}, probability=${probability} (default)`);
+            }
+
+            // If we found a result, add it to normalized response
+            if (result !== null) {
+                // Ensure result is boolean
+                if (typeof result === 'string') {
+                    result = result.toLowerCase() === 'true';
+                }
+
+                // Ensure probability is a number between 0 and 1
+                if (probability === null || probability === undefined) {
+                    probability = 0.8; // Default confidence
+                } else if (typeof probability === 'string') {
+                    probability = parseFloat(probability);
+                }
+                if (probability < 0) probability = 0;
+                if (probability > 1) probability = 1;
+
+                normalized[fieldName] = [result, probability];
+                console.log(`✓ Normalized field "${fieldName}": [${result}, ${probability}]`);
+            } else {
+                console.warn(`✗ Could not extract result for field "${fieldName}"`);
+            }
+        }
+
+        // Preserve reason field if it exists
+        if (rawResponseData.reason) {
+            normalized.reason = rawResponseData.reason;
+        }
+
+        console.log('Final normalized response:', normalized);
+        return normalized;
     }
 } 
