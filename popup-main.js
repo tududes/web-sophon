@@ -8,37 +8,49 @@ class SimplePopupController {
         this.currentDomain = null;
         this.currentTabId = null;
         this.historyManager = null;
+        this.saveTimeout = null; // Add debounce timeout for saves
     }
 
     async initialize() {
         try {
-            console.log('Initializing simple popup...');
+            console.log('Initializing SimplePopupController...');
 
-            // Get DOM elements
+            // Get DOM elements FIRST
             this.getDOMElements();
 
-            // Initialize theme
-            this.initializeTheme();
-
-            // Initialize HistoryManager
-            await this.initializeHistoryManager();
-
-            // Get current tab
+            // Then get current tab (so elements are available for updating)
             await this.getCurrentTab();
 
-            // Setup basic event listeners
+            // Set up event listeners
             this.setupEventListeners();
 
             // Load basic settings
             await this.loadBasicSettings();
 
-            // Test history container availability
+            // Load field state after domain is set
+            await this.loadFieldsState();
+
+            // Load presets into dropdown
+            await this.loadPresets();
+
+            // Load known domains
+            await this.loadKnownDomains();
+
+            // Initialize theme
+            this.initializeTheme();
+
+            // Initialize history manager
+            await this.initializeHistoryManager();
+
+            // Set up history event listeners
+            this.setupHistoryEventListeners();
+
+            // Test history integration
             this.testHistoryIntegration();
 
-            console.log('Simple popup initialized successfully');
+            console.log('SimplePopupController initialized successfully');
         } catch (error) {
-            console.error('Popup initialization failed:', error);
-            this.showError('Failed to initialize extension');
+            console.error('Failed to initialize SimplePopupController:', error);
         }
     }
 
@@ -46,7 +58,18 @@ class SimplePopupController {
         const elementMap = {
             currentDomain: 'current-domain',
             webhookUrl: 'webhook-url',
+            llmModeToggle: 'llm-mode-toggle',
+            llmConfigSection: 'llm-config-section',
+            llmApiUrl: 'llm-api-url',
+            llmApiKey: 'llm-api-key',
+            llmModel: 'llm-model',
+            llmCustomModel: 'llm-custom-model',
+            customModelGroup: 'custom-model-group',
+            llmTemperature: 'llm-temperature',
+            llmMaxTokens: 'llm-max-tokens',
             captureInterval: 'capture-interval',
+            refreshPageToggle: 'refresh-page-toggle',
+            captureDelay: 'capture-delay',
             consentToggle: 'consent-toggle',
             status: 'status',
             captureNow: 'capture-now',
@@ -56,6 +79,8 @@ class SimplePopupController {
             presetSelector: 'preset-selector',
             savePresetBtn: 'save-preset-btn',
             deletePresetBtn: 'delete-preset-btn',
+            // Known domains
+            domainsContainer: 'domains-container',
             // History elements
             historyContainer: 'history-container',
             showTrueOnly: 'show-true-only',
@@ -125,6 +150,80 @@ class SimplePopupController {
             });
         }
 
+        // LLM Mode Toggle
+        if (this.elements.llmModeToggle) {
+            this.elements.llmModeToggle.addEventListener('change', async () => {
+                const isLlmMode = this.elements.llmModeToggle.checked;
+                await this.saveLlmMode(isLlmMode);
+                this.updateLlmModeUI();
+                this.showStatus(`${isLlmMode ? 'LLM' : 'Webhook'} mode enabled`, 'success');
+            });
+        }
+
+        // LLM Configuration inputs
+        if (this.elements.llmApiUrl) {
+            this.elements.llmApiUrl.addEventListener('change', async () => {
+                const apiUrl = this.elements.llmApiUrl.value.trim();
+                await this.saveLlmConfig({ apiUrl });
+                this.showStatus('LLM API URL saved', 'success');
+            });
+        }
+
+        if (this.elements.llmApiKey) {
+            this.elements.llmApiKey.addEventListener('change', async () => {
+                const apiKey = this.elements.llmApiKey.value.trim();
+                await this.saveLlmConfig({ apiKey });
+                this.showStatus('LLM API Key saved', 'success');
+            });
+        }
+
+        if (this.elements.llmModel) {
+            this.elements.llmModel.addEventListener('change', async () => {
+                const model = this.elements.llmModel.value;
+
+                // Show/hide custom model input based on selection
+                if (model === 'custom') {
+                    if (this.elements.customModelGroup) {
+                        this.elements.customModelGroup.style.display = 'block';
+                    }
+                    // Don't save the 'custom' value, wait for custom input
+                } else {
+                    if (this.elements.customModelGroup) {
+                        this.elements.customModelGroup.style.display = 'none';
+                    }
+                    // Clear custom model value when using preset
+                    await this.saveLlmConfig({ model, customModel: '' });
+                    this.showStatus('LLM Model saved', 'success');
+                }
+            });
+        }
+
+        if (this.elements.llmCustomModel) {
+            this.elements.llmCustomModel.addEventListener('change', async () => {
+                const customModel = this.elements.llmCustomModel.value.trim();
+                if (customModel) {
+                    await this.saveLlmConfig({ model: 'custom', customModel });
+                    this.showStatus('Custom LLM Model saved', 'success');
+                }
+            });
+        }
+
+        if (this.elements.llmTemperature) {
+            this.elements.llmTemperature.addEventListener('change', async () => {
+                const temperature = parseFloat(this.elements.llmTemperature.value);
+                await this.saveLlmConfig({ temperature });
+                this.showStatus('LLM Temperature saved', 'success');
+            });
+        }
+
+        if (this.elements.llmMaxTokens) {
+            this.elements.llmMaxTokens.addEventListener('change', async () => {
+                const maxTokens = parseInt(this.elements.llmMaxTokens.value);
+                await this.saveLlmConfig({ maxTokens });
+                this.showStatus('LLM Max Tokens saved', 'success');
+            });
+        }
+
         // Interval change
         if (this.elements.captureInterval) {
             this.elements.captureInterval.addEventListener('change', async () => {
@@ -145,6 +244,24 @@ class SimplePopupController {
                         this.startAutomaticCapture();
                     }
                 }
+            });
+        }
+
+        // Refresh page toggle
+        if (this.elements.refreshPageToggle) {
+            this.elements.refreshPageToggle.addEventListener('change', async () => {
+                const refreshEnabled = this.elements.refreshPageToggle.checked;
+                await this.saveRefreshPageSetting(refreshEnabled);
+                this.showStatus(`Page refresh ${refreshEnabled ? 'enabled' : 'disabled'}`, 'success');
+            });
+        }
+
+        // Capture delay change
+        if (this.elements.captureDelay) {
+            this.elements.captureDelay.addEventListener('change', async () => {
+                const delay = this.elements.captureDelay.value;
+                await this.saveCaptureDelay(delay);
+                this.showStatus(`Capture delay set to ${delay} seconds`, 'success');
             });
         }
 
@@ -199,6 +316,13 @@ class SimplePopupController {
             });
         }
 
+        // Preset selector
+        if (this.elements.presetSelector) {
+            this.elements.presetSelector.addEventListener('change', () => {
+                this.loadPreset();
+            });
+        }
+
         // History controls
         this.setupHistoryEventListeners();
     }
@@ -211,6 +335,10 @@ class SimplePopupController {
                 'webhookUrl',
                 `consent_${this.currentDomain}`,
                 `interval_${this.currentDomain}`,
+                `refreshPage_${this.currentDomain}`,
+                `captureDelay_${this.currentDomain}`,
+                `llmMode_${this.currentDomain}`,
+                `llmConfig_${this.currentDomain}`,
                 `fields_${this.currentDomain}`
             ];
 
@@ -228,11 +356,62 @@ class SimplePopupController {
                 this.elements.captureInterval.value = data[`interval_${this.currentDomain}`];
             }
 
+            if (data[`refreshPage_${this.currentDomain}`] !== undefined && this.elements.refreshPageToggle) {
+                this.elements.refreshPageToggle.checked = data[`refreshPage_${this.currentDomain}`];
+            }
+
+            if (data[`captureDelay_${this.currentDomain}`] !== undefined && this.elements.captureDelay) {
+                this.elements.captureDelay.value = data[`captureDelay_${this.currentDomain}`];
+            }
+
+            // Load LLM settings
+            if (data[`llmMode_${this.currentDomain}`] !== undefined && this.elements.llmModeToggle) {
+                this.elements.llmModeToggle.checked = data[`llmMode_${this.currentDomain}`];
+            }
+
+            const llmConfig = data[`llmConfig_${this.currentDomain}`] || {};
+            if (llmConfig.apiUrl && this.elements.llmApiUrl) {
+                this.elements.llmApiUrl.value = llmConfig.apiUrl;
+            } else if (this.elements.llmApiUrl && !this.elements.llmApiUrl.value) {
+                // Set OpenRouter as default if no URL is configured
+                this.elements.llmApiUrl.value = 'https://openrouter.ai/api/v1/chat/completions';
+            }
+            if (llmConfig.apiKey && this.elements.llmApiKey) {
+                this.elements.llmApiKey.value = llmConfig.apiKey;
+            }
+            if (llmConfig.model && this.elements.llmModel) {
+                this.elements.llmModel.value = llmConfig.model;
+
+                // Handle custom model display
+                if (llmConfig.model === 'custom') {
+                    if (this.elements.customModelGroup) {
+                        this.elements.customModelGroup.style.display = 'block';
+                    }
+                    if (llmConfig.customModel && this.elements.llmCustomModel) {
+                        this.elements.llmCustomModel.value = llmConfig.customModel;
+                    }
+                } else {
+                    if (this.elements.customModelGroup) {
+                        this.elements.customModelGroup.style.display = 'none';
+                    }
+                }
+            } else if (this.elements.llmModel && this.elements.llmModel.options.length > 0) {
+                // Set OpenGVLab InternVL3 14B as default model (free tier on OpenRouter)
+                this.elements.llmModel.value = 'opengvlab/internvl3-14b:free';
+            }
+            if (llmConfig.temperature !== undefined && this.elements.llmTemperature) {
+                this.elements.llmTemperature.value = llmConfig.temperature;
+            }
+            if (llmConfig.maxTokens !== undefined && this.elements.llmMaxTokens) {
+                this.elements.llmMaxTokens.value = llmConfig.maxTokens;
+            }
+
             // Load saved fields
             await this.loadFieldsState();
 
-            // Update UI based on manual mode
+            // Update UI based on manual mode and LLM mode
             this.updateManualModeUI();
+            this.updateLlmModeUI();
 
             console.log('Settings loaded:', data);
         } catch (error) {
@@ -254,6 +433,9 @@ class SimplePopupController {
             if (!this.currentDomain) return;
             await chrome.storage.local.set({ [`interval_${this.currentDomain}`]: interval });
             console.log('Interval saved:', interval);
+
+            // Refresh known domains after settings change
+            await this.loadKnownDomains();
         } catch (error) {
             console.error('Failed to save interval:', error);
         }
@@ -264,8 +446,80 @@ class SimplePopupController {
             if (!this.currentDomain) return;
             await chrome.storage.local.set({ [`consent_${this.currentDomain}`]: enabled });
             console.log('Consent saved:', enabled);
+
+            // Refresh known domains after settings change
+            await this.loadKnownDomains();
         } catch (error) {
             console.error('Failed to save consent:', error);
+        }
+    }
+
+    async saveRefreshPageSetting(enabled) {
+        try {
+            if (!this.currentDomain) return;
+            await chrome.storage.local.set({ [`refreshPage_${this.currentDomain}`]: enabled });
+            console.log('Refresh page setting saved:', enabled);
+        } catch (error) {
+            console.error('Failed to save refresh page setting:', error);
+        }
+    }
+
+    async saveCaptureDelay(delay) {
+        try {
+            if (!this.currentDomain) return;
+            await chrome.storage.local.set({ [`captureDelay_${this.currentDomain}`]: delay });
+            console.log('Capture delay saved:', delay);
+        } catch (error) {
+            console.error('Failed to save capture delay:', error);
+        }
+    }
+
+    async saveLlmMode(enabled) {
+        try {
+            if (!this.currentDomain) return;
+            await chrome.storage.local.set({ [`llmMode_${this.currentDomain}`]: enabled });
+            console.log('LLM mode saved:', enabled);
+        } catch (error) {
+            console.error('Failed to save LLM mode:', error);
+        }
+    }
+
+    async saveLlmConfig(config) {
+        try {
+            if (!this.currentDomain) return;
+
+            // Get existing config
+            const data = await chrome.storage.local.get([`llmConfig_${this.currentDomain}`]);
+            const existingConfig = data[`llmConfig_${this.currentDomain}`] || {};
+
+            // Merge with new config
+            const updatedConfig = { ...existingConfig, ...config };
+
+            await chrome.storage.local.set({ [`llmConfig_${this.currentDomain}`]: updatedConfig });
+            console.log('LLM config saved:', updatedConfig);
+        } catch (error) {
+            console.error('Failed to save LLM config:', error);
+        }
+    }
+
+    updateLlmModeUI() {
+        const isLlmMode = this.elements.llmModeToggle?.checked || false;
+
+        if (this.elements.llmConfigSection) {
+            if (isLlmMode) {
+                this.elements.llmConfigSection.style.display = 'block';
+                this.elements.llmConfigSection.classList.add('visible');
+            } else {
+                this.elements.llmConfigSection.style.display = 'none';
+                this.elements.llmConfigSection.classList.remove('visible');
+            }
+        }
+
+        // Update capture button text to indicate mode
+        if (this.elements.captureNow) {
+            const baseText = '📸 Capture Screenshot Now';
+            const modeText = isLlmMode ? ' (LLM Analysis)' : ' (Webhook)';
+            this.elements.captureNow.textContent = baseText + modeText;
         }
     }
 
@@ -289,7 +543,14 @@ class SimplePopupController {
                             <input type="checkbox" class="webhook-toggle">
                             <span class="slider"></span>
                         </label>
-                        <span>Fire webhook on TRUE result</span>
+                        <div class="webhook-config-text">
+                            <span>Fire webhook on </span>
+                            <select class="webhook-trigger-dropdown">
+                                <option value="true">TRUE</option>
+                                <option value="false">FALSE</option>
+                            </select>
+                            <span> result</span>
+                        </div>
                     </div>
                     
                     <div class="webhook-url-group" style="display: none;">
@@ -317,18 +578,307 @@ class SimplePopupController {
         this.showFieldStatus('Field added', 'success');
     }
 
-    savePreset() {
+    async savePreset() {
         const name = prompt('Enter preset name:');
-        if (name) {
-            this.showStatus(`Preset "${name}" saved (functionality coming soon)`, 'info');
+        if (!name || !name.trim()) {
+            return;
+        }
+
+        const presetName = name.trim();
+
+        // Get current fields from DOM
+        const fields = this.getAllFieldsFromDOM(); // Get all field data including webhooks
+
+        if (fields.length === 0) {
+            this.showStatus('No fields to save in preset', 'error');
+            return;
+        }
+
+        try {
+            // Get existing presets
+            const data = await chrome.storage.local.get(['fieldPresets']);
+            const presets = data.fieldPresets || {};
+
+            // Save preset
+            presets[presetName] = {
+                name: presetName,
+                fields: fields,
+                created: new Date().toISOString(),
+                domain: this.currentDomain // Optional: track which domain it was created on
+            };
+
+            await chrome.storage.local.set({ fieldPresets: presets });
+
+            // Refresh preset dropdown
+            await this.loadPresets();
+
+            // Select the newly saved preset
+            if (this.elements.presetSelector) {
+                this.elements.presetSelector.value = presetName;
+            }
+
+            this.showStatus(`Preset "${presetName}" saved successfully`, 'success');
+            console.log('Preset saved:', presets[presetName]);
+        } catch (error) {
+            console.error('Failed to save preset:', error);
+            this.showStatus('Failed to save preset', 'error');
         }
     }
 
-    deletePreset() {
+    async deletePreset() {
         const presetName = this.elements.presetSelector?.value;
-        if (presetName) {
-            this.showStatus(`Preset "${presetName}" deleted (functionality coming soon)`, 'info');
+        if (!presetName) {
+            this.showStatus('Please select a preset to delete', 'error');
+            return;
         }
+
+        if (!confirm(`Are you sure you want to delete the preset "${presetName}"?`)) {
+            return;
+        }
+
+        try {
+            // Get existing presets
+            const data = await chrome.storage.local.get(['fieldPresets']);
+            const presets = data.fieldPresets || {};
+
+            if (presets[presetName]) {
+                delete presets[presetName];
+                await chrome.storage.local.set({ fieldPresets: presets });
+
+                // Refresh preset dropdown
+                await this.loadPresets();
+
+                this.showStatus(`Preset "${presetName}" deleted successfully`, 'success');
+                console.log('Preset deleted:', presetName);
+            } else {
+                this.showStatus('Preset not found', 'error');
+            }
+        } catch (error) {
+            console.error('Failed to delete preset:', error);
+            this.showStatus('Failed to delete preset', 'error');
+        }
+    }
+
+    async loadPresets() {
+        if (!this.elements.presetSelector) {
+            return;
+        }
+
+        try {
+            const data = await chrome.storage.local.get(['fieldPresets']);
+            const presets = data.fieldPresets || {};
+
+            // Clear existing options except the default
+            this.elements.presetSelector.innerHTML = '<option value="">Select a preset...</option>';
+
+            // Add preset options
+            const presetNames = Object.keys(presets).sort();
+            if (presetNames.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No presets available';
+                option.disabled = true;
+                this.elements.presetSelector.appendChild(option);
+            } else {
+                presetNames.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    this.elements.presetSelector.appendChild(option);
+                });
+            }
+
+            // Update delete button state
+            this.updatePresetUIState();
+
+            console.log(`Loaded ${presetNames.length} presets`);
+        } catch (error) {
+            console.error('Failed to load presets:', error);
+        }
+    }
+
+    async loadKnownDomains() {
+        if (!this.elements.domainsContainer) {
+            return;
+        }
+
+        try {
+            // Get all storage data and find domain-related keys
+            const allData = await chrome.storage.local.get();
+            const domainKeys = Object.keys(allData).filter(key =>
+                key.startsWith('consent_') || key.startsWith('interval_') || key.startsWith('fields_')
+            );
+
+            // Extract unique domains
+            const domains = new Set();
+            domainKeys.forEach(key => {
+                const parts = key.split('_');
+                if (parts.length >= 2) {
+                    const domain = parts.slice(1).join('_'); // Handle domains with underscores
+                    if (domain) {
+                        domains.add(domain);
+                    }
+                }
+            });
+
+            // Clear existing content
+            this.elements.domainsContainer.innerHTML = '';
+
+            if (domains.size === 0) {
+                this.elements.domainsContainer.innerHTML = '<p class="no-domains">No domains configured yet</p>';
+            } else {
+                const sortedDomains = Array.from(domains).sort();
+
+                sortedDomains.forEach(domain => {
+                    const isCurrentDomain = domain === this.currentDomain;
+                    const consentEnabled = allData[`consent_${domain}`] || false;
+                    const interval = allData[`interval_${domain}`] || 'manual';
+                    const fieldsCount = (allData[`fields_${domain}`] || []).length;
+
+                    const domainHtml = `
+                        <div class="domain-item ${isCurrentDomain ? 'current-domain-item' : ''}">
+                            <div class="domain-header">
+                                <span class="domain-name">${domain} ${isCurrentDomain ? '(current)' : ''}</span>
+                                <span class="domain-status ${consentEnabled ? 'enabled' : 'disabled'}">
+                                    ${consentEnabled ? '✓ Enabled' : '○ Disabled'}
+                                </span>
+                            </div>
+                            <div class="domain-details">
+                                <span class="domain-interval">Interval: ${interval === 'manual' ? 'Manual only' : interval + 's'}</span>
+                                <span class="domain-fields">Fields: ${fieldsCount}</span>
+                            </div>
+                        </div>
+                    `;
+
+                    this.elements.domainsContainer.insertAdjacentHTML('beforeend', domainHtml);
+                });
+            }
+
+            console.log(`Loaded ${domains.size} known domains`);
+        } catch (error) {
+            console.error('Failed to load known domains:', error);
+            if (this.elements.domainsContainer) {
+                this.elements.domainsContainer.innerHTML = '<p class="no-domains">Error loading domains</p>';
+            }
+        }
+    }
+
+    updatePresetUIState() {
+        const hasSelection = this.elements.presetSelector?.value;
+        if (this.elements.deletePresetBtn) {
+            this.elements.deletePresetBtn.disabled = !hasSelection;
+        }
+    }
+
+    async loadPreset() {
+        const presetName = this.elements.presetSelector?.value;
+        if (!presetName) {
+            this.updatePresetUIState();
+            return;
+        }
+
+        try {
+            const data = await chrome.storage.local.get(['fieldPresets']);
+            const presets = data.fieldPresets || {};
+            const preset = presets[presetName];
+
+            if (!preset || !preset.fields) {
+                this.showStatus('Preset not found or invalid', 'error');
+                return;
+            }
+
+            // Clear existing fields
+            if (this.elements.fieldsContainer) {
+                this.elements.fieldsContainer.innerHTML = '';
+            }
+
+            // Load preset fields
+            preset.fields.forEach(fieldData => {
+                this.createFieldFromData(fieldData);
+            });
+
+            // Save the loaded fields state
+            await this.saveFieldsState();
+
+            // Update UI state
+            this.updatePresetUIState();
+
+            this.showStatus(`Preset "${presetName}" loaded successfully`, 'success');
+            console.log('Preset loaded:', preset);
+        } catch (error) {
+            console.error('Failed to load preset:', error);
+            this.showStatus('Failed to load preset', 'error');
+        }
+    }
+
+    // Get all field data including webhook configurations
+    getAllFieldsFromDOM() {
+        const fields = [];
+        const fieldItems = Array.from(document.querySelectorAll('.field-item'))
+            .filter(item => item.isConnected && item.parentNode);
+
+        fieldItems.forEach((item, index) => {
+            const fieldId = item.dataset.fieldId || Date.now() + index;
+            const nameInput = item.querySelector('.field-name-input');
+            const descriptionInput = item.querySelector('.field-description');
+            const webhookToggle = item.querySelector('.webhook-toggle');
+            const webhookUrlInput = item.querySelector('.webhook-url-input');
+            const webhookPayloadInput = item.querySelector('.webhook-payload-input');
+            const webhookTriggerDropdown = item.querySelector('.webhook-trigger-dropdown');
+
+            if (nameInput && descriptionInput && nameInput.isConnected && descriptionInput.isConnected) {
+                const name = nameInput.value.trim();
+                const description = descriptionInput.value.trim();
+
+                // Only include fields with valid name and description
+                if (name && description) {
+                    // Get last result and event ID if available
+                    const lastResultContainer = item.querySelector('.field-last-result');
+                    const lastResultElement = lastResultContainer?.querySelector('.result-text');
+                    let lastResult = null;
+                    let eventId = null;
+
+                    if (lastResultElement && lastResultElement.innerHTML !== 'No results yet') {
+                        // Extract result data from the display
+                        if (lastResultElement.innerHTML.includes('Pending')) {
+                            lastResult = { status: 'pending' };
+                        } else if (lastResultElement.innerHTML.includes('Error')) {
+                            lastResult = { status: 'error' };
+                        } else if (lastResultElement.innerHTML.includes('TRUE')) {
+                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
+                            lastResult = {
+                                result: true,
+                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
+                            };
+                        } else if (lastResultElement.innerHTML.includes('FALSE')) {
+                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
+                            lastResult = {
+                                result: false,
+                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
+                            };
+                        }
+                    }
+
+                    if (lastResultContainer && lastResultContainer.dataset.eventId) {
+                        eventId = lastResultContainer.dataset.eventId;
+                    }
+
+                    fields.push({
+                        id: fieldId,
+                        name: name,
+                        description: description,
+                        webhookEnabled: webhookToggle ? webhookToggle.checked : false,
+                        webhookTrigger: webhookTriggerDropdown ? webhookTriggerDropdown.value === 'true' : true,
+                        webhookUrl: webhookUrlInput ? webhookUrlInput.value.trim() : '',
+                        webhookPayload: webhookPayloadInput ? webhookPayloadInput.value.trim() : '',
+                        lastResult: lastResult,
+                        eventId: eventId
+                    });
+                }
+            }
+        });
+
+        return fields;
     }
 
     async handleManualCapture() {
@@ -338,10 +888,21 @@ class SimplePopupController {
             return;
         }
 
-        const webhookUrl = this.elements.webhookUrl?.value.trim();
-        if (!webhookUrl) {
-            this.showStatus('Please enter a webhook URL first', 'error');
-            return;
+        const isLlmMode = this.elements.llmModeToggle?.checked || false;
+
+        // Validate configuration based on mode
+        if (isLlmMode) {
+            const llmConfig = await this.getLlmConfig();
+            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+                this.showStatus('Please configure LLM API URL and API Key first', 'error');
+                return;
+            }
+        } else {
+            const webhookUrl = this.elements.webhookUrl?.value.trim();
+            if (!webhookUrl) {
+                this.showStatus('Please enter a webhook URL first', 'error');
+                return;
+            }
         }
 
         // Get fields and save them before capture
@@ -357,7 +918,7 @@ class SimplePopupController {
         // Update button state
         if (this.elements.captureNow) {
             this.elements.captureNow.disabled = true;
-            this.elements.captureNow.textContent = '⏳ Capturing...';
+            this.elements.captureNow.textContent = isLlmMode ? '⏳ Analyzing with LLM...' : '⏳ Capturing...';
         }
 
         try {
@@ -370,17 +931,37 @@ class SimplePopupController {
             // Save state to ensure pending status persists
             await this.saveFieldsState();
 
+            // Prepare message based on mode
+            let message;
+            if (isLlmMode) {
+                const llmConfig = await this.getLlmConfig();
+                message = {
+                    action: 'captureLLM',
+                    domain: this.currentDomain,
+                    tabId: this.currentTabId,
+                    llmConfig: llmConfig,
+                    fields: fields,
+                    refreshPage: this.elements.refreshPageToggle?.checked || false,
+                    captureDelay: parseInt(this.elements.captureDelay?.value || '0')
+                };
+            } else {
+                const webhookUrl = this.elements.webhookUrl.value.trim();
+                message = {
+                    action: 'captureNow',
+                    domain: this.currentDomain,
+                    tabId: this.currentTabId,
+                    webhookUrl: webhookUrl,
+                    fields: fields,
+                    refreshPage: this.elements.refreshPageToggle?.checked || false,
+                    captureDelay: parseInt(this.elements.captureDelay?.value || '0')
+                };
+            }
+
             // Send to background script
-            const response = await this.sendMessageToBackground({
-                action: 'captureNow',
-                domain: this.currentDomain,
-                tabId: this.currentTabId,
-                webhookUrl: webhookUrl,
-                fields: fields
-            });
+            const response = await this.sendMessageToBackground(message);
 
             if (response && response.success) {
-                this.showStatus('Screenshot captured and sent!', 'success');
+                this.showStatus(isLlmMode ? 'Screenshot analyzed with LLM!' : 'Screenshot captured and sent!', 'success');
 
                 // Store event ID with fields if available
                 if (response.eventId) {
@@ -389,7 +970,7 @@ class SimplePopupController {
                     });
                 }
             } else {
-                this.showStatus(`Capture failed: ${response?.error || 'Unknown error'}`, 'error');
+                this.showStatus(`${isLlmMode ? 'LLM analysis' : 'Capture'} failed: ${response?.error || 'Unknown error'}`, 'error');
 
                 // Set fields to error state
                 fields.forEach(field => {
@@ -403,33 +984,64 @@ class SimplePopupController {
             // Restore button
             if (this.elements.captureNow) {
                 this.elements.captureNow.disabled = false;
-                this.elements.captureNow.textContent = '📸 Capture Screenshot Now';
+                const baseText = '📸 Capture Screenshot Now';
+                const modeText = isLlmMode ? ' (LLM Analysis)' : ' (Webhook)';
+                this.elements.captureNow.textContent = baseText + modeText;
             }
         }
     }
 
+    async getLlmConfig() {
+        if (!this.currentDomain) return {};
+
+        const data = await chrome.storage.local.get([`llmConfig_${this.currentDomain}`]);
+        const config = data[`llmConfig_${this.currentDomain}`] || {};
+
+        // Handle custom model: if model is 'custom', use customModel value
+        if (config.model === 'custom' && config.customModel) {
+            return {
+                ...config,
+                model: config.customModel // Use the custom model name as the actual model
+            };
+        }
+
+        return config;
+    }
+
     getFieldsFromDOM() {
         const fields = [];
-        const fieldItems = document.querySelectorAll('.field-item');
+        const fieldItems = Array.from(document.querySelectorAll('.field-item'))
+            .filter(item => item.isConnected && item.parentNode); // Only connected elements
 
-        fieldItems.forEach(item => {
+        console.log(`getFieldsFromDOM: Found ${fieldItems.length} connected field items`);
+
+        fieldItems.forEach((item, index) => {
             const nameInput = item.querySelector('.field-name-input');
-            const descriptionTextarea = item.querySelector('.field-description');
+            const descriptionInput = item.querySelector('.field-description');
 
-            if (nameInput && descriptionTextarea) {
+            if (nameInput && descriptionInput && nameInput.isConnected && descriptionInput.isConnected) {
                 const name = nameInput.value.trim();
-                const description = descriptionTextarea.value.trim();
+                const description = descriptionInput.value.trim();
+
+                console.log(`Field ${index}: name="${name}", description="${description}"`);
 
                 // Only include fields that have both name and description
                 if (name && description) {
+                    const sanitizedName = name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                     fields.push({
-                        name: name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
+                        name: sanitizedName,
                         criteria: description
                     });
+                    console.log(`Added field ${index} to collection: ${sanitizedName}`);
+                } else {
+                    console.log(`Skipped field ${index} - empty name or description`);
                 }
+            } else {
+                console.log(`Skipped field ${index} - missing or disconnected elements`);
             }
         });
 
+        console.log(`getFieldsFromDOM: Returning ${fields.length} valid fields:`, fields);
         return fields;
     }
 
@@ -669,7 +1281,9 @@ class SimplePopupController {
             tabId: this.currentTabId,
             interval: parseInt(interval),
             webhookUrl: webhookUrl,
-            fields: fields
+            fields: fields,
+            refreshPage: this.elements.refreshPageToggle?.checked || false,
+            captureDelay: parseInt(this.elements.captureDelay?.value || '0')
         });
     }
 
@@ -686,6 +1300,7 @@ class SimplePopupController {
         if (!fieldElement) return;
 
         const webhookToggle = fieldElement.querySelector('.webhook-toggle');
+        const webhookTriggerDropdown = fieldElement.querySelector('.webhook-trigger-dropdown');
         const webhookUrlGroup = fieldElement.querySelector('.webhook-url-group');
         const webhookPayloadGroup = fieldElement.querySelector('.webhook-payload-group');
         const urlInput = fieldElement.querySelector('.webhook-url-input');
@@ -704,119 +1319,90 @@ class SimplePopupController {
                     webhookPayloadGroup.style.display = isEnabled ? 'block' : 'none';
                 }
 
-                // Auto-save when webhook settings change
-                this.saveFieldsState();
+                // Use debounced save
+                this.debouncedSaveFieldsState();
                 console.log(`Webhook toggle for field ${fieldId}:`, isEnabled);
             });
         }
 
-        // Add change listeners to save field state
-        if (nameInput) {
-            nameInput.addEventListener('input', () => this.saveFieldsState());
-        }
-        if (descriptionInput) {
-            descriptionInput.addEventListener('input', () => this.saveFieldsState());
-        }
-        if (urlInput) {
-            urlInput.addEventListener('input', () => this.saveFieldsState());
-        }
-        if (payloadInput) {
-            payloadInput.addEventListener('input', () => this.saveFieldsState());
+        // Add change listener for webhook trigger dropdown
+        if (webhookTriggerDropdown) {
+            webhookTriggerDropdown.addEventListener('change', () => {
+                const triggerValue = webhookTriggerDropdown.value;
+                console.log(`Webhook trigger for field ${fieldId}:`, triggerValue);
+                this.debouncedSaveFieldsState();
+            });
         }
 
-        // Don't force default payload - let user set their own
+        // Add change listeners to save field state (use debounced saves)
+        if (nameInput) {
+            nameInput.addEventListener('input', () => this.debouncedSaveFieldsState());
+        }
+        if (descriptionInput) {
+            descriptionInput.addEventListener('input', () => this.debouncedSaveFieldsState());
+        }
+        if (urlInput) {
+            urlInput.addEventListener('input', () => this.debouncedSaveFieldsState());
+        }
+        if (payloadInput) {
+            payloadInput.addEventListener('input', () => this.debouncedSaveFieldsState());
+        }
     }
 
     setupFieldRemoveListener(fieldId) {
-        const fieldElement = document.querySelector(`[data-field-id="${fieldId}"]`);
-        if (!fieldElement) return;
-
-        const removeBtn = fieldElement.querySelector('.remove-field-btn');
+        const removeBtn = document.querySelector(`.remove-field-btn[data-field-id="${fieldId}"]`);
         if (removeBtn) {
-            removeBtn.addEventListener('click', () => {
-                console.log('Removing field:', fieldId);
-                fieldElement.remove();
-                this.saveFieldsState();
-                this.showFieldStatus('Field removed', 'info');
+            removeBtn.addEventListener('click', async () => {
+                const fieldItem = removeBtn.closest('.field-item');
+                if (fieldItem) {
+                    // Get field name before removing for the status message
+                    const nameInput = fieldItem.querySelector('.field-name-input');
+                    const fieldName = nameInput ? nameInput.value.trim() : 'Field';
+
+                    // Remove from DOM
+                    fieldItem.remove();
+
+                    // Save updated state
+                    await this.saveFieldsState();
+
+                    // Show status message
+                    this.showFieldStatus(`${fieldName} removed`, 'info');
+
+                    // Refresh known domains to update field count
+                    await this.loadKnownDomains();
+                }
             });
         }
+    }
+
+    // Debounced save to prevent race conditions
+    debouncedSaveFieldsState() {
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+        }
+        this.saveTimeout = setTimeout(() => {
+            this.saveFieldsState();
+            this.saveTimeout = null;
+        }, 200); // 200ms debounce
     }
 
     async saveFieldsState() {
         try {
             if (!this.currentDomain) return;
 
-            const fieldsData = [];
-            const fieldItems = document.querySelectorAll('.field-item');
+            // Get all valid fields from DOM
+            const fields = this.getAllFieldsFromDOM();
+            console.log('Saving fields state for domain:', this.currentDomain);
+            console.log('Fields to save:', fields);
 
-            fieldItems.forEach(item => {
-                const fieldId = item.dataset.fieldId;
-                const nameInput = item.querySelector('.field-name-input');
-                const descriptionInput = item.querySelector('.field-description');
-                const webhookToggle = item.querySelector('.webhook-toggle');
-                const webhookUrlInput = item.querySelector('.webhook-url-input');
-                const webhookPayloadInput = item.querySelector('.webhook-payload-input');
+            // Save to storage
+            const key = `fields_${this.currentDomain}`;
+            await chrome.storage.local.set({ [key]: fields });
 
-                if (nameInput && descriptionInput) {
-                    // Only save fields that have both name and description
-                    const name = nameInput.value.trim();
-                    const description = descriptionInput.value.trim();
+            console.log('Fields state saved successfully');
 
-                    // Skip empty fields
-                    if (!name || !description) {
-                        console.log(`Skipping empty field: name="${name}", description="${description}"`);
-                        return;
-                    }
-
-                    // Get last result and event ID if available
-                    const lastResultContainer = item.querySelector('.field-last-result');
-                    const lastResultElement = lastResultContainer?.querySelector('.result-text');
-                    let lastResult = null;
-                    let eventId = null;
-
-                    if (lastResultElement && lastResultElement.innerHTML !== 'No results yet') {
-                        // Extract result data from the display
-                        if (lastResultElement.innerHTML.includes('Pending')) {
-                            lastResult = { status: 'pending' };
-                        } else if (lastResultElement.innerHTML.includes('Error')) {
-                            lastResult = { status: 'error' };
-                        } else if (lastResultElement.innerHTML.includes('TRUE')) {
-                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
-                            lastResult = {
-                                result: true,
-                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
-                            };
-                        } else if (lastResultElement.innerHTML.includes('FALSE')) {
-                            const probMatch = lastResultElement.innerHTML.match(/\((\d+)%\)/);
-                            lastResult = {
-                                result: false,
-                                probability: probMatch ? parseInt(probMatch[1]) / 100 : null
-                            };
-                        }
-                    }
-
-                    if (lastResultContainer && lastResultContainer.dataset.eventId) {
-                        eventId = lastResultContainer.dataset.eventId;
-                    }
-
-                    fieldsData.push({
-                        id: fieldId,
-                        name: name,  // Use trimmed value
-                        description: description,  // Use trimmed value
-                        webhookEnabled: webhookToggle ? webhookToggle.checked : false,
-                        webhookUrl: webhookUrlInput ? webhookUrlInput.value : '',
-                        webhookPayload: webhookPayloadInput ? webhookPayloadInput.value : '',
-                        lastResult: lastResult,
-                        eventId: eventId
-                    });
-                }
-            });
-
-            await chrome.storage.local.set({
-                [`fields_${this.currentDomain}`]: fieldsData
-            });
-
-            console.log('Fields state saved for', this.currentDomain, fieldsData);
+            // Refresh known domains to update field count
+            await this.loadKnownDomains();
         } catch (error) {
             console.error('Failed to save fields state:', error);
         }
@@ -872,6 +1458,8 @@ class SimplePopupController {
     createFieldFromData(fieldData) {
         if (!this.elements.fieldsContainer) return;
 
+        const webhookTrigger = fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true; // Default to true
+
         const fieldHtml = `
             <div class="field-item" data-field-id="${fieldData.id}">
                 <div class="field-header">
@@ -888,7 +1476,14 @@ class SimplePopupController {
                             <input type="checkbox" class="webhook-toggle" ${fieldData.webhookEnabled ? 'checked' : ''}>
                             <span class="slider"></span>
                         </label>
-                        <span>Fire webhook on TRUE result</span>
+                        <div class="webhook-config-text">
+                            <span>Fire webhook on </span>
+                            <select class="webhook-trigger-dropdown">
+                                <option value="true" ${webhookTrigger ? 'selected' : ''}>TRUE</option>
+                                <option value="false" ${!webhookTrigger ? 'selected' : ''}>FALSE</option>
+                            </select>
+                            <span> result</span>
+                        </div>
                     </div>
                     
                     <div class="webhook-url-group" style="display: ${fieldData.webhookEnabled ? 'block' : 'none'};">
@@ -959,6 +1554,12 @@ class SimplePopupController {
 
         const fieldItems = document.querySelectorAll('.field-item');
         fieldItems.forEach(item => {
+            // Ensure the item is still connected to the DOM
+            if (!item.isConnected) {
+                console.log('Skipping disconnected field item');
+                return;
+            }
+
             const nameInput = item.querySelector('.field-name-input');
             if (nameInput) {
                 const sanitizedFieldValue = nameInput.value.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
@@ -980,9 +1581,8 @@ class SimplePopupController {
                             resultContainer.dataset.eventId = eventId;
                         }
 
-                        // Save the field state immediately
-                        // Delay save slightly to ensure DOM is updated
-                        setTimeout(() => this.saveFieldsState(), 50);
+                        // Use debounced save instead of timeout
+                        this.debouncedSaveFieldsState();
 
                         // Make clickable if not already
                         if (!resultContainer.onclick) {
@@ -1017,6 +1617,12 @@ class SimplePopupController {
         let found = false;
 
         fieldItems.forEach(item => {
+            // Ensure the item is still connected to the DOM
+            if (!item.isConnected) {
+                console.log('Skipping disconnected field item');
+                return;
+            }
+
             const nameInput = item.querySelector('.field-name-input');
             if (nameInput) {
                 const fieldValue = nameInput.value;
@@ -1053,9 +1659,8 @@ class SimplePopupController {
                             };
                         }
 
-                        // Also save the field state with the last result  
-                        // Delay save to ensure DOM is updated
-                        setTimeout(() => this.saveFieldsState(), 100);
+                        // Use debounced save instead of timeout
+                        this.debouncedSaveFieldsState();
                     }
                 }
             }
@@ -1064,6 +1669,80 @@ class SimplePopupController {
         if (!found) {
             console.warn(`Field "${fieldName}" not found in DOM`);
         }
+    }
+
+    // Add utility method to force clean storage
+    async cleanupStorageForDomain(domain = null) {
+        try {
+            const targetDomain = domain || this.currentDomain;
+            if (!targetDomain) {
+                console.log('No domain specified for cleanup');
+                return;
+            }
+
+            const key = `fields_${targetDomain}`;
+            const data = await chrome.storage.local.get([key]);
+            const fields = data[key] || [];
+
+            console.log(`Cleaning up storage for ${targetDomain}: ${fields.length} fields found`);
+
+            const cleanFields = fields.filter(field => {
+                const hasValidName = field.name && field.name.trim();
+                const hasValidDescription = field.description && field.description.trim();
+                const isValid = hasValidName && hasValidDescription;
+
+                if (!isValid) {
+                    console.log('Removing invalid field from storage:', field);
+                }
+
+                return isValid;
+            });
+
+            if (cleanFields.length !== fields.length) {
+                await chrome.storage.local.set({ [key]: cleanFields });
+                console.log(`Cleaned ${fields.length - cleanFields.length} invalid fields, ${cleanFields.length} remaining`);
+
+                // Reload fields to reflect the cleanup
+                await this.loadFieldsState();
+            } else {
+                console.log('No cleanup needed - all fields are valid');
+            }
+        } catch (error) {
+            console.error('Error during storage cleanup:', error);
+        }
+    }
+
+    // Add method to validate current DOM state
+    validateFieldsState() {
+        console.log('=== FIELD STATE VALIDATION ===');
+
+        const domFields = this.getFieldsFromDOM();
+        console.log('DOM fields:', domFields);
+
+        // Log all field elements found in DOM
+        const allFieldItems = document.querySelectorAll('.field-item');
+        console.log(`Total .field-item elements in DOM: ${allFieldItems.length}`);
+
+        allFieldItems.forEach((item, index) => {
+            const fieldId = item.dataset.fieldId;
+            const nameInput = item.querySelector('.field-name-input');
+            const descriptionInput = item.querySelector('.field-description');
+            const isConnected = item.isConnected;
+            const hasParent = !!item.parentNode;
+
+            console.log(`Field element ${index}:`, {
+                fieldId,
+                name: nameInput?.value || 'MISSING',
+                description: descriptionInput?.value || 'MISSING',
+                isConnected,
+                hasParent,
+                element: item
+            });
+        });
+
+        console.log('=== END VALIDATION ===');
+
+        return domFields;
     }
 }
 
@@ -1085,6 +1764,122 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             console.error('No createTestEvents method available');
         }
+    };
+
+    // Add field debugging functions
+    window.debugFields = () => {
+        console.log('=== FIELD DEBUG INFO ===');
+        console.log('Current domain:', popup.currentDomain);
+
+        if (popup.validateFieldsState) {
+            popup.validateFieldsState();
+        }
+
+        return {
+            domFields: popup.getFieldsFromDOM(),
+            domain: popup.currentDomain
+        };
+    };
+
+    window.cleanupFields = async () => {
+        console.log('Manually cleaning up fields...');
+        if (popup.cleanupStorageForDomain) {
+            await popup.cleanupStorageForDomain();
+        }
+        return 'Cleanup completed';
+    };
+
+    window.forceRefreshFields = async () => {
+        console.log('Force refreshing field state...');
+        await popup.saveFieldsState();
+        await popup.loadFieldsState();
+        return 'Fields refreshed';
+    };
+
+    // Add preset debugging functions
+    window.debugPresets = async () => {
+        console.log('=== PRESET DEBUG INFO ===');
+        const data = await chrome.storage.local.get(['fieldPresets']);
+        const presets = data.fieldPresets || {};
+        console.log('Stored presets:', presets);
+        console.log('Preset count:', Object.keys(presets).length);
+        console.log('Current selector value:', popup.elements.presetSelector?.value);
+        return presets;
+    };
+
+    window.clearAllPresets = async () => {
+        if (confirm('Are you sure you want to delete ALL presets?')) {
+            await chrome.storage.local.set({ fieldPresets: {} });
+            await popup.loadPresets();
+            console.log('All presets cleared');
+            return 'All presets cleared';
+        }
+        return 'Cancelled';
+    };
+
+    window.createTestPreset = async () => {
+        // Create a test preset for debugging
+        const testPreset = {
+            name: 'Test Preset',
+            fields: [
+                {
+                    id: Date.now(),
+                    name: 'Test Field 1',
+                    description: 'This is a test field for debugging',
+                    webhookEnabled: true,
+                    webhookUrl: 'https://webhook.site/test',
+                    webhookPayload: '{"test": "data"}'
+                },
+                {
+                    id: Date.now() + 1,
+                    name: 'Test Field 2',
+                    description: 'Another test field',
+                    webhookEnabled: false,
+                    webhookUrl: '',
+                    webhookPayload: ''
+                }
+            ],
+            created: new Date().toISOString(),
+            domain: popup.currentDomain
+        };
+
+        const data = await chrome.storage.local.get(['fieldPresets']);
+        const presets = data.fieldPresets || {};
+        presets['Test Preset'] = testPreset;
+        await chrome.storage.local.set({ fieldPresets: presets });
+        await popup.loadPresets();
+        console.log('Test preset created');
+        return testPreset;
+    };
+
+    // Add known domains debugging functions
+    window.debugKnownDomains = async () => {
+        console.log('=== KNOWN DOMAINS DEBUG INFO ===');
+        const allData = await chrome.storage.local.get();
+        const domainKeys = Object.keys(allData).filter(key =>
+            key.startsWith('consent_') || key.startsWith('interval_') || key.startsWith('fields_')
+        );
+        console.log('Found domain keys:', domainKeys);
+
+        const domains = new Set();
+        domainKeys.forEach(key => {
+            const parts = key.split('_');
+            if (parts.length >= 2) {
+                const domain = parts.slice(1).join('_');
+                if (domain) {
+                    domains.add(domain);
+                }
+            }
+        });
+
+        console.log('Extracted domains:', Array.from(domains));
+        console.log('Current domain:', popup.currentDomain);
+        console.log('Domains container element:', popup.elements.domainsContainer);
+        return {
+            domains: Array.from(domains),
+            currentDomain: popup.currentDomain,
+            storageData: allData
+        };
     };
 });
 

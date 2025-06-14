@@ -1,5 +1,5 @@
-// Webhook communication service
-export class WebhookService {
+// LLM API service for field evaluation using multimodal models
+export class LLMService {
     constructor(captureService, eventService) {
         this.captureService = captureService;
         this.eventService = eventService;
@@ -7,11 +7,29 @@ export class WebhookService {
         this.userCancelledRequests = new Set(); // Track user-initiated cancellations
     }
 
-    // Capture screenshot and send to webhook
-    async captureAndSend(tabId, domain, webhookUrl, isManual = false, fields = null, refreshPage = false, captureDelay = 0) {
+    // System prompt template for field evaluation
+    getSystemPrompt(fields) {
+        const fieldsJson = JSON.stringify(fields, null, 2);
+
+        return `Your job is very important and the results you provide will serve as a gatekeeper for actions taken in an automated system. You will behave as a highly accurate frame-by-frame screenshot processing engine, where you will be passed an image and a set of one or more fields accompanied by a value for each which is the key criteria necessary to evaluate for a boolean true or false value according to your image analysis.
+
+You will respond in pure parseable JSON string from start to finish without any markdown containing all original field(s), each accompanied by an array of the resulting boolean, and resulting probability represented by a floating point number between 0 and 1 that your analysis resulted in a boolean that is 100% correct according to the screenshot. Then at the end of the json response, you will append an additional field named "reason" which will contain a brief explanation of what you saw in the image and the state of the screenshot.
+
+Here are the fields and their criteria for evaluation:
+${fieldsJson}`;
+    }
+
+    // Capture screenshot and send to LLM API
+    async captureAndSend(tabId, domain, llmConfig, isManual = false, fields = null, refreshPage = false, captureDelay = 0) {
         try {
-            console.log(`Attempting to capture screenshot for tab ${tabId}, domain: ${domain}, webhook: ${webhookUrl}`);
+            console.log(`Attempting LLM capture for tab ${tabId}, domain: ${domain}`);
+            console.log(`LLM Config:`, llmConfig);
             console.log(`Refresh page: ${refreshPage}, Capture delay: ${captureDelay}s`);
+
+            // Validate LLM configuration
+            if (!llmConfig || !llmConfig.apiUrl || !llmConfig.apiKey) {
+                throw new Error('LLM configuration missing: apiUrl and apiKey required');
+            }
 
             // Handle page refresh if enabled
             if (refreshPage) {
@@ -57,36 +75,21 @@ export class WebhookService {
                 const domainFields = storage[domainKey] || [];
 
                 console.log(`Loading fields for domain ${domain}:`, domainFields);
-                console.log(`Found ${domainFields.length} raw fields in storage`);
 
                 // Filter and validate fields
                 const validFields = domainFields.filter(f => {
                     const hasName = f.name && f.name.trim();
                     const hasDescription = f.description && f.description.trim();
-                    const isValid = hasName && hasDescription;
-
-                    if (!isValid) {
-                        console.log(`Filtering out invalid field:`, {
-                            name: f.name,
-                            description: f.description,
-                            hasName,
-                            hasDescription
-                        });
-                    }
-
-                    return isValid;
+                    return hasName && hasDescription;
                 });
-
-                console.log(`After filtering: ${validFields.length} valid fields`);
 
                 fields = validFields.map(f => ({
                     name: this.captureService.sanitizeFieldName(f.friendlyName || f.name),
-                    criteria: this.captureService.escapeJsonString(f.description)
+                    criteria: f.description
                 }));
 
-                console.log(`Final fields to send to webhook:`, fields);
+                console.log(`Final fields for LLM:`, fields);
 
-                // If no fields configured, still track the event
                 if (fields.length === 0) {
                     console.log('No valid fields configured for domain:', domain);
                 }
@@ -96,24 +99,9 @@ export class WebhookService {
             const captureResult = await this.captureService.captureScreenshot(tabId);
             const { dataUrl, tab } = captureResult;
 
-            // Convert dataURL to blob
-            const response = await fetch(dataUrl);
-            const blob = await response.blob();
-            console.log('Blob created, size:', blob.size);
-
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('screenshot', blob, `screenshot_${Date.now()}.png`);
-            formData.append('domain', domain);
-            formData.append('timestamp', new Date().toISOString());
-            formData.append('tabId', tabId.toString());
-            formData.append('url', tab.url);
-            formData.append('isManual', isManual.toString());
-
-            // Add fields if present
-            if (fields && fields.length > 0) {
-                formData.append('fields', JSON.stringify(fields));
-            }
+            // Convert dataURL to base64 (remove data:image/png;base64, prefix)
+            const base64Image = dataUrl.split(',')[1];
+            console.log('Screenshot converted to base64, length:', base64Image.length);
 
             // Store request data for history
             const requestData = {
@@ -122,10 +110,15 @@ export class WebhookService {
                 tabId: tabId.toString(),
                 url: tab.url,
                 isManual: isManual.toString(),
-                fields: fields
+                fields: fields,
+                llmConfig: {
+                    apiUrl: llmConfig.apiUrl,
+                    model: llmConfig.model || 'gpt-4-vision-preview',
+                    // Don't store API key in history for security
+                }
             };
 
-            console.log(`Sending to webhook: ${webhookUrl}`);
+            console.log(`Sending to LLM API: ${llmConfig.apiUrl}`);
 
             // Generate event ID early
             const eventId = Date.now();
@@ -138,112 +131,181 @@ export class WebhookService {
                 action: 'captureStarted',
                 eventId: eventId,
                 domain: domain,
-                fields: fields // Include fields so popup can update their status
+                fields: fields
             });
 
-            // Send to webhook with very long timeout (300 seconds)
+            // Prepare LLM API request
             const controller = new AbortController();
-            this.pendingRequests.set(eventId, controller); // Store for potential cancellation
+            this.pendingRequests.set(eventId, controller);
 
             const timeoutId = setTimeout(() => {
                 controller.abort();
                 this.pendingRequests.delete(eventId);
-            }, 300000); // 300 seconds
+            }, 120000); // 2 minute timeout for LLM requests
 
-            let webhookResponse;
+            let llmResponse;
             let responseText = '';
             let responseData = null;
             let parseError = null;
             let finalError = null;
 
             try {
-                webhookResponse = await fetch(webhookUrl, {
+                // Build the system prompt with fields
+                const systemPrompt = this.getSystemPrompt(fields);
+
+                // Prepare the request payload for OpenAI-compatible API
+                const requestPayload = {
+                    model: llmConfig.model || 'gpt-4-vision-preview',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: systemPrompt
+                        },
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: 'Please analyze this screenshot according to the field criteria provided in the system prompt.'
+                                },
+                                {
+                                    type: 'image_url',
+                                    image_url: {
+                                        url: `data:image/png;base64,${base64Image}`
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    max_tokens: 1000,
+                    temperature: 0.1 // Low temperature for consistent results
+                };
+
+                // Add additional parameters if specified in config
+                if (llmConfig.temperature !== undefined) {
+                    requestPayload.temperature = llmConfig.temperature;
+                }
+                if (llmConfig.maxTokens !== undefined) {
+                    requestPayload.max_tokens = llmConfig.maxTokens;
+                }
+
+                // Send request to LLM API
+                llmResponse = await fetch(llmConfig.apiUrl, {
                     method: 'POST',
-                    body: formData,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${llmConfig.apiKey}`,
+                        ...(llmConfig.customHeaders || {})
+                    },
+                    body: JSON.stringify(requestPayload),
                     signal: controller.signal
                 });
+
                 clearTimeout(timeoutId);
-                this.pendingRequests.delete(eventId); // Remove from pending when completed
-                this.userCancelledRequests.delete(eventId); // Clean up cancellation flag
+                this.pendingRequests.delete(eventId);
+                this.userCancelledRequests.delete(eventId);
 
-                console.log(`Webhook response status: ${webhookResponse.status}`);
+                console.log(`LLM API response status: ${llmResponse.status}`);
 
-                // ALWAYS try to get response text, regardless of status code
+                // Get response text
                 try {
-                    responseText = await webhookResponse.text();
-                    console.log('Raw response text:', responseText);
+                    responseText = await llmResponse.text();
+                    console.log('Raw LLM response:', responseText);
                 } catch (textError) {
-                    console.log('Failed to read response text:', textError);
+                    console.log('Failed to read LLM response text:', textError);
                     responseText = `Failed to read response: ${textError.message}`;
                 }
 
-                // Log non-success status codes but still process the response
-                if (!webhookResponse.ok) {
-                    console.log(`Non-success status: ${webhookResponse.status}: ${webhookResponse.statusText}`);
-                    finalError = `HTTP ${webhookResponse.status}: ${webhookResponse.statusText}`;
-                }
-
-                // Try to parse response as JSON if we have text
-                if (responseText) {
+                if (!llmResponse.ok) {
+                    console.log(`LLM API error: ${llmResponse.status}: ${llmResponse.statusText}`);
+                    finalError = `LLM API Error ${llmResponse.status}: ${llmResponse.statusText}`;
+                } else {
+                    // Parse the LLM response
                     try {
-                        responseData = JSON.parse(responseText);
-                        console.log('Webhook response data:', responseData);
+                        const llmData = JSON.parse(responseText);
+
+                        // Extract content from OpenAI-style response
+                        let content = '';
+                        if (llmData.choices && llmData.choices[0] && llmData.choices[0].message) {
+                            content = llmData.choices[0].message.content;
+                        } else if (typeof llmData === 'object' && llmData.content) {
+                            content = llmData.content;
+                        } else {
+                            throw new Error('Unexpected LLM response format');
+                        }
+
+                        // Parse the JSON content from the LLM
+                        // First, try to extract JSON from markdown code blocks if present
+                        let jsonContent = content;
+
+                        // Check if content is wrapped in markdown code blocks
+                        const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/;
+                        const codeBlockMatch = content.match(codeBlockRegex);
+                        if (codeBlockMatch) {
+                            jsonContent = codeBlockMatch[1].trim();
+                            console.log('Extracted JSON from markdown code blocks:', jsonContent);
+                        }
+
+                        // If no code blocks, try to find JSON object directly
+                        if (!codeBlockMatch) {
+                            const jsonObjectRegex = /\{[\s\S]*\}/;
+                            const jsonMatch = content.match(jsonObjectRegex);
+                            if (jsonMatch) {
+                                jsonContent = jsonMatch[0];
+                                console.log('Extracted JSON object from content:', jsonContent);
+                            }
+                        }
+
+                        try {
+                            responseData = JSON.parse(jsonContent);
+                            console.log('Parsed LLM field results:', responseData);
+                        } catch (contentParseError) {
+                            console.log('Failed to parse LLM content as JSON:', contentParseError);
+                            console.log('Original content:', content);
+                            console.log('Attempted to parse:', jsonContent);
+                            responseData = {
+                                error: 'Failed to parse LLM response as JSON',
+                                raw_content: content,
+                                attempted_json: jsonContent,
+                                parse_error: contentParseError.message
+                            };
+                        }
                     } catch (e) {
                         parseError = e.message;
-                        console.log('Response was not JSON or could not be parsed:', e);
-                        console.log('Raw response that failed to parse:', responseText);
-                        // responseText is preserved for non-JSON responses
+                        console.log('Failed to parse LLM response:', e);
+                        responseData = {
+                            error: 'Failed to parse LLM response',
+                            raw_response: responseText
+                        };
                     }
                 }
 
             } catch (fetchError) {
                 clearTimeout(timeoutId);
-                this.pendingRequests.delete(eventId); // Remove from pending on error
-                console.log('Fetch error occurred:', fetchError);
+                this.pendingRequests.delete(eventId);
+                console.log('LLM API fetch error:', fetchError);
 
-                // Try to extract any response text from the error if possible
-                let errorResponseText = '';
-                try {
-                    // Some fetch errors might still have response data
-                    if (fetchError.response) {
-                        errorResponseText = await fetchError.response.text();
-                    }
-                } catch (e) {
-                    // If we can't get response text, that's okay
-                    console.log('No response text available from fetch error');
-                }
-
-                // Determine error message and response text
                 if (fetchError.name === 'AbortError') {
-                    // Check if it was user-cancelled or timeout using our tracking flag
                     if (this.userCancelledRequests.has(eventId)) {
                         finalError = 'Request cancelled by user';
-                        console.log(`Request ${eventId} was cancelled by user`);
-                        // Clean up the cancellation flag
+                        console.log(`LLM Request ${eventId} was cancelled by user`);
                         this.userCancelledRequests.delete(eventId);
-                        // Don't update the event here - it was already updated in cancelRequest()
                         return { success: false, error: finalError };
                     } else {
-                        finalError = 'Request timed out after 5 minutes';
-                        console.log(`Request ${eventId} timed out`);
+                        finalError = 'LLM request timed out after 2 minutes';
+                        console.log(`LLM Request ${eventId} timed out`);
                     }
-                    responseText = finalError; // Use error message as response for cancelled requests
+                    responseText = finalError;
                 } else {
-                    finalError = fetchError.message;
-                    // Use error response text if available, otherwise use error message
-                    responseText = errorResponseText || fetchError.message;
+                    finalError = `LLM API Error: ${fetchError.message}`;
+                    responseText = fetchError.message;
                 }
 
-                // Clean up cancellation flag for non-AbortError cases
                 this.userCancelledRequests.delete(eventId);
+                llmResponse = { status: null };
 
-                // Set httpStatus to indicate network/fetch error
-                webhookResponse = { status: null }; // Network error, no HTTP status
-
-                // Update the pending event with the error
                 this.eventService.updateEvent(eventId, null, null, finalError, responseText);
 
-                // Send notification on manual capture
                 if (isManual) {
                     chrome.runtime.sendMessage({
                         action: 'captureComplete',
@@ -255,149 +317,118 @@ export class WebhookService {
                 return { success: false, error: finalError };
             }
 
-            console.log(`Updating event ${eventId} with response. Status: ${webhookResponse.status}, Has data: ${!!responseData}, Response text length: ${responseText.length}`);
+            console.log(`Updating LLM event ${eventId} with response`);
 
-            // Update the existing event with ALL response data
-            // - responseData: parsed JSON if successful
-            // - webhookResponse.status: HTTP status code
-            // - finalError: error message if any
-            // - responseText: ALWAYS preserved (JSON, text, or error string)
-            this.eventService.updateEvent(eventId, responseData, webhookResponse.status, finalError, responseText);
+            // Update the existing event with response data
+            this.eventService.updateEvent(eventId, responseData, llmResponse.status, finalError, responseText);
 
             // Send results to popup if response contains field evaluations
-            // Check if fields are in responseData.fields or at the top level
-            const hasFields = responseData && (
-                responseData.fields ||
-                Object.keys(responseData).some(key => key !== 'reason' && typeof responseData[key] === 'object')
-            );
+            const hasFields = responseData && typeof responseData === 'object' && !responseData.error;
 
             if (hasFields) {
                 chrome.runtime.sendMessage({
                     action: 'captureResults',
                     results: responseData,
-                    eventId: eventId // Send event ID for linking
+                    eventId: eventId
                 });
             }
 
-            // Fire field-level webhooks for TRUE results
+            // Fire field-level webhooks for TRUE results if configured
             if (hasFields && responseData) {
                 await this.fireFieldWebhooks(eventId, domain, responseData);
             }
 
-            console.log(`Screenshot sent successfully to webhook`);
+            console.log(`LLM analysis completed successfully`);
 
-            // Send notification on manual capture
             if (isManual) {
                 chrome.runtime.sendMessage({
                     action: 'captureComplete',
                     success: true,
                     eventId: eventId,
-                    results: responseData // Include results if available
+                    results: responseData
                 });
             }
 
             return { success: true, eventId: eventId };
-        } catch (error) {
-            console.error('Error capturing/sending screenshot:', error);
 
-            // Create error response text from the error
+        } catch (error) {
+            console.error('Error in LLM capture/analysis:', error);
+
             const errorResponseText = error.message || 'Unknown error occurred';
 
-            // If we have an eventId, update the existing event; otherwise create a new one
             if (typeof eventId !== 'undefined') {
                 this.eventService.updateEvent(eventId, null, null, error.message, errorResponseText);
             } else {
-                // Track failed event (screenshot may be undefined if capture failed)
                 this.eventService.trackEvent(null, domain, tab ? tab.url : '', false, null, error.message,
                     typeof dataUrl !== 'undefined' ? dataUrl : null,
                     typeof requestData !== 'undefined' ? requestData : null,
-                    errorResponseText, Date.now()); // Include error as response text
+                    errorResponseText, Date.now());
             }
 
-            // Send error notification on manual capture
             if (isManual) {
                 chrome.runtime.sendMessage({
                     action: 'captureComplete',
                     success: false,
                     error: error.message,
-                    eventId: eventId // Include eventId for field status updates
+                    eventId: eventId
                 });
-            }
-
-            // If it's a permission error or tab doesn't exist, stop capture
-            if (error.message?.includes('Cannot access') || error.message?.includes('No tab')) {
-                this.captureService.stopCapture(tabId);
             }
 
             return { success: false, error: error.message };
         }
     }
 
-    // Fire webhooks for individual fields based on their trigger condition (TRUE or FALSE)
+    // Fire webhooks for individual fields (reused from WebhookService)
     async fireFieldWebhooks(eventId, domain, mainResponseData) {
-        console.log('Checking for field webhooks to fire...');
+        console.log('Checking for field webhooks to fire after LLM analysis...');
 
-        // Get field configurations from storage
         const storage = await chrome.storage.local.get([`fields_${domain}`]);
         const fieldConfigs = storage[`fields_${domain}`] || [];
 
         console.log('Field configurations from storage:', fieldConfigs);
 
-        // Create a map of sanitized field names to configs for easy lookup
         const fieldConfigMap = {};
         fieldConfigs.forEach(field => {
             if (field.name) {
-                // Sanitize the stored field name the same way as response field names
                 const sanitizedName = field.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                 fieldConfigMap[sanitizedName] = field;
-                console.log(`Mapped sanitized field name: "${sanitizedName}" -> "${field.name}"`);
             }
         });
 
-        // Process field results from the main response
         const fieldWebhooks = [];
 
-        // Check each field in the response
-        for (const [fieldName, fieldData] of Object.entries(mainResponseData)) {
-            if (fieldData && typeof fieldData === 'object' && fieldName !== 'reason') {
-                // Get the field result
-                let result = null;
-                if ('result' in fieldData) {
-                    result = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
-                } else if ('boolean' in fieldData) {
-                    result = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
-                }
+        // Process field results from the LLM response
+        for (const [fieldName, fieldResult] of Object.entries(mainResponseData)) {
+            if (fieldName !== 'reason' && Array.isArray(fieldResult) && fieldResult.length >= 1) {
+                const result = fieldResult[0]; // boolean result
+                const probability = fieldResult.length > 1 ? fieldResult[1] : null;
 
-                console.log(`Field "${fieldName}" result:`, result);
+                console.log(`LLM Field "${fieldName}" result:`, result, 'probability:', probability);
 
-                // Get field configuration
                 const fieldConfig = fieldConfigMap[fieldName];
                 if (fieldConfig && fieldConfig.webhookEnabled && fieldConfig.webhookUrl) {
-                    // Check webhookTrigger setting (defaults to true for backward compatibility)
-                    const shouldTriggerOnTrue = fieldConfig.webhookTrigger !== false; // Default to true if undefined
+                    const shouldTriggerOnTrue = fieldConfig.webhookTrigger !== false;
                     const shouldFireWebhook = shouldTriggerOnTrue ? result === true : result === false;
 
-                    console.log(`Field "${fieldName}": result=${result}, trigger on TRUE=${shouldTriggerOnTrue}, should fire=${shouldFireWebhook}`);
-
                     if (shouldFireWebhook) {
-                        console.log(`Field "${fieldName}" matches trigger condition (${shouldTriggerOnTrue ? 'TRUE' : 'FALSE'}) - firing webhook:`, fieldConfig.webhookUrl);
+                        console.log(`LLM Field "${fieldName}" firing webhook:`, fieldConfig.webhookUrl);
 
                         try {
                             const fieldWebhookResult = await this.fireFieldWebhook(
-                                fieldConfig.name, // Use the original field name for display
+                                fieldConfig.name,
                                 fieldConfig.webhookUrl,
                                 fieldConfig.webhookPayload,
-                                fieldData
+                                { result: [result, probability] }
                             );
 
                             fieldWebhooks.push({
-                                fieldName: fieldConfig.name, // Use the original field name for display
+                                fieldName: fieldConfig.name,
                                 ...fieldWebhookResult
                             });
                         } catch (error) {
-                            console.error(`Failed to fire webhook for field "${fieldConfig.name}":`, error);
+                            console.error(`Failed to fire webhook for LLM field "${fieldConfig.name}":`, error);
                             fieldWebhooks.push({
-                                fieldName: fieldConfig.name, // Use the original field name for display
+                                fieldName: fieldConfig.name,
                                 request: {
                                     url: fieldConfig.webhookUrl,
                                     method: fieldConfig.webhookPayload ? 'POST' : 'GET',
@@ -414,18 +445,15 @@ export class WebhookService {
             }
         }
 
-        // Update the event with field webhook results if any were fired
         if (fieldWebhooks.length > 0) {
-            console.log(`Fired ${fieldWebhooks.length} field webhooks`);
+            console.log(`Fired ${fieldWebhooks.length} field webhooks after LLM analysis`);
             this.eventService.addFieldWebhooksToEvent(eventId, fieldWebhooks);
-        } else {
-            console.log('No field webhooks to fire');
         }
     }
 
-    // Fire a single field webhook
+    // Fire a single field webhook (reused from WebhookService)
     async fireFieldWebhook(fieldName, webhookUrl, customPayload, fieldResult) {
-        console.log(`Firing webhook for field "${fieldName}" to ${webhookUrl}`);
+        console.log(`Firing webhook for LLM field "${fieldName}" to ${webhookUrl}`);
 
         const requestData = {
             url: webhookUrl,
@@ -437,10 +465,9 @@ export class WebhookService {
         try {
             let response;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
 
             if (customPayload) {
-                // POST request with custom JSON payload
                 let parsedPayload;
                 try {
                     parsedPayload = JSON.parse(customPayload);
@@ -457,7 +484,6 @@ export class WebhookService {
                     signal: controller.signal
                 });
             } else {
-                // GET request
                 response = await fetch(webhookUrl, {
                     method: 'GET',
                     signal: controller.signal
@@ -466,7 +492,6 @@ export class WebhookService {
 
             clearTimeout(timeoutId);
 
-            // Get response text
             let responseText = '';
             try {
                 responseText = await response.text();
@@ -493,30 +518,25 @@ export class WebhookService {
         }
     }
 
-    // Cancel a pending request
+    // Cancel a pending LLM request
     cancelRequest(eventId) {
         if (this.pendingRequests.has(eventId)) {
             const controller = this.pendingRequests.get(eventId);
-
-            // Mark this as a user-initiated cancellation BEFORE aborting
             this.userCancelledRequests.add(eventId);
-
             controller.abort();
             this.pendingRequests.delete(eventId);
-            console.log(`User cancelled request for event ${eventId}`);
+            console.log(`User cancelled LLM request for event ${eventId}`);
 
-            // Update the event as cancelled with cancellation message as response
-            const cancellationMessage = 'Request cancelled by user';
+            const cancellationMessage = 'LLM request cancelled by user';
             this.eventService.updateEvent(eventId, null, null, cancellationMessage, cancellationMessage);
 
-            // Clean up the cancellation flag after a short delay (in case the AbortError handler runs)
             setTimeout(() => {
                 this.userCancelledRequests.delete(eventId);
             }, 1000);
 
             return { success: true };
         } else {
-            return { success: false, error: 'Request not found or already completed' };
+            return { success: false, error: 'LLM request not found or already completed' };
         }
     }
 

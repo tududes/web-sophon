@@ -1,9 +1,10 @@
 // Chrome runtime message handling service
 export class MessageService {
-    constructor(captureService, webhookService, eventService) {
+    constructor(captureService, webhookService, eventService, llmService) {
         this.captureService = captureService;
         this.webhookService = webhookService;
         this.eventService = eventService;
+        this.llmService = llmService;
         this.setupMessageListener();
     }
 
@@ -55,21 +56,59 @@ export class MessageService {
                     break;
 
                 case 'cancelRequest':
-                    // Cancel a pending request
-                    const result = this.webhookService.cancelRequest(request.eventId);
+                    // Cancel a pending request (works for both webhook and LLM)
+                    let result = this.webhookService.cancelRequest(request.eventId);
+                    if (!result.success && this.llmService) {
+                        result = this.llmService.cancelRequest(request.eventId);
+                    }
                     sendResponse(result);
                     break;
 
                 case 'captureNow':
-                    // Manual capture
-                    console.log('Manual capture requested:', request);
-                    this.webhookService.captureAndSend(request.tabId, request.domain, request.webhookUrl, true, request.fields)
+                    // Manual capture with webhook
+                    console.log('Manual webhook capture requested:', request);
+                    this.webhookService.captureAndSend(
+                        request.tabId,
+                        request.domain,
+                        request.webhookUrl,
+                        true,
+                        request.fields,
+                        request.refreshPage,
+                        request.captureDelay
+                    )
                         .then(result => {
-                            console.log('Capture result:', result);
+                            console.log('Webhook capture result:', result);
                             sendResponse(result);
                         })
                         .catch(error => {
-                            console.error('Capture error in background:', error);
+                            console.error('Webhook capture error in background:', error);
+                            sendResponse({ success: false, error: error.message });
+                        });
+                    return true; // Will respond asynchronously
+
+                case 'captureLLM':
+                    // Manual capture with LLM
+                    console.log('Manual LLM capture requested:', request);
+                    if (!this.llmService) {
+                        sendResponse({ success: false, error: 'LLM service not available' });
+                        return;
+                    }
+
+                    this.llmService.captureAndSend(
+                        request.tabId,
+                        request.domain,
+                        request.llmConfig,
+                        true,
+                        request.fields,
+                        request.refreshPage,
+                        request.captureDelay
+                    )
+                        .then(result => {
+                            console.log('LLM capture result:', result);
+                            sendResponse(result);
+                        })
+                        .catch(error => {
+                            console.error('LLM capture error in background:', error);
                             sendResponse({ success: false, error: error.message });
                         });
                     return true; // Will respond asynchronously

@@ -750,8 +750,33 @@ input:checked+.slider:before {
 .webhook-toggle-group {
     display: flex;
     align-items: center;
-    gap: var(--space-md);
-    margin-bottom: var(--space-md);
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+}
+
+.webhook-config-text {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--text-sm);
+}
+
+.webhook-trigger-dropdown {
+    padding: var(--space-xs);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.webhook-trigger-dropdown:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .webhook-url-group {
@@ -1123,8 +1148,7 @@ input:checked+.slider:before {
 
 .domain-item {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
     padding: 12px;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-primary);
@@ -1134,7 +1158,65 @@ input:checked+.slider:before {
 
 .domain-item:hover {
     border-color: var(--accent-primary);
-    /* Remove box-shadow to prevent repaints */
+}
+
+.domain-item.current-domain-item {
+    border-color: var(--accent-primary);
+    background-color: var(--accent-light);
+}
+
+.domain-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xs);
+}
+
+.domain-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+}
+
+.domain-status {
+    font-size: var(--text-xs);
+    font-weight: 500;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-sm);
+}
+
+.domain-status.enabled {
+    background-color: var(--success-light);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+}
+
+.domain-status.disabled {
+    background-color: var(--text-light);
+    color: var(--text-muted);
+    border: 1px solid var(--border-secondary);
+}
+
+.domain-details {
+    display: flex;
+    gap: var(--space-md);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.domain-interval,
+.domain-fields {
+    font-weight: 500;
+}
+
+.no-domains {
+    text-align: center;
+    padding: var(--space-xl);
+    color: var(--text-muted);
+    font-style: italic;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
 }
 
 /* Responsive Design */
@@ -1489,4 +1571,81 @@ input:checked+.slider:before {
 /* Ensure proper spacing between sections */
 .data-section+.field-webhook {
     margin-top: 10px;
+}
+
+/* LLM Configuration Section */
+.llm-config-section {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    margin-top: var(--space-md);
+    transition: all 0.3s ease;
+}
+
+.llm-config-section.visible {
+    display: block !important;
+    animation: fadeIn 0.3s ease;
+}
+
+.llm-config-section .form-group {
+    margin-bottom: var(--space-md);
+}
+
+.llm-config-section .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.llm-config-section label {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 500;
+}
+
+.llm-config-section input[type="password"] {
+    font-family: monospace;
+    letter-spacing: 1px;
+}
+
+.llm-config-section input[type="number"] {
+    width: 120px;
+}
+
+.llm-config-section select {
+    width: 100%;
+}
+
+.llm-config-section optgroup {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: var(--space-xs);
+}
+
+.llm-config-section option {
+    font-weight: normal;
+    padding: var(--space-xs);
+}
+
+/* Custom Model Field */
+#custom-model-group {
+    background-color: var(--bg-tertiary);
+    border: 1px dashed var(--border-secondary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-md);
+    margin-top: var(--space-sm);
+    transition: all 0.3s ease;
+}
+
+#custom-model-group label {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+#custom-model-group input {
+    font-family: monospace;
+    font-size: var(--text-sm);
+}
+
+.data-section+.field-webhook {
+    margin-top: var(--space-md);
 }

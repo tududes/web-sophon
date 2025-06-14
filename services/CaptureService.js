@@ -7,16 +7,21 @@ export class CaptureService {
 
     // Start capturing screenshots for a tab
     startCapture(settings, webhookService, eventService) {
-        const { tabId, domain, interval, webhookUrl } = settings;
+        const { tabId, domain, interval, webhookUrl, refreshPage = false, captureDelay = 0 } = settings;
 
         // Stop any existing capture for this tab
         this.stopCapture(tabId);
 
-        // Store settings
-        this.captureSettings.set(tabId, { domain, webhookUrl });
+        // Store settings including new refresh and delay options
+        this.captureSettings.set(tabId, {
+            domain,
+            webhookUrl,
+            refreshPage,
+            captureDelay
+        });
 
         // Get domain-specific fields for automatic captures
-        chrome.storage.sync.get([`fields_${domain}`], (data) => {
+        chrome.storage.local.get([`fields_${domain}`], (data) => {
             const domainFields = data[`fields_${domain}`] || [];
             const fields = domainFields
                 .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
@@ -28,12 +33,12 @@ export class CaptureService {
             console.log(`Starting capture with fields for ${domain}:`, fields);
 
             // Capture immediately
-            webhookService.captureAndSend(tabId, domain, webhookUrl, false, fields);
+            webhookService.captureAndSend(tabId, domain, webhookUrl, false, fields, refreshPage, captureDelay);
 
             // Set up interval
             const intervalId = setInterval(() => {
                 // Re-fetch fields each time in case they've changed
-                chrome.storage.sync.get([`fields_${domain}`], (data) => {
+                chrome.storage.local.get([`fields_${domain}`], (data) => {
                     const currentFields = data[`fields_${domain}`] || [];
                     const apiFields = currentFields
                         .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
@@ -41,7 +46,7 @@ export class CaptureService {
                             name: this.sanitizeFieldName(f.friendlyName || f.name),
                             criteria: this.escapeJsonString(f.description)
                         }));
-                    webhookService.captureAndSend(tabId, domain, webhookUrl, false, apiFields);
+                    webhookService.captureAndSend(tabId, domain, webhookUrl, false, apiFields, refreshPage, captureDelay);
                 });
             }, interval * 1000);
 
@@ -71,7 +76,9 @@ export class CaptureService {
                 tabId,
                 domain: currentSettings.domain,
                 interval,
-                webhookUrl: currentSettings.webhookUrl
+                webhookUrl: currentSettings.webhookUrl,
+                refreshPage: currentSettings.refreshPage || false,
+                captureDelay: currentSettings.captureDelay || 0
             }, webhookService, eventService);
         }
     }
