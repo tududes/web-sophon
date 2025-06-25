@@ -122,7 +122,7 @@ export class UIManager {
           
           <textarea class="webhook-payload-input" 
                     placeholder='{ "content": "message" }'
-                    style="${field.webhookEnabled || field.webhookPayload !== '{}' ? '' : 'display: none;'}">${field.webhookPayload}</textarea>
+                    style="${field.webhookEnabled ? '' : 'display: none;'}">${field.webhookPayload}</textarea>
           
           <div class="webhook-logs" style="display: none;">
             <div class="logs-header">
@@ -231,17 +231,30 @@ export class UIManager {
             if (!actualField) return;
 
             actualField.webhookEnabled = webhookToggle.checked;
-            if (actualField.webhookEnabled || actualField.webhookUrl) {
+
+            // Show/hide webhook settings
+            if (actualField.webhookEnabled) {
                 if (webhookSettings) webhookSettings.style.display = '';
-                webhookUrlGroup.style.display = '';
-                webhookConfidenceGroup.style.display = '';
-                webhookPayloadInput.style.display = '';
             } else {
                 if (webhookSettings) webhookSettings.style.display = 'none';
+            }
+
+            // Show/hide URL and confidence groups (show if enabled OR if URL exists)
+            if (actualField.webhookEnabled || actualField.webhookUrl) {
+                webhookUrlGroup.style.display = '';
+                webhookConfidenceGroup.style.display = '';
+            } else {
                 webhookUrlGroup.style.display = 'none';
                 webhookConfidenceGroup.style.display = 'none';
+            }
+
+            // Show/hide payload input (only when enabled)
+            if (actualField.webhookEnabled) {
+                webhookPayloadInput.style.display = '';
+            } else {
                 webhookPayloadInput.style.display = 'none';
             }
+
             this.fieldManager.saveToStorage();
         });
 

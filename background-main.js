@@ -15,6 +15,9 @@ const webhookService = new WebhookService(captureService, eventService);
 const llmService = new LLMService(captureService, eventService);
 const messageService = new MessageService(captureService, webhookService, eventService, llmService);
 
+// Set cross-references for DRY principle
+captureService.setMessageService(messageService);
+
 // Set up tab cleanup listeners
 messageService.setupTabListeners();
 

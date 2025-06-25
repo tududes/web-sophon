@@ -213,6 +213,11 @@ class CleanPopupController {
             chrome.storage.local.set({ fullPageCaptureToggle: e.target.checked });
         });
 
+        // Capture interval
+        this.elements.captureInterval?.addEventListener('change', (e) => {
+            this.handleCaptureIntervalChange(e.target.value);
+        });
+
         // Clear previous evaluation button
         this.elements.clearPreviousEvaluationBtn?.addEventListener('click', () => {
             this.clearPreviousEvaluation();
@@ -425,19 +430,24 @@ class CleanPopupController {
                 throw new Error('Please enable WebSophon for this domain first');
             }
 
-            // 2. Validate LLM configuration
-            const llmConfig = await this.getLlmConfig();
-            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
-                throw new Error('Please configure LLM API URL and API Key first');
+            // 2. Use shared capture data preparation (DRY principle)
+            const prepareDataResponse = await this.sendMessageToBackground({
+                action: 'prepareCaptureData',
+                domain: this.currentDomain
+            });
+
+            if (!prepareDataResponse.success) {
+                throw new Error(prepareDataResponse.error || 'Failed to prepare capture data');
             }
 
-            // 3. Validate fields
-            const validationErrors = this.fieldManager.validateFields();
-            if (validationErrors.length > 0) {
-                throw new Error(validationErrors[0]);
+            const { fields: fieldsFromStorage } = prepareDataResponse.data;
+
+            // 3. Validate fields exist
+            if (!fieldsFromStorage || fieldsFromStorage.length === 0) {
+                throw new Error('No valid fields configured for this domain');
             }
 
-            // 4. Mark all fields as pending atomically
+            // 4. Mark all fields as pending atomically (UI management)
             const eventId = Date.now().toString();
             this.fieldManager.markFieldsPending(eventId);
             await this.fieldManager.saveToStorage();
@@ -448,11 +458,8 @@ class CleanPopupController {
             // 6. Show capture status
             this.showStatus('Starting capture...', 'info');
 
-            // 7. Send capture request with clean field data
-            const fieldsForAPI = this.fieldManager.getFieldsForAPI();
-            console.log('Sending fields to API:', fieldsForAPI);
-
-            const response = await this.sendCaptureRequest(fieldsForAPI, eventId, llmConfig);
+            // 7. Send capture request using shared preparation data
+            const response = await this.sendCaptureRequest(fieldsFromStorage, eventId, null);
 
             // 8. Handle response
             if (response.success) {
@@ -476,16 +483,17 @@ class CleanPopupController {
 
     async sendCaptureRequest(fields, eventId, llmConfig) {
         try {
-            // Get previous evaluation data if enabled
-            let previousEvaluation = null;
-            const usePreviousEvaluation = await this.getUsePreviousEvaluationSetting();
+            // Use shared data preparation from background for consistency (DRY principle)
+            const prepareDataResponse = await this.sendMessageToBackground({
+                action: 'prepareCaptureData',
+                domain: this.currentDomain
+            });
 
-            if (usePreviousEvaluation) {
-                previousEvaluation = await this.getPreviousEvaluation();
-                console.log('Using previous evaluation context:', previousEvaluation);
-            } else {
-                console.log('Previous evaluation context disabled by user setting');
+            if (!prepareDataResponse.success) {
+                return { success: false, error: prepareDataResponse.error };
             }
+
+            const { llmConfig: freshLlmConfig, previousEvaluation } = prepareDataResponse.data;
 
             const message = {
                 action: 'captureLLM',
@@ -493,7 +501,8 @@ class CleanPopupController {
                 domain: this.currentDomain,
                 fields: fields,
                 eventId: eventId,
-                llmConfig: llmConfig,
+                llmConfig: freshLlmConfig, // Use fresh config from shared preparation
+                isManual: true,
                 refreshPage: this.elements.refreshPageToggle?.checked || false,
                 captureDelay: parseInt(this.elements.captureDelay?.value || '0'),
                 fullPageCapture: this.elements.fullPageCaptureToggle?.checked || false,
@@ -674,7 +683,6 @@ class CleanPopupController {
                 return;
             }
 
-            this.fieldManager.saveToStorage();
             this.renderPresets();
 
             if (this.elements.presetSelector) {
@@ -761,9 +769,12 @@ class CleanPopupController {
                 this.elements.consentToggle.checked = consentData[consentKey] || false;
             }
 
-            // Set interval (not implemented in current UI but could be)
-            const savedInterval = intervalData[intervalKey] || 300000; // 5 minutes default
-            console.log('Domain interval setting:', savedInterval);
+            // Set capture interval
+            if (this.elements.captureInterval) {
+                const savedInterval = intervalData[intervalKey] || 'manual';
+                this.elements.captureInterval.value = savedInterval;
+                console.log('Loaded capture interval setting:', savedInterval);
+            }
 
             // Load capture settings
             if (this.elements.refreshPageToggle) {
@@ -1378,6 +1389,77 @@ class CleanPopupController {
             captureDelayGroup.style.display = isEnabled ? 'block' : 'none';
         }
     }
+
+    async handleCaptureIntervalChange(intervalValue) {
+        try {
+            console.log('Capture interval changed to:', intervalValue);
+
+            // Save the interval setting for this domain
+            const intervalKey = `interval_${this.currentDomain}`;
+            await chrome.storage.local.set({ [intervalKey]: intervalValue });
+
+            // Get current tab
+            const tabId = await this.getCurrentTabId();
+            if (!tabId) {
+                throw new Error('Could not get current tab');
+            }
+
+            if (intervalValue === 'manual') {
+                // Stop automatic capture
+                console.log('Stopping automatic capture');
+                await this.sendMessageToBackground({
+                    action: 'stopCapture',
+                    tabId: tabId
+                });
+                this.showStatus('Automatic capture stopped', 'info');
+            } else {
+                // Validate domain consent and LLM config before starting
+                if (!this.elements.consentToggle?.checked) {
+                    // Reset to manual
+                    this.elements.captureInterval.value = 'manual';
+                    await chrome.storage.local.set({ [intervalKey]: 'manual' });
+                    throw new Error('Please enable WebSophon for this domain first');
+                }
+
+                const llmConfig = await this.getLlmConfig();
+                if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+                    // Reset to manual
+                    this.elements.captureInterval.value = 'manual';
+                    await chrome.storage.local.set({ [intervalKey]: 'manual' });
+                    throw new Error('Please configure LLM API URL and API Key first');
+                }
+
+                // Start automatic capture
+                const intervalSeconds = parseInt(intervalValue);
+                console.log(`Starting automatic capture every ${intervalSeconds} seconds`);
+
+                await this.sendMessageToBackground({
+                    action: 'startCapture',
+                    tabId: tabId,
+                    domain: this.currentDomain,
+                    interval: intervalSeconds
+                });
+
+                this.showStatus(`Automatic capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
+            }
+
+        } catch (error) {
+            console.error('Error handling capture interval change:', error);
+            this.showError(error.message);
+        }
+    }
+
+    formatInterval(seconds) {
+        if (seconds < 60) {
+            return `${seconds} seconds`;
+        } else if (seconds < 3600) {
+            return `${Math.floor(seconds / 60)} minutes`;
+        } else if (seconds < 86400) {
+            return `${Math.floor(seconds / 3600)} hours`;
+        } else {
+            return `${Math.floor(seconds / 86400)} days`;
+        }
+    }
 }
 
 // LLM-only Field Manager (simplified version)
@@ -1546,22 +1628,31 @@ class FieldManagerLLM {
     }
 
     savePreset(name) {
-        if (!name || !name.trim()) return false;
+        if (!name || !name.trim()) {
+            throw new Error('Please provide a preset name');
+        }
 
-        const presetFields = this.fields.map(field => ({
-            id: field.id,
-            name: field.name,
-            friendlyName: field.friendlyName,
-            description: field.description
-        }));
-
-        this.presets[name.trim()] = {
+        // Create clean preset data
+        const presetData = {
             name: name.trim(),
-            fields: presetFields,
-            created: new Date().toISOString(),
-            domain: this.currentDomain
+            fields: this.fields.map(field => ({
+                // Only save essential field configuration, not runtime state
+                name: field.name,
+                friendlyName: field.friendlyName,
+                description: field.description,
+                webhookEnabled: field.webhookEnabled,
+                webhookTrigger: field.webhookTrigger,
+                webhookUrl: field.webhookUrl,
+                webhookPayload: field.webhookPayload,
+                webhookMinConfidence: field.webhookMinConfidence
+            })),
+            timestamp: new Date().toISOString()
         };
 
+        this.presets[name.trim()] = presetData;
+        this.saveToStorage();
+
+        console.log(`Saved preset "${name}" with ${presetData.fields.length} fields`);
         return true;
     }
 
@@ -1605,13 +1696,15 @@ class FieldManagerLLM {
     async saveToStorage() {
         try {
             const domainKey = `fields_${this.currentDomain}`;
-            const updates = {
-                [domainKey]: this.fields,
-                fieldPresets: this.presets
-            };
+            const presetKey = `presets_${this.currentDomain}`;
 
-            await chrome.storage.local.set(updates);
-            console.log(`Saved ${this.fields.length} fields for domain: ${this.currentDomain}`);
+            await Promise.all([
+                chrome.storage.local.set({ [domainKey]: this.fields }),
+                chrome.storage.local.set({ [presetKey]: this.presets })
+            ]);
+
+            console.log(`Saved ${this.fields.length} fields and ${Object.keys(this.presets).length} presets for domain: ${this.currentDomain}`);
+
         } catch (error) {
             console.error('Error saving to storage:', error);
             throw error;
@@ -1621,38 +1714,55 @@ class FieldManagerLLM {
     async loadFromStorage() {
         try {
             const domainKey = `fields_${this.currentDomain}`;
-            const data = await chrome.storage.local.get([domainKey, 'fieldPresets']);
+            const presetKey = `presets_${this.currentDomain}`;
 
-            this.fields = data[domainKey] || [];
-            this.presets = data.fieldPresets || {};
+            const [fieldsData, presetsData] = await Promise.all([
+                chrome.storage.local.get([domainKey]),
+                chrome.storage.local.get([presetKey])
+            ]);
 
-            console.log(`Loaded ${this.fields.length} fields for domain: ${this.currentDomain}`);
+            // Load fields from storage
+            const storedFields = fieldsData[domainKey] || [];
+            console.log(`Loading ${storedFields.length} fields for domain:`, this.currentDomain);
 
-            // Ensure all fields have required properties
-            this.fields = this.fields.map(field => ({
-                id: field.id || this.generateFieldId(),
-                name: field.name || this.sanitizeFieldName(field.friendlyName || ''),
-                friendlyName: field.friendlyName || field.name || '',
-                description: field.description || '',
-                result: field.result || null,
-                probability: field.probability || null,
-                lastStatus: field.lastStatus || null,
-                lastError: field.lastError || null,
-                lastEventId: field.lastEventId || null,
-                lastResultTime: field.lastResultTime || null,
-                isPending: false, // Always clear pending state on load - no requests active after restart
-                // Add webhook properties for backwards compatibility
-                webhookEnabled: field.webhookEnabled || false,
-                webhookTrigger: field.webhookTrigger !== undefined ? field.webhookTrigger : true,
-                webhookUrl: field.webhookUrl || '',
-                webhookPayload: field.webhookPayload || '',
-                webhookMinConfidence: field.webhookMinConfidence !== undefined ? field.webhookMinConfidence : 75
+            this.fields = storedFields.map(fieldData => ({
+                ...fieldData,
+                id: fieldData.id || this.generateFieldId(),
+                // Ensure result and status fields exist (may have been updated by automatic captures)
+                result: fieldData.result !== undefined ? fieldData.result : null,
+                probability: fieldData.probability !== undefined ? fieldData.probability : null,
+                lastStatus: fieldData.lastStatus || null,
+                lastError: fieldData.lastError || null,
+                lastEventId: fieldData.lastEventId || null,
+                lastResultTime: fieldData.lastResponseTime || fieldData.lastResultTime || null,
+                isPending: fieldData.isPending || false,
+                // Ensure webhook properties exist for backwards compatibility
+                webhookEnabled: fieldData.webhookEnabled || false,
+                webhookTrigger: fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true,
+                webhookUrl: fieldData.webhookUrl || '',
+                webhookPayload: fieldData.webhookPayload || '',
+                webhookMinConfidence: fieldData.webhookMinConfidence !== undefined ? fieldData.webhookMinConfidence : 75
             }));
+
+            console.log(`Loaded field results:`, this.fields.map(f => ({
+                name: f.name,
+                result: f.result,
+                probability: f.probability,
+                lastStatus: f.lastStatus,
+                lastEventId: f.lastEventId
+            })));
+
+            // Load presets from storage
+            this.presets = presetsData[presetKey] || {};
+            console.log(`Loaded ${Object.keys(this.presets).length} presets for domain:`, this.currentDomain);
+
+            return { fieldsLoaded: this.fields.length, presetsLoaded: Object.keys(this.presets).length };
 
         } catch (error) {
             console.error('Error loading from storage:', error);
             this.fields = [];
             this.presets = {};
+            return { fieldsLoaded: 0, presetsLoaded: 0, error: error.message };
         }
     }
 

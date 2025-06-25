@@ -130,31 +130,10 @@ Return only JSON.`;
                 console.log('Capture delay completed');
             }
 
-            // For automatic captures, get fields from storage
-            if (!fields && !isManual) {
-                const domainKey = `fields_${domain}`;
-                const storage = await chrome.storage.local.get([domainKey]);
-                const domainFields = storage[domainKey] || [];
-
-                console.log(`Loading fields for domain ${domain}:`, domainFields);
-
-                // Filter and validate fields
-                const validFields = domainFields.filter(f => {
-                    const hasName = f.name && f.name.trim();
-                    const hasDescription = f.description && f.description.trim();
-                    return hasName && hasDescription;
-                });
-
-                fields = validFields.map(f => ({
-                    name: this.captureService.sanitizeFieldName(f.friendlyName || f.name),
-                    criteria: f.description
-                }));
-
-                console.log(`Final fields for LLM:`, fields);
-
-                if (fields.length === 0) {
-                    console.log('No valid fields configured for domain:', domain);
-                }
+            // Fields should always be provided by caller (DRY principle)
+            if (!fields || fields.length === 0) {
+                console.log('No fields provided for capture');
+                // Still continue - some captures might be for screenshot-only purposes
             }
 
             // Get full page preference from storage
@@ -454,7 +433,9 @@ Return only JSON.`;
                     results: responseData,
                     fieldResults: fieldResults,
                     hasActualFields: hasActualFields,
-                    eventId: eventId
+                    eventId: eventId,
+                    domain: domain,
+                    isManual: isManual
                 };
 
                 console.log('=== LLM RESULTS DEBUG ===');

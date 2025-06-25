@@ -4,11 +4,22 @@ export class CaptureService {
         this.captureIntervals = new Map(); // Map of tabId to interval ID
         this.captureSettings = new Map(); // Map of tabId to capture settings
         this.activeCdpSessions = new Set(); // Track active CDP sessions
+        this.messageService = null; // Reference to MessageService for shared capture logic
+    }
+
+    // Set reference to MessageService for DRY capture logic
+    setMessageService(messageService) {
+        this.messageService = messageService;
+    }
+
+    // Get MessageService reference
+    getMessageService() {
+        return this.messageService;
     }
 
     // Start capturing screenshots for a tab
-    startCapture(settings, webhookService, eventService) {
-        const { tabId, domain, interval, webhookUrl, refreshPage = false, captureDelay = 0 } = settings;
+    startCapture(settings, llmService, eventService) {
+        const { tabId, domain, interval, refreshPage = false, captureDelay = 0 } = settings;
 
         // Stop any existing capture for this tab
         this.stopCapture(tabId);
@@ -16,44 +27,44 @@ export class CaptureService {
         // Store settings including new refresh and delay options
         this.captureSettings.set(tabId, {
             domain,
-            webhookUrl,
             refreshPage,
             captureDelay
         });
 
-        // Get domain-specific fields for automatic captures
-        chrome.storage.local.get([`fields_${domain}`], (data) => {
-            const domainFields = data[`fields_${domain}`] || [];
-            const fields = domainFields
-                .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
-                .map(f => ({
-                    name: this.sanitizeFieldName(f.friendlyName || f.name),
-                    criteria: this.escapeJsonString(f.description)
-                }));
+        console.log(`Starting automatic LLM capture for ${domain} every ${interval} seconds`);
 
-            console.log(`Starting capture with fields for ${domain}:`, fields);
+        // Function to perform automatic capture using shared capture logic
+        const performAutomaticCapture = async () => {
+            try {
+                console.log(`Triggering automatic capture for domain ${domain}`);
 
-            // Capture immediately
-            webhookService.captureAndSend(tabId, domain, webhookUrl, false, fields, refreshPage, captureDelay);
+                // Use the shared capture method from MessageService (DRY principle)
+                const messageService = this.getMessageService();
+                if (messageService) {
+                    const response = await messageService.performCapture(tabId, domain, false); // isManual = false
 
-            // Set up interval
-            const intervalId = setInterval(() => {
-                // Re-fetch fields each time in case they've changed
-                chrome.storage.local.get([`fields_${domain}`], (data) => {
-                    const currentFields = data[`fields_${domain}`] || [];
-                    const apiFields = currentFields
-                        .filter(f => f.name && f.name.trim() && f.description && f.description.trim()) // Filter out empty fields
-                        .map(f => ({
-                            name: this.sanitizeFieldName(f.friendlyName || f.name),
-                            criteria: this.escapeJsonString(f.description)
-                        }));
-                    webhookService.captureAndSend(tabId, domain, webhookUrl, false, apiFields, refreshPage, captureDelay);
-                });
-            }, interval * 1000);
+                    if (response.success) {
+                        console.log('Automatic capture completed successfully');
+                    } else {
+                        console.log('Automatic capture failed:', response.error);
+                    }
+                } else {
+                    console.error('MessageService not available for automatic capture');
+                }
 
-            this.captureIntervals.set(tabId, intervalId);
-            console.log(`Started capture for tab ${tabId} on domain ${domain} every ${interval} seconds`);
-        });
+            } catch (error) {
+                console.error('Error in automatic capture:', error);
+            }
+        };
+
+        // Capture immediately
+        performAutomaticCapture();
+
+        // Set up interval for repeated captures
+        const intervalId = setInterval(performAutomaticCapture, interval * 1000);
+
+        this.captureIntervals.set(tabId, intervalId);
+        console.log(`Started automatic LLM capture for tab ${tabId} on domain ${domain} every ${interval} seconds`);
     }
 
     // Stop capturing screenshots for a tab
@@ -71,7 +82,7 @@ export class CaptureService {
     }
 
     // Update capture interval for a tab
-    updateInterval(settings, webhookService, eventService) {
+    updateInterval(settings, llmService, eventService) {
         const { tabId, interval } = settings;
 
         if (this.captureIntervals.has(tabId)) {
@@ -81,10 +92,9 @@ export class CaptureService {
                 tabId,
                 domain: currentSettings.domain,
                 interval,
-                webhookUrl: currentSettings.webhookUrl,
                 refreshPage: currentSettings.refreshPage || false,
                 captureDelay: currentSettings.captureDelay || 0
-            }, webhookService, eventService);
+            }, llmService, eventService);
         }
     }
 
