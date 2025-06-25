@@ -768,8 +768,8 @@ input:checked+.slider:hover {
 
 .webhook-trigger-dropdown:focus {
     outline: none;
-    border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.1);
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .webhook-url-group {
@@ -1630,6 +1630,20 @@ input:checked+.slider:hover {
     margin-bottom: 0;
 }
 
+/* Setting descriptions (works in both Settings and Capture tabs) */
+.setting-description {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+/* Form group setting descriptions */
+.form-group .setting-description {
+    margin-top: 6px;
+    margin-left: 0;
+}
+
 /* END OF FILE - Duplicate styles removed for clean layout */
 
 @keyframes highlightPulse {
@@ -2372,3 +2386,101 @@ input:checked+.slider:hover {
     border-top: none;
     margin-bottom: 8px;
 }
+
+/* Previous Evaluation Section */
+.previous-evaluation-section {
+    margin: 12px 0;
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.previous-evaluation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-secondary);
+    transition: background-color 0.2s ease;
+}
+
+.previous-evaluation-header:hover {
+    background: var(--bg-hover);
+}
+
+.section-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+}
+
+.expand-indicator {
+    transition: transform 0.2s ease;
+    color: var(--text-secondary);
+}
+
+.previous-evaluation-section.expanded .expand-indicator {
+    transform: rotate(180deg);
+}
+
+.previous-evaluation-content {
+    display: none;
+    padding: 12px;
+    background: var(--bg-primary);
+}
+
+.previous-evaluation-section.expanded .previous-evaluation-content {
+    display: block;
+}
+
+.prev-eval-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-tertiary);
+    font-size: var(--text-sm);
+}
+
+.prev-eval-item:last-child {
+    border-bottom: none;
+}
+
+.prev-eval-field {
+    font-weight: 500;
+    color: var(--text-primary);
+    min-width: 120px;
+}
+
+.prev-eval-result {
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+}
+
+.prev-eval-result.prev-eval-true {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.prev-eval-result.prev-eval-false {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+.prev-eval-confidence {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+
+.prev-eval-timestamp {
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+    margin-left: auto;
+}
+
+/* End Previous Evaluation Section */

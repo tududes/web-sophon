@@ -355,6 +355,8 @@ export class HistoryManager {
                   ${event.httpStatus ? `<div class="detail-item"><strong>HTTP Status:</strong> ${event.httpStatus}</div>` : ''}
                   ${event.error ? `<div class="detail-item"><strong>Error:</strong> ${event.error}</div>` : ''}
                   
+                  ${this.renderPreviousEvaluation(event)}
+
                   ${event.screenshot ? `
                     <div class="detail-item screenshot-detail">
                       <div class="screenshot-header">
@@ -572,6 +574,49 @@ export class HistoryManager {
         if (httpStatus >= 500) return 'Server Error';
         return 'Unknown';
     }
+
+    // Render previous evaluation section for an event
+    renderPreviousEvaluation(event) {
+        if (!event.requestData || !event.requestData.previousEvaluation) {
+            return '';
+        }
+
+        const prevEval = event.requestData.previousEvaluation;
+        const prevEvalEntries = Object.entries(prevEval);
+
+        if (prevEvalEntries.length === 0) {
+            return '';
+        }
+
+        const prevEvalItems = prevEvalEntries.map(([fieldName, data]) => {
+            const resultClass = data.result ? 'prev-eval-true' : 'prev-eval-false';
+            const confidencePercent = Math.round(data.confidence * 100);
+            const timestamp = new Date(data.timestamp).toLocaleString();
+
+            return `
+                <div class="prev-eval-item">
+                    <span class="prev-eval-field">${fieldName}:</span>
+                    <span class="prev-eval-result ${resultClass}">${data.result ? 'TRUE' : 'FALSE'}</span>
+                    <span class="prev-eval-confidence">(${confidencePercent}%)</span>
+                    <span class="prev-eval-timestamp">at ${timestamp}</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="previous-evaluation-section">
+                <div class="previous-evaluation-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <span class="section-title">📊 Previous Evaluation Context</span>
+                    <span class="expand-indicator">▼</span>
+                </div>
+                <div class="previous-evaluation-content">
+                    ${prevEvalItems}
+                </div>
+            </div>
+        `;
+    }
+
+    // Process and display a single event
 }
 
 // Make HistoryManager available globally

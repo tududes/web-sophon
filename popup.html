@@ -99,6 +99,20 @@
                         </div>
                     </div>
 
+                    <div class="form-group">
+                        <div class="domain-consent-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="usePreviousEvaluationToggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                            <span class="consent-label">🔄 Use previous evaluation context</span>
+                        </div>
+                        <div class="setting-description">Include previous field results as context for LLM analysis
+                            (improves change detection)</div>
+                        <button id="clearPreviousEvaluationBtn" class="small-button secondary"
+                            style="margin-top: 8px;">Clear Previous Context</button>
+                    </div>
+
                     <button id="captureBtn" class="capture-button">
                         📸 Capture Screenshot Now
                     </button>

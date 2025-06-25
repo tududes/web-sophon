@@ -44,6 +44,7 @@ class CleanPopupController {
 
             // 7. Load basic settings and display domain
             await this.loadBasicSettings();
+            await this.loadCaptureSettings(); // Load capture settings for default tab
             this.displayCurrentDomain();
 
             console.log('Popup controller initialized successfully');
@@ -114,7 +115,9 @@ class CleanPopupController {
             // New elements
             refreshPageToggle: document.getElementById('refreshPageToggle'),
             captureDelay: document.getElementById('captureDelay'),
-            fullPageCaptureToggle: document.getElementById('fullPageCaptureToggle')
+            fullPageCaptureToggle: document.getElementById('fullPageCaptureToggle'),
+            usePreviousEvaluationToggle: document.getElementById('usePreviousEvaluationToggle'),
+            clearPreviousEvaluationBtn: document.getElementById('clearPreviousEvaluationBtn')
         };
     }
 
@@ -190,6 +193,30 @@ class CleanPopupController {
                 this.historyManager.renderHistory();
             }
         });
+
+        // Previous evaluation toggle
+        this.elements.usePreviousEvaluationToggle?.addEventListener('change', (e) => {
+            this.setUsePreviousEvaluationSetting(e.target.checked);
+        });
+
+        // Capture settings
+        this.elements.refreshPageToggle?.addEventListener('change', (e) => {
+            chrome.storage.local.set({ refreshPageToggle: e.target.checked });
+            this.updateCaptureDelayVisibility(e.target.checked);
+        });
+
+        this.elements.captureDelay?.addEventListener('change', (e) => {
+            chrome.storage.local.set({ captureDelay: e.target.value });
+        });
+
+        this.elements.fullPageCaptureToggle?.addEventListener('change', (e) => {
+            chrome.storage.local.set({ fullPageCaptureToggle: e.target.checked });
+        });
+
+        // Clear previous evaluation button
+        this.elements.clearPreviousEvaluationBtn?.addEventListener('click', () => {
+            this.clearPreviousEvaluation();
+        });
     }
 
     initializeTabSystem() {
@@ -237,6 +264,10 @@ class CleanPopupController {
         console.log('Loading tab-specific content for:', tabName);
 
         switch (tabName) {
+            case 'capture':
+                // Load capture-specific settings when switching to capture tab
+                await this.loadCaptureSettings();
+                break;
             case 'fields':
                 this.renderFields();
                 break;
@@ -445,6 +476,17 @@ class CleanPopupController {
 
     async sendCaptureRequest(fields, eventId, llmConfig) {
         try {
+            // Get previous evaluation data if enabled
+            let previousEvaluation = null;
+            const usePreviousEvaluation = await this.getUsePreviousEvaluationSetting();
+
+            if (usePreviousEvaluation) {
+                previousEvaluation = await this.getPreviousEvaluation();
+                console.log('Using previous evaluation context:', previousEvaluation);
+            } else {
+                console.log('Previous evaluation context disabled by user setting');
+            }
+
             const message = {
                 action: 'captureLLM',
                 tabId: await this.getCurrentTabId(),
@@ -454,7 +496,8 @@ class CleanPopupController {
                 llmConfig: llmConfig,
                 refreshPage: this.elements.refreshPageToggle?.checked || false,
                 captureDelay: parseInt(this.elements.captureDelay?.value || '0'),
-                fullPageCapture: this.elements.fullPageCaptureToggle?.checked || false
+                fullPageCapture: this.elements.fullPageCaptureToggle?.checked || false,
+                previousEvaluation: previousEvaluation
             };
 
             const response = await this.sendMessageToBackground(message);
@@ -495,17 +538,20 @@ class CleanPopupController {
             // Update fields with results
             this.fieldManager.updateResults(fieldsData, eventId);
 
+            // Store current results as previous evaluation for next run
+            this.storePreviousEvaluation(results, eventId);
+
             // Save to storage
             this.fieldManager.saveToStorage();
 
-            // Re-render fields to ensure UI is in sync
+            // Re-render to show updated results
             this.renderFields();
 
-            this.showStatus('Fields updated successfully', 'success');
+            this.showStatus('Fields evaluated successfully', 'success');
 
         } catch (error) {
-            console.error('Error processing results:', error);
-            this.showError(`Error processing results: ${error.message}`);
+            console.error('Error handling capture results:', error);
+            this.showError('Failed to process field results');
         }
     }
 
@@ -697,26 +743,57 @@ class CleanPopupController {
 
     // === SETTINGS ===
 
+    async loadCaptureSettings() {
+        try {
+            // Load domain consent
+            const consentKey = `consent_${this.currentDomain}`;
+            const intervalKey = `interval_${this.currentDomain}`;
+
+            const [consentData, intervalData, captureSettings, previousEvalData] = await Promise.all([
+                chrome.storage.local.get([consentKey]),
+                chrome.storage.local.get([intervalKey]),
+                chrome.storage.local.get(['refreshPageToggle', 'captureDelay', 'fullPageCaptureToggle']),
+                chrome.storage.local.get(['usePreviousEvaluation'])
+            ]);
+
+            // Set consent toggle
+            if (this.elements.consentToggle) {
+                this.elements.consentToggle.checked = consentData[consentKey] || false;
+            }
+
+            // Set interval (not implemented in current UI but could be)
+            const savedInterval = intervalData[intervalKey] || 300000; // 5 minutes default
+            console.log('Domain interval setting:', savedInterval);
+
+            // Load capture settings
+            if (this.elements.refreshPageToggle) {
+                this.elements.refreshPageToggle.checked = captureSettings.refreshPageToggle || false;
+                // Set initial visibility of delay dropdown
+                this.updateCaptureDelayVisibility(this.elements.refreshPageToggle.checked);
+            }
+            if (this.elements.captureDelay) {
+                this.elements.captureDelay.value = captureSettings.captureDelay || '0';
+            }
+            if (this.elements.fullPageCaptureToggle) {
+                this.elements.fullPageCaptureToggle.checked = captureSettings.fullPageCaptureToggle || false;
+            }
+
+            // Load previous evaluation setting
+            if (this.elements.usePreviousEvaluationToggle) {
+                this.elements.usePreviousEvaluationToggle.checked = previousEvalData.usePreviousEvaluation !== false; // Default to true
+            }
+
+        } catch (error) {
+            console.error('Error loading capture settings:', error);
+        }
+    }
+
     async loadBasicSettings() {
         try {
-            const keys = [
-                `consent_${this.currentDomain}`,
-                `interval_${this.currentDomain}`,
-                'llmConfig_global'
-            ];
+            // Load LLM configuration (global)
+            const llmData = await chrome.storage.local.get(['llmConfig_global']);
+            const llmConfig = llmData.llmConfig_global || {};
 
-            const data = await chrome.storage.local.get(keys);
-
-            if (this.elements.consentToggle) {
-                this.elements.consentToggle.checked = data[`consent_${this.currentDomain}`] || false;
-            }
-
-            if (this.elements.captureInterval) {
-                this.elements.captureInterval.value = data[`interval_${this.currentDomain}`] || 'manual';
-            }
-
-            // LLM configuration (global)
-            const llmConfig = data.llmConfig_global || {};
             if (this.elements.llmApiUrl) {
                 this.elements.llmApiUrl.value = llmConfig.apiUrl || '';
             }
@@ -731,7 +808,7 @@ class CleanPopupController {
             await this.loadTheme();
 
         } catch (error) {
-            console.error('Failed to load settings:', error);
+            console.error('Error loading basic settings:', error);
         }
     }
 
@@ -1213,6 +1290,92 @@ class CleanPopupController {
         } catch (error) {
             console.error('Failed to delete domain settings:', error);
             this.showStatus(`Failed to delete settings for "${domain}"`, 'error');
+        }
+    }
+
+    // === PREVIOUS EVALUATION MANAGEMENT ===
+
+    async getUsePreviousEvaluationSetting() {
+        try {
+            const data = await chrome.storage.local.get(['usePreviousEvaluation']);
+            return data.usePreviousEvaluation !== false; // Default to true
+        } catch (error) {
+            console.error('Error getting previous evaluation setting:', error);
+            return true; // Default to enabled
+        }
+    }
+
+    async setUsePreviousEvaluationSetting(enabled) {
+        try {
+            await chrome.storage.local.set({ usePreviousEvaluation: enabled });
+            console.log('Previous evaluation setting updated:', enabled);
+        } catch (error) {
+            console.error('Error setting previous evaluation setting:', error);
+        }
+    }
+
+    async getPreviousEvaluation() {
+        try {
+            const storageKey = `previousEvaluation_${this.currentDomain}`;
+            const data = await chrome.storage.local.get([storageKey]);
+            return data[storageKey] || null;
+        } catch (error) {
+            console.error('Error getting previous evaluation:', error);
+            return null;
+        }
+    }
+
+    async storePreviousEvaluation(results, eventId) {
+        try {
+            const storageKey = `previousEvaluation_${this.currentDomain}`;
+            const timestamp = new Date().toISOString();
+
+            // Convert results to previous evaluation format
+            const previousEvaluation = {};
+
+            // Handle results from LLM response
+            if (results && typeof results === 'object') {
+                Object.keys(results).forEach(fieldName => {
+                    if (fieldName !== 'reason' && Array.isArray(results[fieldName]) && results[fieldName].length >= 1) {
+                        const result = results[fieldName][0]; // boolean
+                        const confidence = results[fieldName].length > 1 ? results[fieldName][1] : 0.8;
+
+                        previousEvaluation[fieldName] = {
+                            result: result,
+                            confidence: confidence,
+                            timestamp: timestamp,
+                            eventId: eventId
+                        };
+                    }
+                });
+            }
+
+            if (Object.keys(previousEvaluation).length > 0) {
+                await chrome.storage.local.set({ [storageKey]: previousEvaluation });
+                console.log('Stored previous evaluation for domain', this.currentDomain, ':', previousEvaluation);
+            }
+        } catch (error) {
+            console.error('Error storing previous evaluation:', error);
+        }
+    }
+
+    async clearPreviousEvaluation() {
+        try {
+            const storageKey = `previousEvaluation_${this.currentDomain}`;
+            await chrome.storage.local.remove([storageKey]);
+            console.log('Cleared previous evaluation for domain:', this.currentDomain);
+            this.showStatus('Previous evaluation context cleared', 'success');
+        } catch (error) {
+            console.error('Error clearing previous evaluation:', error);
+            this.showError('Failed to clear previous evaluation');
+        }
+    }
+
+    updateCaptureDelayVisibility(isEnabled) {
+        // Find the form group containing the capture delay
+        const captureDelayGroup = this.elements.captureDelay?.closest('.form-group');
+        if (captureDelayGroup) {
+            captureDelayGroup.style.display = isEnabled ? 'block' : 'none';
         }
     }
 }

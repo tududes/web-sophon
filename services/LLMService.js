@@ -8,32 +8,51 @@ export class LLMService {
     }
 
     // System prompt template for field evaluation
-    getSystemPrompt(fields) {
+    getSystemPrompt(fields, previousEvaluation = null) {
         const fieldsJson = JSON.stringify(fields, null, 2);
+
+        let previousContext = '';
+        if (previousEvaluation && Object.keys(previousEvaluation).length > 0) {
+            const previousSummary = Object.entries(previousEvaluation)
+                .map(([fieldName, data]) => {
+                    const timestamp = new Date(data.timestamp).toLocaleString();
+                    return `  ${fieldName}: ${data.result ? 'TRUE' : 'FALSE'} (${Math.round(data.confidence * 100)}%) at ${timestamp}`;
+                })
+                .join('\n');
+
+            previousContext = `\nPREVIOUS EVALUATION CONTEXT:
+The following are results from the previous screenshot analysis:
+${previousSummary}
+
+Use this context to understand changes and patterns, but evaluate the current screenshot independently. Note any significant changes from previous results in your reasoning.`;
+        } else {
+            previousContext = '\nNO PREVIOUS EVALUATION - This is the first analysis for these fields.';
+        }
 
         return `Analyze this screenshot and return JSON with your evaluation for each field.
 
 For each field, return: "field_name": [boolean_result, confidence_0_to_1]
 
 Fields to evaluate:
-${fieldsJson}
+${fieldsJson}${previousContext}
 
 Response format:
 {
   "field_name": [true, 0.95],
   "another_field": [false, 0.80],
-  "reason": "Brief explanation"
+  "reason": "Brief explanation including any notable changes from previous evaluation"
 }
 
 Return only JSON.`;
     }
 
     // Capture screenshot and send to LLM API
-    async captureAndSend(tabId, domain, llmConfig, isManual = false, fields = null, refreshPage = false, captureDelay = 0) {
+    async captureAndSend(tabId, domain, llmConfig, isManual = false, fields = null, refreshPage = false, captureDelay = 0, previousEvaluation = null) {
         try {
             console.log(`Attempting LLM capture for tab ${tabId}, domain: ${domain}`);
             console.log(`LLM Config:`, llmConfig);
             console.log(`Refresh page: ${refreshPage}, Capture delay: ${captureDelay}s`);
+            console.log(`Previous evaluation data:`, previousEvaluation);
 
             // Validate LLM configuration
             if (!llmConfig || !llmConfig.apiUrl || !llmConfig.apiKey) {
@@ -199,7 +218,7 @@ Return only JSON.`;
 
             try {
                 // Build the system prompt with fields
-                const systemPrompt = this.getSystemPrompt(fields);
+                const systemPrompt = this.getSystemPrompt(fields, previousEvaluation);
 
                 // Prepare the request payload for OpenAI-compatible API
                 const requestPayload = {

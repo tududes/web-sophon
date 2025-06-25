@@ -10,7 +10,7 @@ export class MessageService {
 
     // Set up the main message listener
     setupMessageListener() {
-        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
             console.log('Background received message:', request.action);
 
             switch (request.action) {
@@ -96,31 +96,24 @@ export class MessageService {
                     return true; // Will respond asynchronously
 
                 case 'captureLLM':
-                    // Manual capture with LLM
-                    console.log('Manual LLM capture requested:', request);
-                    if (!this.llmService) {
-                        sendResponse({ success: false, error: 'LLM service not available' });
-                        return;
+                    console.log('LLM capture requested:', request);
+                    try {
+                        const response = await this.llmService.captureAndSend(
+                            request.tabId,
+                            request.domain,
+                            request.llmConfig,
+                            request.isManual || false,
+                            request.fields,
+                            request.refreshPage || false,
+                            request.captureDelay || 0,
+                            request.previousEvaluation || null
+                        );
+                        sendResponse(response);
+                    } catch (error) {
+                        console.error('LLM capture failed:', error);
+                        sendResponse({ success: false, error: error.message });
                     }
-
-                    this.llmService.captureAndSend(
-                        request.tabId,
-                        request.domain,
-                        request.llmConfig,
-                        true,
-                        request.fields,
-                        request.refreshPage,
-                        request.captureDelay
-                    )
-                        .then(result => {
-                            console.log('LLM capture result:', result);
-                            sendResponse(result);
-                        })
-                        .catch(error => {
-                            console.error('LLM capture error in background:', error);
-                            sendResponse({ success: false, error: error.message });
-                        });
-                    return true; // Will respond asynchronously
+                    return true; // Keep message channel open for async response
 
                 case 'testLLM':
                     // Test LLM configuration
