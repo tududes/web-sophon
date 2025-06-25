@@ -3,17 +3,31 @@ export class EventService {
     constructor() {
         this.recentEvents = []; // Store recent capture events
         this.unreadTrueCount = 0; // Count of unread TRUE events
-        this.loadEventsFromStorage();
+        this.isLoading = true; // Track loading state
+        this.loadPromise = this.loadEventsFromStorage(); // Store the promise
     }
 
     // Load recent events from storage on startup
     async loadEventsFromStorage() {
-        const data = await chrome.storage.local.get(['recentEvents']);
-        if (data.recentEvents) {
-            this.recentEvents = data.recentEvents;
-            // Count unread TRUE events
-            this.unreadTrueCount = this.recentEvents.filter(e => e.hasTrueResult && !e.read).length;
-            this.updateBadge();
+        try {
+            const data = await chrome.storage.local.get(['recentEvents']);
+            if (data.recentEvents && Array.isArray(data.recentEvents)) {
+                this.recentEvents = data.recentEvents;
+                // Count unread TRUE events
+                this.unreadTrueCount = this.recentEvents.filter(e => e.hasTrueResult && !e.read).length;
+                this.updateBadge();
+            }
+        } catch (error) {
+            console.error('Error loading events from storage:', error);
+        } finally {
+            this.isLoading = false;
+        }
+    }
+
+    // Ensure events are loaded before returning
+    async ensureLoaded() {
+        if (this.loadPromise) {
+            await this.loadPromise;
         }
     }
 
@@ -300,7 +314,10 @@ export class EventService {
     }
 
     // Get recent events
-    getRecentEvents() {
+    async getRecentEvents() {
+        // Ensure events are loaded before returning
+        await this.ensureLoaded();
+
         return {
             events: this.recentEvents,
             unreadCount: this.unreadTrueCount

@@ -245,12 +245,27 @@ class CleanPopupController {
                     await this.initializeHistoryManager();
                 }
                 if (this.historyManager && this.historyManager.loadHistory) {
-                    this.historyManager.loadHistory();
+                    // Add a small delay to ensure background service is ready
+                    // This helps avoid the race condition when popup opens immediately after browser starts
+                    if (!this.historyManager.recentEvents || this.historyManager.recentEvents.length === 0) {
+                        console.log('History empty, adding small delay before loading...');
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    await this.historyManager.loadHistory();
+
+                    // If still empty after first load, try once more after a longer delay
+                    if (this.historyManager.recentEvents.length === 0) {
+                        console.log('History still empty, retrying after delay...');
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await this.historyManager.loadHistory();
+                    }
                 }
                 break;
             case 'settings':
                 this.renderPresets();
-                this.loadKnownDomains();
+                // Always reload known domains to show current statistics
+                console.log('Loading known domains for settings tab...');
+                await this.loadKnownDomains();
                 break;
         }
     }
@@ -524,44 +539,39 @@ class CleanPopupController {
     // === MESSAGE HANDLING (Clean) ===
 
     setupMessageListener() {
-        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-            console.log('Received message:', message);
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            console.log('Popup received message:', request.action);
 
-            // Handle both 'action' and 'type' properties for compatibility
-            const messageType = message.type || message.action;
+            switch (request.action) {
+                case 'fieldResults':
+                    console.log('Received field results for event:', request.eventId);
+                    this.handleCaptureResults(request.results, request.eventId);
+                    break;
 
-            switch (messageType) {
-                case 'captureComplete':
-                case 'captureResults':
-                    console.log('Processing capture results:', message);
-                    this.handleCaptureResults(message.results, message.eventId);
+                case 'fieldsCancelled':
+                    console.log('Fields cancelled for event:', request.eventId);
+                    this.fieldManager.markFieldsCancelled(request.eventId);
+                    this.fieldManager.saveToStorage();
+                    this.renderFields();
+                    break;
 
-                    // Reload history to show new event
-                    if (this.historyManager?.loadHistory) {
+                case 'eventUpdated':
+                    console.log('Event updated:', request.eventId);
+                    // If history manager exists and we're on the history tab, update the event
+                    if (this.historyManager && this.currentTab === 'history') {
+                        this.historyManager.updateEvent(request.eventId, request.event);
+                    }
+                    // Also reload history if it's currently empty (might have been a race condition)
+                    if (this.historyManager && this.historyManager.recentEvents.length === 0) {
+                        console.log('History empty, reloading after event update...');
                         this.historyManager.loadHistory();
                     }
+                    // If we're on the settings tab, refresh domain statistics
+                    if (this.currentTab === 'settings' && request.event) {
+                        console.log('Refreshing settings tab after event update...');
+                        this.loadKnownDomains();
+                    }
                     break;
-
-                case 'captureError':
-                    this.fieldManager.markFieldsError(
-                        message.error,
-                        message.httpStatus,
-                        message.eventId
-                    );
-                    this.fieldManager.saveToStorage();
-                    this.renderFields();
-                    this.showError(`Capture failed: ${message.error}`);
-                    break;
-
-                case 'captureCancelled':
-                    this.fieldManager.markFieldsCancelled(message.eventId);
-                    this.fieldManager.saveToStorage();
-                    this.renderFields();
-                    this.showStatus('Capture cancelled', 'warning');
-                    break;
-
-                default:
-                    console.warn('Unknown message type:', messageType, 'Full message:', message);
             }
         });
     }
@@ -1020,7 +1030,7 @@ class CleanPopupController {
                             <div class="domain-header">
                                 <div class="domain-name-section">
                                     <div class="domain-name">
-                                        ${domain}
+                                        <span class="domain-name-text" title="${domain}">${domain}</span>
                                         ${isCurrentDomain ? '<span class="domain-current-badge">CURRENT</span>' : ''}
                                     </div>
                                 </div>
@@ -1076,11 +1086,15 @@ class CleanPopupController {
 
     async getDomainLastRun(domain) {
         try {
-            // Get history from storage
-            const { captureHistory = [] } = await chrome.storage.local.get(['captureHistory']);
+            console.log(`Getting last run info for domain: ${domain}`);
+
+            // Get history from storage - use recentEvents which is the actual storage key
+            const { recentEvents = [] } = await chrome.storage.local.get(['recentEvents']);
+            console.log(`Total events in storage: ${recentEvents.length}`);
 
             // Filter events for this domain
-            const domainEvents = captureHistory.filter(event => event.domain === domain);
+            const domainEvents = recentEvents.filter(event => event.domain === domain);
+            console.log(`Events for ${domain}: ${domainEvents.length}`);
 
             if (domainEvents.length === 0) {
                 return {
@@ -1090,8 +1104,12 @@ class CleanPopupController {
                 };
             }
 
-            // Sort by timestamp (newest first)
-            domainEvents.sort((a, b) => b.timestamp - a.timestamp);
+            // Sort by timestamp (newest first) - timestamps are ISO strings
+            domainEvents.sort((a, b) => {
+                const timeA = new Date(a.timestamp).getTime();
+                const timeB = new Date(b.timestamp).getTime();
+                return timeB - timeA;
+            });
 
             const lastEvent = domainEvents[0];
             const lastRunTime = new Date(lastEvent.timestamp);
@@ -1111,6 +1129,8 @@ class CleanPopupController {
                 const days = Math.floor(diffMs / 86400000);
                 display = `${days}d ago`;
             }
+
+            console.log(`Last run for ${domain}: ${display} (${domainEvents.length} total events)`);
 
             return {
                 display,
@@ -1172,12 +1192,12 @@ class CleanPopupController {
             }
 
             // Clean up history data for this domain
-            const { captureHistory = [] } = await chrome.storage.local.get(['captureHistory']);
-            const filteredHistory = captureHistory.filter(event => event.domain !== domain);
+            const { recentEvents = [] } = await chrome.storage.local.get(['recentEvents']);
+            const filteredHistory = recentEvents.filter(event => event.domain !== domain);
 
-            if (filteredHistory.length !== captureHistory.length) {
-                await chrome.storage.local.set({ captureHistory: filteredHistory });
-                console.log(`Removed ${captureHistory.length - filteredHistory.length} history events for domain`);
+            if (filteredHistory.length !== recentEvents.length) {
+                await chrome.storage.local.set({ recentEvents: filteredHistory });
+                console.log(`Removed ${recentEvents.length - filteredHistory.length} history events for domain`);
             }
 
             // Refresh the domains list

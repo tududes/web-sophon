@@ -135,7 +135,8 @@ body {
 .container {
     width: 400px;
     min-width: 400px;
-    max-width: 400px;
+    max-width: 450px;
+    /* Increased slightly to prevent cutoff */
     padding: var(--space-md);
     background-color: var(--bg-primary);
     border-radius: var(--radius-lg);
@@ -572,8 +573,6 @@ input:checked+.slider:hover {
     border-color: var(--border-focus);
     box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
 }
-
-
 
 /* Field Header - Better Layout */
 .field-header {
@@ -1696,10 +1695,16 @@ input:checked+.slider:hover {
     margin-bottom: var(--space-md);
     padding-bottom: var(--space-sm);
     border-bottom: 1px solid var(--border-secondary);
+    gap: var(--space-md);
+    /* Add gap between sections */
 }
 
 .domain-name-section {
     flex: 1;
+    min-width: 0;
+    /* Critical: allows flex item to shrink below content size */
+    overflow: hidden;
+    /* Hide overflow */
 }
 
 .domain-name {
@@ -1709,6 +1714,22 @@ input:checked+.slider:hover {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
+    overflow: hidden;
+    /* Hide overflow */
+    text-overflow: ellipsis;
+    /* Add ellipsis for long names */
+    white-space: nowrap;
+    /* Prevent wrapping */
+}
+
+.domain-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    /* Allow shrinking */
+    flex-shrink: 1;
+    /* Allow text to shrink */
 }
 
 .domain-current-badge {
@@ -1719,12 +1740,16 @@ input:checked+.slider:hover {
     padding: 2px 6px;
     border-radius: var(--radius-sm);
     text-transform: uppercase;
+    flex-shrink: 0;
+    /* Prevent badge from shrinking */
 }
 
 .domain-actions {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
+    flex-shrink: 0;
+    /* Prevent actions from shrinking */
 }
 
 .domain-status {
@@ -1882,4 +1907,468 @@ input:checked+.slider:hover {
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+}
+
+/* Webhook UI Improvements */
+.webhook-toggle-section {
+    margin: 8px 0;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.webhook-toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.webhook-toggle-switch input[type="checkbox"] {
+    position: relative;
+    width: 40px;
+    height: 20px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #444;
+    border-radius: 10px;
+    outline: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.webhook-toggle-switch input[type="checkbox"]:checked {
+    background: #007acc;
+}
+
+.webhook-toggle-switch input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.webhook-toggle-switch input[type="checkbox"]:checked::before {
+    transform: translateX(20px);
+}
+
+.webhook-label {
+    font-size: 13px;
+    color: #ccc;
+}
+
+.webhook-config-panel {
+    overflow: hidden;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    margin-top: 8px;
+}
+
+.webhook-panel-hidden {
+    max-height: 0;
+    padding: 0;
+    opacity: 0;
+}
+
+.webhook-panel-visible {
+    max-height: 500px;
+    padding: 12px;
+    opacity: 1;
+}
+
+.webhook-setting-row {
+    margin-bottom: 12px;
+}
+
+.webhook-setting-row.webhook-payload-row {
+    margin-bottom: 8px;
+}
+
+.webhook-setting-label {
+    display: block;
+    font-size: 12px;
+    color: #bbb;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.webhook-trigger-select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #2a2a2a !important;
+    color: #fff !important;
+    font-size: 12px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+    padding-right: 32px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid #555;
+}
+
+.webhook-trigger-select:hover {
+    border-color: #007acc;
+    background-color: #333 !important;
+}
+
+.webhook-trigger-select:focus {
+    outline: none;
+    border-color: #007acc;
+    box-shadow: 0 0 0 1px #007acc;
+    background-color: #333 !important;
+}
+
+.webhook-trigger-select option {
+    background: #2a2a2a !important;
+    color: #fff !important;
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.webhook-confidence-group {
+    margin-bottom: 12px;
+}
+
+.webhook-confidence-slider {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: #444;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    margin-top: 4px;
+}
+
+.webhook-confidence-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #007acc;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.webhook-confidence-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #007acc;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.confidence-value {
+    color: #007acc;
+    font-weight: bold;
+}
+
+.webhook-url-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.webhook-url-input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #333;
+    color: #fff;
+    font-size: 12px;
+    font-family: monospace;
+}
+
+.webhook-url-input.url-masked {
+    color: #888;
+    font-style: italic;
+}
+
+.url-visibility-toggle {
+    padding: 4px 6px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #444;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.url-visibility-toggle:hover {
+    background: #555;
+}
+
+.webhook-payload-input {
+    width: 100%;
+    min-height: 80px;
+    padding: 8px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #333;
+    color: #fff;
+    font-size: 11px;
+    font-family: monospace;
+    resize: vertical;
+    line-height: 1.4;
+}
+
+.webhook-variables-help {
+    margin-top: 4px;
+}
+
+.webhook-variables-help small {
+    color: #888;
+    font-size: 10px;
+}
+
+/* History Screenshot Improvements */
+.screenshot-detail {
+    margin: 12px 0;
+}
+
+.screenshot-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.screenshot-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.screenshot-container {
+    position: relative;
+    display: block;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #222;
+    border: 1px solid #444;
+    width: 100%;
+}
+
+.history-screenshot-thumbnail {
+    width: 100%;
+    height: auto;
+    display: block;
+    cursor: zoom-in;
+    transition: transform 0.1s ease-out;
+    transform-origin: center;
+}
+
+.history-screenshot-thumbnail:hover {
+    cursor: zoom-in;
+}
+
+/* Enhanced Data Section Headers */
+.data-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    margin: 8px 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.data-header:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.data-header-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.data-header-title {
+    font-weight: 600;
+    color: #fff;
+    font-size: 14px;
+}
+
+.data-header-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.data-header-status.status-200 {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.data-header-status.status-4xx {
+    background: rgba(251, 146, 60, 0.2);
+    color: #fb923c;
+    border: 1px solid rgba(251, 146, 60, 0.3);
+}
+
+.data-header-status.status-5xx {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.data-header-status.status-pending {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.data-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.data-header-caret {
+    color: #888;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+    margin-left: 8px;
+}
+
+.data-section[open] .data-header-caret {
+    transform: rotate(90deg);
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 400px) {
+    .data-header {
+        padding: 10px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .data-header-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .data-header-actions {
+        margin-left: auto;
+    }
+}
+
+/* Copy Button Improvements */
+.copy-btn-float {
+    float: right;
+    margin-left: 8px;
+    padding: 4px 8px;
+    font-size: 11px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #444;
+    color: #ccc;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.copy-btn-float:hover {
+    background: #555;
+    color: #fff;
+    border-color: #666;
+}
+
+.copy-data-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #444;
+    color: #ccc;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.copy-data-btn:hover {
+    background: #555;
+    color: #fff;
+    border-color: #666;
+}
+
+/* JSON Display Improvements */
+.json-display {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 16px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #e6e6e6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.json-display.formatted {
+    color: #f0f0f0;
+}
+
+.raw-response-container {
+    margin: 8px 0;
+}
+
+.raw-response-note {
+    background: rgba(251, 146, 60, 0.1);
+    color: #fb923c;
+    padding: 8px 12px;
+    border-radius: 6px 6px 0 0;
+    border: 1px solid rgba(251, 146, 60, 0.3);
+    border-bottom: none;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.no-response {
+    background: rgba(156, 163, 175, 0.1);
+    color: #9ca3af;
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+    font-style: italic;
+    margin: 8px 0;
+}
+
+/* Data Content Improvements */
+.data-content {
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 0 0 6px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: none;
+    margin-bottom: 8px;
 }

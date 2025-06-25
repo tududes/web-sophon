@@ -44,7 +44,16 @@ export class MessageService {
                     break;
 
                 case 'getRecentEvents':
-                    sendResponse(this.eventService.getRecentEvents());
+                    // Handle async getRecentEvents
+                    this.eventService.getRecentEvents()
+                        .then(result => {
+                            sendResponse(result);
+                        })
+                        .catch(error => {
+                            console.error('Error getting recent events:', error);
+                            sendResponse({ events: [], unreadCount: 0 });
+                        });
+                    return true; // Keep channel open for async response
                     break;
 
                 case 'markEventsRead':

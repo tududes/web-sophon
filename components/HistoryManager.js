@@ -23,33 +23,62 @@ export class HistoryManager {
     async loadHistory() {
         console.log('Loading history...');
 
-        // First try to get from background script (most current)
-        chrome.runtime.sendMessage({ action: 'getRecentEvents' }, async (response) => {
-            if (response && response.events) {
+        try {
+            // First try to get from background script (most current)
+            const response = await this.getEventsFromBackground();
+
+            if (response && response.events && Array.isArray(response.events)) {
                 console.log('Loaded events from background:', response.events.length);
                 this.recentEvents = response.events;
                 this.renderHistory();
             } else {
-                console.log('No response from background, loading from storage directly');
-                // Fallback: load directly from storage
-                try {
-                    const storage = await chrome.storage.local.get(['recentEvents']);
-                    if (storage.recentEvents && Array.isArray(storage.recentEvents)) {
-                        this.recentEvents = storage.recentEvents;
-                        console.log('Loaded events from storage:', this.recentEvents.length);
-                        this.renderHistory();
-                    } else {
-                        console.log('No events found in storage');
-                        this.recentEvents = [];
-                        this.renderHistory();
-                    }
-                } catch (error) {
-                    console.error('Error loading events from storage:', error);
-                    this.recentEvents = [];
-                    this.renderHistory();
-                }
+                console.log('No valid response from background, loading from storage directly');
+                await this.loadFromStorageDirect();
             }
+        } catch (error) {
+            console.error('Error loading history:', error);
+            // Fallback to direct storage loading
+            await this.loadFromStorageDirect();
+        }
+    }
+
+    // Get events from background with promise wrapper
+    async getEventsFromBackground() {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Background request timeout'));
+            }, 3000); // 3 second timeout
+
+            chrome.runtime.sendMessage({ action: 'getRecentEvents' }, (response) => {
+                clearTimeout(timeout);
+
+                if (chrome.runtime.lastError) {
+                    console.log('Background communication error:', chrome.runtime.lastError.message);
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(response);
+                }
+            });
         });
+    }
+
+    // Load directly from storage as fallback
+    async loadFromStorageDirect() {
+        try {
+            const storage = await chrome.storage.local.get(['recentEvents']);
+            if (storage.recentEvents && Array.isArray(storage.recentEvents)) {
+                this.recentEvents = storage.recentEvents;
+                console.log('Loaded events from storage:', this.recentEvents.length);
+            } else {
+                console.log('No events found in storage');
+                this.recentEvents = [];
+            }
+            this.renderHistory();
+        } catch (error) {
+            console.error('Error loading events from storage:', error);
+            this.recentEvents = [];
+            this.renderHistory();
+        }
     }
 
     // Save events to storage for persistence
