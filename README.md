@@ -10,64 +10,72 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 
 ## Features
 
-### Core Features
-- **Domain-based consent**: Enable/disable screenshot capture per domain
-- **Configurable intervals**: Choose from 5 seconds to 10 minutes
-- **Manual capture**: Click button to capture screenshot on-demand
-- **Automatic stop on navigation**: Captures stop when you navigate away from the consented domain
+### Core Features (v2.0+)
+- **LLM-Powered Analysis**: Advanced AI evaluation using OpenAI GPT-4 Vision or compatible models
+- **Domain-based Management**: Each domain maintains its own independent field configurations
+- **Intelligent Field Evaluation**: Define unlimited custom criteria evaluated with confidence scores
+- **Manual & Automated Capture**: On-demand capture with configurable intervals (5 seconds to 10 minutes)
+- **Full-Page Screenshots**: Optional full-page capture using Chrome DevTools Protocol (CDP)
+- **Page Refresh Control**: Optionally refresh pages before capture with configurable delays
 
-### Advanced Field Evaluation (v2.0)
-- **Custom Fields**: Define unlimited evaluation criteria with no-spaces field names
-- **AI-Powered Analysis**: Each field is evaluated to true/false with confidence scores
-- **Visual Results**: Green/red indicators show results with probability percentages
-- **Preset Management**: Save and load field configurations as named presets
-- **Cross-Device Sync**: Settings and presets sync across Chrome instances
-- **Conditional Webhooks**: Each field can trigger its own webhook on TRUE results
-- **Custom Payloads**: Define JSON payloads for each field's webhook
+### Advanced Field System (v2.0+)
+- **Custom Fields**: Define unlimited evaluation criteria with human-friendly names
+- **AI-Powered Analysis**: Each field evaluated to true/false with confidence percentages
+- **Visual Results**: Green/red indicators show results with probability scores
+- **Real-time Status**: Live pending/success/error states for each field
+- **Field History Integration**: Click field results to jump to corresponding events
+- **Smart Field Naming**: Automatic sanitization of field names for API compatibility
+- **Validation System**: Comprehensive validation prevents duplicate or invalid fields
 
-### Event History & Notifications (v2.2)
-- **Badge Notifications**: Shows count of unread TRUE events on extension icon
-- **Complete Event History**: View ALL capture attempts (success, failure, errors)
+### Event History & Notifications (v2.2+)
+- **Badge Notifications**: Extension icon shows count of unread TRUE events
+- **Complete Event Tracking**: ALL capture attempts logged (success, failure, errors)
 - **Expandable Event Details**: Click events to see full details including URLs and errors
 - **Smart Filtering**: Toggle to show only events with TRUE results
-- **Unread Indicators**: Highlights new TRUE events until viewed
-- **Time-based Display**: Shows human-readable timestamps ("5 minutes ago")
+- **Unread Management**: Highlights new TRUE events until viewed in history
+- **Time-based Display**: Human-readable timestamps ("5 minutes ago")
+- **Persistent Storage**: Events stored locally with automatic cleanup
 - **Clear History**: Option to clear all stored events
 
-### Domain Management (v2.3)
-- **Domain-Specific Settings**: Each domain maintains its own fields and configuration
-- **Known Domains Section**: View all domains with saved configurations
-- **Quick Domain Access**: Click to open any configured domain in a new tab
-- **Domain Cleanup**: Delete all settings for a domain with one click
+### Domain Management (v2.3+)
+- **Domain-Specific Configuration**: Each domain maintains independent settings and fields
+- **Known Domains Dashboard**: View all configured domains with statistics
+- **Domain Statistics**: Shows last run time and total event count per domain
+- **Quick Domain Access**: Click to open any configured domain in new tab
+- **Domain Cleanup**: Delete all settings and history for a domain
+- **Current Domain Highlighting**: Visual indication of currently active domain
 
-### Enhanced Debugging (v2.4)
-- **Field Last Results**: Each field shows its last evaluation result with timestamp
-- **Click to History**: Click any field's last result to jump to that event in history
-- **Screenshot Storage**: Captured screenshots are stored with events for review
-- **Request/Response Logs**: Full request and response data available for debugging
-- **Visual Zoom**: Click screenshots in history to zoom in for detail
-- **Smart Highlighting**: Events are highlighted when accessed from field results
+### Enhanced Debugging (v2.4+)
+- **Field Status Tracking**: Each field shows last evaluation result with timestamp
+- **History Integration**: Click field results to navigate to corresponding events
+- **Screenshot Storage**: Captured screenshots stored with events for review
+- **Request/Response Logs**: Full request and response data for debugging
+- **Visual Screenshot Tools**: Click to zoom, mouse-following 2x magnification
+- **Smart Event Highlighting**: Events highlighted when accessed from field results
+- **Debug Mode**: Enable additional testing features and detailed logging
 
-### Long-Running Request Support (v2.5)
-- **No Timeouts**: Webhook requests can run for up to 5 minutes (300 seconds)
-- **Pending Status**: Events show "⏳ Waiting for response..." while webhook processes
+### Long-Running Request Support (v2.5+)
+- **Extended Timeouts**: LLM requests can run up to 5 minutes (300 seconds)
+- **Pending Status Tracking**: Events show "⏳ Waiting for response..." during processing
 - **Real-time Updates**: Events update automatically when responses arrive
-- **Concurrent Requests**: Multiple captures can run simultaneously without blocking
-- **Progressive Loading**: See screenshots and request data immediately, response data when ready
-- **Resilient Design**: Failed requests properly update pending events with error details
+- **Concurrent Processing**: Multiple captures can run simultaneously
+- **Progressive Loading**: Screenshots visible immediately, responses when ready
+- **Resilient Design**: Failed requests properly update with error details
 
-### Enhanced User Control (v2.6)
-- **Request Cancellation**: Cancel pending webhook requests mid-flight with cancel button
-- **Smart Response Display**: JSON responses formatted properly, raw text shown for non-JSON
-- **Screenshot Downloads**: Download any captured screenshot with timestamped filename
-- **Advanced Image Zoom**: Mouse-following 2x zoom to explore all areas of screenshots
-- **Cancelled Request Tracking**: Cancelled requests properly logged in history with status
+### Enhanced User Control (v2.6+)
+- **Request Cancellation**: Cancel pending LLM requests with cancel button
+- **Smart Response Display**: JSON responses formatted, raw text for non-JSON
+- **Screenshot Downloads**: Download screenshots with timestamped filenames
+- **Advanced Image Zoom**: Mouse-following 2x zoom for detailed screenshot inspection
+- **Cancelled Request Tracking**: Properly logs cancelled requests in history
+- **Improved Error Handling**: Better error messages and status reporting
 
 ### Developer Features
-- **Clean, modern UI**: Intuitive interface for field management
-- **Webhook integration**: Sends screenshots and fields to n8n workflows
-- **Debug logging**: Comprehensive console logs for troubleshooting
-- **Flexible Response Handling**: Process complex AI responses
+- **Clean, Modern UI**: Intuitive tabbed interface for all functionality
+- **LLM Integration**: Direct integration with OpenAI or compatible APIs
+- **Comprehensive Logging**: Detailed console logs for troubleshooting
+- **Modular Architecture**: Clean separation of concerns across services
+- **Cross-Extension Sync**: Settings sync across Chrome instances via chrome.storage
 
 ## Installation
 
@@ -77,171 +85,201 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 4. Click "Load unpacked" and select this directory
 5. The extension icon will appear in your toolbar
 
-## Setup
+## Quick Setup
 
-1. Click the extension icon to open the popup
-2. Enter your n8n webhook URL (e.g., `https://your-n8n-instance.com/webhook/abc123`)
-3. Select your desired capture interval
-4. Toggle the switch to enable capture for the current domain
+1. **Configure LLM API**: Enter your OpenAI API URL and key in Settings tab
+2. **Test Configuration**: Use "Test Configuration" button to verify connection
+3. **Define Fields**: Add evaluation criteria in Fields tab with descriptions
+4. **Enable Domain**: Toggle "Enable for this domain" in Capture tab
+5. **Capture**: Click "Capture Now" to test or enable automatic intervals
 
-## Documentation
+## Architecture
 
-📁 **[Complete Documentation](docs/)** - All guides, examples, and technical documentation have been organized in the `docs/` directory:
+### Core Components
 
-- **[Setup Guide](docs/SETUP_GUIDE.md)** - Complete installation and configuration instructions
-- **[Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md)** - Comprehensive guide for creating effective evaluation criteria
-- **[Interaction Guide](docs/INTERACTION_GUIDE.md)** - User interface and workflow guide
-- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[Debug Steps](docs/DEBUG_STEPS.md)** - Developer debugging procedures
-- **[Modular Architecture](docs/MODULAR_ARCHITECTURE.md)** - Technical architecture documentation
-- **[N8N Workflow Examples](docs/)** - Sample workflows for integration
-- **[Icon Generation](docs/ICON_GENERATION_PROMPT.md)** - Creating extension icons
+**Entry Points:**
+- `manifest.json` - Extension configuration (v3)
+- `background-main.js` - Service worker initialization
+- `popup.html` - Main interface
+- `popup-main.js` - Main controller and embedded FieldManagerLLM class
+- `content.js` - Page navigation monitoring
 
-## Usage
+**Background Services:**
+- `services/CaptureService.js` - Screenshot capture using Chrome DevTools Protocol
+- `services/LLMService.js` - LLM API integration and response processing
+- `services/EventService.js` - Event tracking and history management
+- `services/MessageService.js` - Inter-component communication
+- `services/WebhookService.js` - Legacy webhook support (unused in LLM mode)
 
-- **Start capturing**: Toggle the switch ON after entering a webhook URL
-- **Stop capturing**: Toggle the switch OFF or navigate to a different domain
-- **Change interval**: Select a new interval from the dropdown (takes effect immediately if capturing)
-- **View status**: Status messages appear at the bottom of the popup
+**UI Components:**
+- `components/HistoryManager.js` - Event history display and interaction
+- `components/UIManager.js` - UI state management and field rendering
+- `utils/formatters.js` - Date formatting, data display utilities
 
-## Webhook Payload
+**Assets:**
+- `assets/styles.css` - Complete styling (consolidated from inline styles)
+- `assets/icon_*.png` - Extension icons (16, 32, 48, 128, 256px)
 
-The extension sends a POST request to your webhook with the following multipart/form-data:
+### Data Flow
 
-```
-screenshot: [PNG file] - The captured screenshot
-domain: [string] - The domain where the screenshot was taken
-timestamp: [ISO 8601 string] - When the screenshot was captured
-tabId: [string] - The browser tab ID
-url: [string] - The full URL of the page
-isManual: [string] - "true" or "false"
-fields: [JSON string] - Array of field definitions (v2.0+)
-```
+1. **Field Definition**: Users define evaluation criteria in Fields tab
+2. **Capture Trigger**: Manual capture or automatic intervals
+3. **Screenshot Capture**: Full-page or viewport screenshots via CDP
+4. **LLM Analysis**: Screenshots and field criteria sent to configured LLM API
+5. **Result Processing**: LLM responses parsed and field results updated
+6. **Event Storage**: All capture attempts stored in local history
+7. **UI Updates**: Real-time status updates across all tabs
 
-### Field Format (v2.0+)
-```json
-[
-  {
-    "name": "field_name",
-    "criteria": "Description of what to evaluate"
-  }
-]
-```
+## LLM API Configuration
 
-### Expected Response Format (v2.0+)
+### Supported APIs
+- **OpenAI GPT-4 Vision** (recommended)
+- **Any OpenAI-compatible API** with vision capabilities
+- **Custom deployments** following OpenAI message format
+
+### API Response Format
+WebSophon expects responses in this JSON format:
 ```json
 {
   "fields": {
-    "field_name": {
+    "field_name_1": {
       "boolean": true,
       "probability": 0.95
+    },
+    "field_name_2": {
+      "boolean": false,
+      "probability": 0.23
     }
   },
-  "reason": "Explanation of what was detected"
+  "reason": "Optional explanation of what was detected"
 }
 ```
 
-## n8n Workflow Setup
+### Field Name Mapping
+Field names are automatically sanitized for API compatibility:
+- `"Stock Price Alert"` → `"stock_price_alert"`
+- `"Login Page Detected"` → `"login_page_detected"`
+- Special characters converted to underscores, duplicates prevented
 
-### Basic Setup (v1.0)
-1. Create a new workflow in n8n
-2. Add a **Webhook** node:
-   - Set to POST method
-   - Copy the webhook URL to the extension
-3. The webhook will receive the screenshot and metadata
-4. Process as needed (image analysis, LLM integration, etc.)
+## Usage Guide
 
-### Field Evaluation Setup (v2.0)
-1. Import `n8n-workflow-fields.json` for field evaluation
-2. Configure your OpenAI API credentials
-3. The workflow will:
-   - Receive screenshot and field definitions
-   - Use GPT-4 Vision to evaluate each field
-   - Return results in the expected JSON format
-4. See [Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md) for detailed instructions
+### Basic Workflow
+1. **Open popup** on the target website
+2. **Switch to Fields tab**, add evaluation criteria
+3. **Switch to Capture tab**, enable for domain
+4. **Configure LLM settings** in Settings tab
+5. **Test with manual capture** or enable automatic intervals
+6. **View results** in History tab
 
-## Icon Generation
+### Field Definition Best Practices
+- **Be specific**: "Red error message visible" vs "There's an error"
+- **Use measurable criteria**: "Price below $100" vs "Good deal"
+- **Single responsibility**: One concept per field
+- **Clear language**: Avoid ambiguous terms
 
-To generate the required PNG icons, you'll need to create or obtain 16x16, 48x48, and 128x128 pixel PNG images. Name them:
-- `icon-16.png`
-- `icon-48.png`
-- `icon-128.png`
+### History Management
+- **View all events**: Complete capture history with status indicators
+- **Filter by success**: Toggle "Show only TRUE results"
+- **Event details**: Click events to expand full information
+- **Field navigation**: Click field results to jump to corresponding events
+- **Screenshot review**: Click screenshots to zoom and inspect details
 
-You can use any image editor or online tool to create these icons.
+## Storage & Privacy
 
-## Privacy & Security
+- **Local Storage**: All data stored locally in browser
+- **No External Transmission**: Data only sent to your configured LLM API
+- **Domain Isolation**: Each domain's settings stored separately
+- **Automatic Cleanup**: Old events automatically pruned to prevent storage overflow
+- **User Control**: Complete control over data retention and deletion
 
-- Screenshots are only captured for domains you explicitly consent to
-- All data is sent directly to your specified webhook URL
-- No data is stored or transmitted elsewhere
-- Settings are stored locally in your browser
+## Documentation
 
-## Troubleshooting
+📁 **[Complete Documentation](docs/)** - Comprehensive guides and technical documentation:
 
-- **"Please enter a webhook URL first"**: Make sure to enter a valid webhook URL before enabling capture
-- **Screenshots not sending**: Check the browser console for errors and verify your webhook URL is accessible
-- **Capture stops unexpectedly**: This happens when navigating to a different domain or closing the tab
-- **No events showing in history**: 
-  - All capture attempts are now logged (success or failure)
-  - Check that you have fields configured for the domain
-  - Use the test page `test-events.html` to verify event logging
-  - Open Chrome DevTools and check the console for error messages
-  - Enable debug mode: `localStorage.setItem('websophon-debug', 'true')` in console, then reload extension
-- **Settings appear on wrong domain**: Settings are now domain-specific, check the "Known Domains" section
-- **Debugging failed captures**:
-  - Click on any event in history to see full details
-  - View the stored screenshot to verify what was captured
-  - Download screenshots with the 💾 Download button
-  - Hover over screenshots to zoom in with mouse-following 2x magnification
-  - Check Request Data to see what was sent to the webhook
-  - Check Response Data - properly formatted JSON or raw text for failed responses
-  - Each field shows its last result - click to jump to that event
-  - Cancel long-running requests with the Cancel Request button
-- **Storage quota exceeded**: The extension automatically removes old screenshots if storage is full
-- **History not clearing permanently**: Fixed - now clears both memory and storage
-- **Responses not updating events**: Fixed - events now update in real-time when webhook responses arrive
-
-### Debug Mode
-To enable debug mode and access additional testing features:
-1. Open Chrome DevTools (F12) on any page
-2. Go to Console tab
-3. Type: `localStorage.setItem('websophon-debug', 'true')`
-4. Reload the WebSophon extension popup
-5. You'll see a "🧪 Test Events" button in the Event History section
-6. This creates sample events with different statuses for testing the interface
-
-### Debug Storage Inspector
-For advanced debugging of storage issues, load the debug script:
-1. Copy the contents of `debug-storage.js`
-2. Paste into Chrome DevTools console
-3. Use the available functions:
-   - `inspectWebSophonStorage()` - View all stored data
-   - `clearWebSophonStorage()` - Clear all data (use carefully!)
-   - `enableDebugMode()` / `disableDebugMode()` - Toggle debug features
+- **[Setup Guide](docs/SETUP_GUIDE.md)** - Installation and configuration
+- **[Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md)** - Creating effective evaluation criteria
+- **[Interaction Guide](docs/INTERACTION_GUIDE.md)** - UI workflows and best practices
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Debug Guide](docs/DEBUG_STEPS.md)** - Developer debugging procedures
+- **[Architecture Guide](docs/MODULAR_ARCHITECTURE.md)** - Technical implementation details
 
 ## Development
 
-The extension consists of:
-- `manifest.json` - Extension configuration (v2.1)
-- `popup.html/js/css` - Enhanced UI with field management
-- `background.js` - Service worker handling captures and responses
-- `content.js` - Page navigation monitoring
-- `n8n-workflow-fields.json` - Field evaluation workflow template
-- `FIELD_EVALUATION_GUIDE.md` - Comprehensive field usage guide
+### File Organization
+```
+tv-eyes/
+├── manifest.json                    # Extension configuration
+├── background-main.js              # Service worker entry point
+├── popup.html                      # Main interface
+├── popup-main.js                   # Main controller + FieldManagerLLM
+├── content.js                      # Navigation monitoring
+├── components/
+│   ├── HistoryManager.js          # Event history management
+│   └── UIManager.js               # UI state management
+├── services/
+│   ├── CaptureService.js          # Screenshot capture
+│   ├── LLMService.js              # LLM API integration
+│   ├── EventService.js            # Event tracking
+│   └── MessageService.js          # Communication
+├── utils/
+│   └── formatters.js              # Utilities
+└── assets/
+    ├── styles.css                 # Complete styling
+    └── icon_*.png                 # Extension icons
+```
 
-### Key Classes (v2.1)
-- `FieldManager` - Handles field definitions, presets, and results
-- Storage uses `chrome.storage.sync` for cross-device synchronization
+### Key Classes
+- **CleanPopupController** (popup-main.js): Main application controller
+- **FieldManagerLLM** (popup-main.js): Field definition and result management  
+- **HistoryManager**: Event history display and interaction
+- **UIManager**: Field rendering and status display
+- **CaptureService**: Screenshot capture via Chrome DevTools Protocol
+- **LLMService**: LLM API communication and response processing
+- **EventService**: Event storage and retrieval
 
-To modify the extension, edit these files and reload the extension in Chrome.
+### Debug Mode
+Enable additional debugging features:
+```javascript
+// In Chrome DevTools console
+localStorage.setItem('websophon-debug', 'true');
+// Reload extension popup to see debug features
+```
 
-## Future Features (TODO)
+## Troubleshooting
 
-### Premium Features
-- **Background Monitoring**: Premium users will be able to:
-  - Toggle an option to create background jobs that run independently
-  - Include or exclude cookies from their current session
-  - Monitor public-facing sites without authentication
-  - Set frequencies as low as 5 seconds for both live checks and background jobs
-  - Receive continuous monitoring results from the AI agent deployed in the background
-  - Flag in requests to distinguish between live and background captures 
+### Common Issues
+- **"No fields configured"**: Add field definitions in Fields tab
+- **"Please configure LLM API"**: Set API URL and key in Settings tab
+- **"Request failed"**: Check API credentials and internet connection
+- **Empty history**: Ensure background service worker is running
+- **Settings not saving**: Check Chrome storage permissions
+
+### Debug Steps
+1. **Check console logs**: Open DevTools on extension popup
+2. **Verify API**: Use "Test Configuration" button
+3. **Enable debug mode**: See debug mode instructions above
+4. **Clear storage**: Reset extension state if needed
+5. **Check background script**: Inspect service worker in chrome://extensions
+
+### Performance Notes
+- **Storage Management**: Automatic cleanup prevents storage overflow
+- **Concurrent Requests**: Multiple captures supported simultaneously
+- **Memory Efficient**: Screenshots stored compressed in Chrome storage
+- **Timeout Handling**: 5-minute maximum for LLM requests
+
+## Version History
+
+- **v2.6+**: Enhanced user controls, request cancellation, screenshot downloads
+- **v2.5**: Long-running request support, real-time updates
+- **v2.4**: Enhanced debugging, field-history integration
+- **v2.3**: Domain management, statistics tracking
+- **v2.2**: Event history, notifications, filtering
+- **v2.0**: LLM integration, advanced field system
+- **v1.0**: Basic screenshot capture and webhook support
+
+## License & Privacy
+
+- **Local Processing**: All data processing occurs locally or via your configured APIs
+- **No Telemetry**: No usage data collected or transmitted
+- **Open Source**: Full source code available for review
+- **User Control**: Complete control over data storage and API usage 

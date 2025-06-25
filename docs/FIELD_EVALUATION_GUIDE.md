@@ -1,232 +1,313 @@
-# WebSophon - Field Evaluation Guide
+# WebSophon Field Evaluation Guide
+
+A comprehensive guide to creating effective field evaluation criteria for WebSophon's LLM-powered analysis system.
 
 ## Overview
 
-WebSophon provides advanced field-based screenshot evaluation. You can define custom fields with specific criteria, and the extension will evaluate each field against the screenshot using AI, returning true/false results with confidence scores.
+WebSophon uses advanced LLM (Large Language Model) technology to analyze screenshots and evaluate custom criteria you define. This guide will help you create precise, reliable evaluation fields that consistently produce accurate results.
 
-## Key Features
+## Field Anatomy
 
-### 1. **Field Management** (v2.1)
-- **Friendly Names**: Enter any name - automatically converted to safe field names
-- **Field Description**: Detailed criteria for evaluation (properly escaped)
-- **Dynamic Results**: Green/red indicators with probability scores
-- **Unlimited Fields**: Add as many evaluation fields as needed
-- **Backend Names**: Shows sanitized field name (lowercase + underscores)
+### Basic Structure
+Each field consists of:
+- **Field Name**: Human-readable identifier (e.g., "Login Required")
+- **Description/Criteria**: Specific instructions for the LLM to evaluate
 
-### 2. **Preset System**
-- **Save Presets**: Store field configurations for reuse
-- **Load Presets**: Quickly switch between different evaluation sets
-- **Sync Across Devices**: Presets sync with your Chrome account
-
-### 3. **Conditional Webhooks** (v2.1)
-- **Per-Field Actions**: Each field can trigger its own webhook
-- **TRUE-only Triggers**: Webhooks fire only when field evaluates to true
-- **Custom Payloads**: Define JSON payloads for each webhook
-- **URL Security**: Webhook URLs are masked by default (show/hide toggle)
-- **Persistent Storage**: Webhook settings saved even when disabled
-- **Sequential Firing**: Multiple webhooks fire in sequence with minimal delay
-- **Logging**: Last 50 webhook calls logged with status, duration, and errors
-
-### 4. **Event History & Notifications** (v2.2)
-- **Badge Counter**: Extension icon shows count of unread TRUE events
-- **History View**: Access last 100 capture events directly in the popup
-- **Smart Filtering**: Toggle to show only events containing TRUE results
-- **Visual Indicators**: Unread TRUE events highlighted in green
-- **Time Display**: Human-readable timestamps ("2 hours ago")
-- **Quick Clear**: Clear all history with one click
-- **Automatic Updates**: History refreshes when new captures complete
-
-## How to Use
-
-### Step 1: Configure Capture Interval
-
-Choose from expanded interval options:
-- 10 seconds to 1 minute for rapid monitoring
-- 5 minutes to 1 hour for regular checks
-- 4 hours to 1 day for long-term monitoring
-
-### Step 2: Define Fields
-
-1. Click "➕ Add Field"
-2. Enter a friendly name (e.g., "Login Form Present")
-3. Backend name auto-converts to: `login_form_present`
-4. Write evaluation criteria:
-   ```
-   Check if the page contains a login form with username 
-   and password fields visible
-   ```
-
-### Step 3: Configure Webhooks (Optional)
-
-1. Toggle "Fire webhook on TRUE result"
-2. Enter webhook URL (automatically masked for security)
-3. Click 👁️ to show/hide the full URL
-4. Define JSON payload:
-   ```json
-   {
-     "alert": "login_detected",
-     "timestamp": "{{timestamp}}",
-     "url": "{{url}}"
-   }
-   ```
-5. View logs with 📋 button to see webhook history
-
-### Step 4: Save as Preset
-
-1. Configure all needed fields
-2. Click "💾 Save as Preset"
-3. Name your preset (e.g., "Login Detection")
-
-### Step 5: Capture & Evaluate
-
-1. Click "📸 Capture Screenshot Now"
-2. Results appear next to each field:
-   - 🟢 TRUE (95.5%)
-   - 🔴 FALSE (98.2%)
-3. TRUE results trigger webhooks sequentially
-4. Check Event History section for all captures
-5. Extension badge shows count of new TRUE events
-
-## Example Field Configurations
-
-### E-commerce Monitoring
+### Example Field
 ```
-Field: checkout_button_visible
-Criteria: Is there a visible checkout or "buy now" button on the page?
-
-Field: price_change_detected  
-Criteria: Has the price displayed changed from the last known value of $99.99?
-
-Field: out_of_stock
-Criteria: Does the page show "out of stock" or "unavailable" message?
+Name: "Cart Total Visible"
+Criteria: "A shopping cart total amount is clearly displayed on the page, showing the sum of all items"
 ```
 
-### Security Monitoring
+## Writing Effective Criteria
+
+### 1. Be Specific and Measurable
+
+**❌ Poor Example:**
 ```
-Field: login_form_present
-Criteria: Is there a login form with username and password fields?
-
-Field: captcha_required
-Criteria: Is there a CAPTCHA challenge visible on the page?
-
-Field: security_warning
-Criteria: Are there any security warnings or certificate errors displayed?
+Name: "Good Deal"
+Criteria: "There's a good deal available"
 ```
 
-### Content Monitoring
+**✅ Better Example:**
 ```
-Field: video_playing
-Criteria: Is there a video element currently playing on the page?
-
-Field: popup_displayed
-Criteria: Is there a modal popup or overlay covering the main content?
-
-Field: ad_banner_present
-Criteria: Are there advertising banners visible on the page?
+Name: "Discount Visible"
+Criteria: "A percentage discount (like 20% OFF) or sale price is prominently displayed"
 ```
 
-## n8n Integration
+### 2. Focus on Visual Elements
 
-### Expected Request Format
-The extension sends:
-```json
-{
-  "screenshot": "[binary data]",
-  "domain": "example.com",
-  "timestamp": "2024-01-01T12:00:00Z",
-  "url": "https://example.com/page",
-  "fields": [
-    {
-      "name": "field_name",
-      "criteria": "evaluation criteria"
-    }
-  ]
-}
+**❌ Poor Example:**
 ```
+Name: "Product Quality"
+Criteria: "The product is high quality"
+```
+
+**✅ Better Example:**
+```
+Name: "Product Rating"
+Criteria: "A star rating of 4.0 or higher is visible next to the product"
+```
+
+### 3. Use Clear, Unambiguous Language
+
+**❌ Poor Example:**
+```
+Name: "Page Problems"
+Criteria: "Something seems wrong with the page"
+```
+
+**✅ Better Example:**
+```
+Name: "Error Message"
+Criteria: "An error message or warning text is displayed in red or with an error icon"
+```
+
+## Field Categories
+
+### 1. Content Detection Fields
+
+Identify specific content elements:
+
+```
+Name: "News Article"
+Criteria: "A news article with headline, byline, and publication date is visible"
+
+Name: "Video Content"
+Criteria: "A video player with play button or video thumbnail is present"
+
+Name: "Contact Form"
+Criteria: "A contact form with multiple input fields and a submit button is visible"
+```
+
+### 2. State Detection Fields
+
+Identify page or application states:
+
+```
+Name: "Login Required"
+Criteria: "A login form or 'Sign In' button is prominently displayed"
+
+Name: "Loading State"
+Criteria: "Loading spinners, progress bars, or 'Please wait' messages are visible"
+
+Name: "Empty Results"
+Criteria: "A message indicating no results found or empty search results is displayed"
+```
+
+### 3. Interactive Element Fields
+
+Identify buttons, links, and interactive components:
+
+```
+Name: "Add to Cart Available"
+Criteria: "An 'Add to Cart' or 'Buy Now' button is visible and appears clickable"
+
+Name: "Download Link"
+Criteria: "A download button or link with file format indication (PDF, ZIP, etc.) is present"
+
+Name: "Social Sharing"
+Criteria: "Social media sharing buttons for platforms like Twitter, Facebook, or LinkedIn are visible"
+```
+
+### 4. Data/Metric Fields
+
+Identify specific data points or metrics:
+
+```
+Name: "Price Under 50"
+Criteria: "A price is displayed that is less than $50 or equivalent currency"
+
+Name: "High Stock Count"
+Criteria: "Product availability shows more than 10 items in stock"
+
+Name: "Recent Date"
+Criteria: "A date from within the last 7 days is displayed"
+```
+
+### 5. Alert/Notification Fields
+
+Identify warnings, alerts, or notifications:
+
+```
+Name: "Security Warning"
+Criteria: "A security warning, SSL certificate error, or privacy notice is displayed"
+
+Name: "Cookie Notice"
+Criteria: "A cookie consent banner or privacy policy notice is visible"
+
+Name: "Update Available"
+Criteria: "A notification about software updates or new versions is shown"
+```
+
+## Advanced Techniques
+
+### 1. Contextual Evaluation
+
+Include context for better accuracy:
+
+```
+Name: "Sale Price Active"
+Criteria: "A sale price is shown with the original price crossed out or marked as 'was $X, now $Y'"
+
+Name: "Featured Product"
+Criteria: "A product is marked as 'Featured', 'Bestseller', or highlighted with a special badge"
+```
+
+### 2. Negative Conditions
+
+Define what should NOT be present:
+
+```
+Name: "Not Sold Out"
+Criteria: "The product does NOT show 'Sold Out', 'Out of Stock', or 'Unavailable' status"
+
+Name: "No Errors"
+Criteria: "No error messages, 404 pages, or failure notifications are visible"
+```
+
+### 3. Comparative Evaluation
+
+Compare values or states:
+
+```
+Name: "Discounted Price"
+Criteria: "The current price is lower than a crossed-out original price"
+
+Name: "High Rating"
+Criteria: "The displayed rating is above 4 stars or 80% positive"
+```
+
+## Common Patterns
+
+### E-commerce Sites
+```
+Fields for online shopping:
+- "Product Available": "Product shows as in stock and available for purchase"
+- "Free Shipping": "Free shipping offer is displayed for this item"
+- "Customer Reviews": "Customer reviews or ratings are visible below the product"
+- "Return Policy": "Return or refund policy information is clearly stated"
+```
+
+### News/Content Sites
+```
+Fields for content monitoring:
+- "Breaking News": "A 'Breaking News' banner or urgent news indicator is displayed"
+- "Comment Section": "A comment section with user comments is visible below the article"
+- "Related Articles": "Related or recommended articles are shown on the page"
+- "Newsletter Signup": "A newsletter subscription form or signup prompt is present"
+```
+
+### Application Interfaces
+```
+Fields for web applications:
+- "User Logged In": "User profile picture, name, or logout option is visible"
+- "Notification Badge": "A notification counter or badge with unread count is displayed"
+- "Search Results": "Search results with multiple items are shown on the page"
+- "Settings Access": "A settings gear icon or configuration menu is accessible"
+```
+
+### Form and Input Fields
+```
+Fields for form interaction:
+- "Required Fields": "Required form fields are marked with asterisks or 'required' labels"
+- "Validation Errors": "Form validation errors or field-specific error messages are displayed"
+- "Submit Enabled": "The submit button appears enabled and clickable"
+- "Progress Indicator": "A form progress bar or step indicator is visible"
+```
+
+## LLM Integration
+
+### How It Works
+1. WebSophon captures a screenshot of the current page
+2. Your field criteria are sent with the image to the LLM
+3. The LLM analyzes the image against each criteria
+4. Results are returned with true/false values and confidence scores
 
 ### Expected Response Format
-Your n8n workflow should return:
 ```json
 {
   "fields": {
-    "field_name": {
+    "login_required": {
+      "boolean": false,
+      "probability": 0.05
+    },
+    "add_to_cart_available": {
       "boolean": true,
-      "probability": 0.95
+      "probability": 0.92
     }
   },
-  "reason": "Brief explanation of what was detected"
+  "reason": "Add to cart button is clearly visible, no login prompt shown"
 }
 ```
 
-### Using the Provided Workflow
+### Field Name Processing
+Your friendly field names are automatically converted to API-compatible format:
+- "Login Required" → "login_required"
+- "Add to Cart Available" → "add_to_cart_available"
+- Special characters are converted to underscores
 
-1. Import `n8n-workflow-fields.json`
-2. Configure your OpenAI API key
-3. Activate the workflow
-4. Use the webhook URL in the extension
+## Testing and Optimization
 
-## Best Practices
+### 1. Start Simple
+Begin with basic, obvious criteria:
+```
+Name: "Page Loaded"
+Criteria: "The page content is fully visible without loading screens"
+```
 
-### Field Naming
-- Use descriptive names: `form_submitted` not `field1`
-- Use underscores: `user_logged_in` not `user-logged-in`
-- Be consistent: `is_loading`, `is_error`, `is_success`
+### 2. Test with Known Results
+Test fields on pages where you know the expected outcome:
+- Run on a login page (should return true for "Login Required")
+- Run on a product page (should return true for "Product Visible")
 
-### Criteria Writing
-- Be specific and unambiguous
-- Reference visual elements clearly
+### 3. Refine Based on Results
+If a field returns unexpected results:
+- Make criteria more specific
+- Add visual context
+- Break complex criteria into multiple fields
+
+### 4. Monitor Confidence Scores
+- High confidence (>0.8): Criteria is clear and well-defined
+- Medium confidence (0.5-0.8): Consider refining criteria
+- Low confidence (<0.5): Criteria may be ambiguous or not visible
+
+## Best Practices Summary
+
+### ✅ Do:
+- Use specific, visual criteria
+- Focus on what's actually visible in screenshots
+- Test fields on known pages first
+- Use clear, unambiguous language
 - Include context when needed
-- Avoid subjective criteria
+- Start simple and refine based on results
 
-### Webhook Configuration
-- Use HTTPS endpoints
-- Include authentication tokens in payload
-- Test webhooks independently first
-- Handle failures gracefully
+### ❌ Don't:
+- Use subjective criteria ("good", "bad", "nice")
+- Assume functionality (focus on visible elements)
+- Create overly complex criteria
+- Use criteria that require page interaction
+- Ignore confidence scores in results
+- Create duplicate or conflicting field names
 
 ## Troubleshooting
 
-### Fields Not Evaluating
-- Check field has a name AND description
-- Ensure n8n workflow is active
-- Verify webhook URL is correct
-- Check browser console for errors
+### Field Always Returns False
+- Check if the criteria is actually visible in screenshots
+- Make criteria more specific and measurable
+- Verify the element appears in captured area
+- Test with full-page capture if element is below fold
 
-### Webhooks Not Firing
-- Confirm field evaluated to TRUE
-- Check webhook URL is valid
-- Verify JSON payload is valid
-- Test webhook endpoint separately
+### Field Returns Inconsistent Results
+- Criteria may be too subjective or ambiguous
+- Add more specific visual indicators
+- Break complex criteria into simpler parts
+- Check if page content changes dynamically
 
-### Results Not Displaying
-- Wait for response (may take 2-5 seconds)
-- Check n8n workflow logs
-- Ensure response format matches expected structure
-- Verify OpenAI API is working
+### Low Confidence Scores
+- Criteria may not be clearly visible
+- Add more context to help LLM identify elements
+- Ensure criteria describes visual appearance
+- Consider if element is too small or unclear in screenshots
 
-## Advanced Usage
-
-### Dynamic Criteria
-You can reference previous values in criteria:
-```
-Has the stock price changed from the last known value of $150.25?
-```
-
-### Multi-Condition Fields
-```
-Field: ready_to_purchase
-Criteria: Is the item in stock AND is the price below $50 AND is there an "Add to Cart" button visible?
-```
-
-### Time-Based Monitoring
-```
-Field: content_updated
-Criteria: Has the "Last Updated" timestamp on the page changed in the last hour?
-```
-
-## Privacy & Security
-
-- Fields and presets are stored locally and in Chrome sync
-- Webhook URLs and payloads are encrypted at rest
-- Screenshots are only sent to your configured endpoints
-- No data is stored on external servers 
+Remember: The goal is to create criteria that any human could evaluate by looking at a screenshot of the page. If you can clearly identify the element or condition visually, the LLM should be able to as well. 

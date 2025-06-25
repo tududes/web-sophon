@@ -1,97 +1,156 @@
-# WebSophon - Troubleshooting Guide
+# Troubleshooting Guide
 
-## Screenshots Not Reaching n8n
+## LLM API Connection Issues
 
-If your screenshots aren't reaching n8n, follow these steps:
+If your LLM requests are failing, follow these steps:
 
-### 1. Check Browser Console
+### 1. Verify API Configuration
+- Open Settings tab in extension popup
+- Ensure API URL and API Key are correctly entered
+- Use "Test Configuration" button to verify connection
+- Check console logs (F12) for detailed error messages
 
-Open the extension's background script console:
-1. Go to `chrome://extensions/`
-2. Find "WebSophon"
-3. Click "service worker" link
-4. Check the console for logs
+### 2. Check API URL Format
+Your API URL should be properly formatted:
+- ✅ `https://api.openai.com/v1/chat/completions`
+- ✅ `https://your-api-gateway.com/v1/chat/completions`
+- ❌ `api.openai.com/v1/chat/completions` (missing protocol)
+- ❌ `https://api.openai.com` (incomplete endpoint)
 
-You should see logs like:
+### 3. API Key Validation
+- Ensure your API key has proper permissions
+- Check if the key has been deactivated or expired
+- Verify billing/quota limits haven't been exceeded
+- Test the key with a simple curl request
+
+### 4. Network and CORS Issues
+- Extension requests go directly to your API endpoint
+- No CORS configuration needed for WebSophon
+- Check if corporate firewall is blocking API requests
+- Verify the API endpoint is accessible from your browser
+
+### 5. Check Extension Permissions
+Make sure the extension has proper permissions:
+- Host permissions for your API domain
+- Active tab permission for screenshots
+- Storage permission for saving settings
+
+## Common Error Messages
+
+### "Request failed: Network error"
+- Check internet connection
+- Verify API endpoint is accessible
+- Check if endpoint requires authentication headers
+
+### "API returned 401 Unauthorized"
+- Invalid or expired API key
+- Check API key configuration in Settings tab
+- Verify the key has proper permissions
+
+### "API returned 429 Too Many Requests"
+- Rate limit exceeded
+- Wait before retrying
+- Check your API plan limits
+
+### "Request timeout after 300 seconds"
+- LLM processing took too long
+- Try with fewer or simpler field criteria
+- Check if API endpoint is overloaded
+
+### "Invalid JSON response"
+- API returned malformed response
+- Check API endpoint compatibility
+- Enable debug mode to see full response
+
+## Screenshot Issues
+
+### Screenshots Not Capturing
+1. **Check domain consent**: Toggle "Enable for this domain" in Capture tab
+2. **Page restrictions**: Some pages block screenshot APIs (chrome://, about:, etc.)
+3. **Permission issues**: Extension needs activeTab permission
+4. **Browser compatibility**: Requires Chrome Manifest V3 support
+
+### Screenshots Empty or Black
+1. **Full-page capture**: Try toggling full-page capture option
+2. **Page not loaded**: Add capture delay in settings
+3. **Dynamic content**: Try refreshing page before capture
+4. **CSS issues**: Some pages hide content during capture
+
+## Field Evaluation Issues
+
+### Fields Always Return False
+1. **Field criteria**: Make descriptions more specific and measurable
+2. **Image quality**: Check if screenshots capture relevant content
+3. **API model**: Ensure using vision-capable model (e.g., gpt-4-vision-preview)
+4. **Token limits**: Check if responses are being truncated
+
+### Fields Not Updating
+1. **Check event history**: View History tab to see capture attempts
+2. **API errors**: Look for error messages in field status
+3. **Response format**: Verify API returns expected JSON structure
+4. **Field naming**: Check for duplicate or invalid field names
+
+## Performance Issues
+
+### Slow Response Times
+1. **Model selection**: Some models are faster than others
+2. **Image size**: Large screenshots take longer to process
+3. **Field count**: Too many fields increase processing time
+4. **API load**: Check if your API endpoint is overloaded
+
+### High Memory Usage
+1. **Screenshot cleanup**: Extension automatically removes old images
+2. **History size**: Clear history if it becomes too large
+3. **Storage quota**: Check Chrome storage usage
+
+## Debug Mode
+
+Enable debug mode for detailed troubleshooting:
+
+```javascript
+// In Chrome DevTools console
+localStorage.setItem('websophon-debug', 'true');
+// Reload extension popup to see debug features
 ```
-Attempting to capture screenshot for tab 123, domain: example.com, webhook: https://...
-Capturing visible tab...
-Screenshot captured, size: 123456
-Blob created, size: 78910
-Sending to webhook: https://...
-Screenshot sent to webhook (no-cors mode)
-```
 
-### 2. Test with Manual Capture
+Debug mode provides:
+- Detailed console logging
+- Test event generation
+- Enhanced error messages
+- Performance metrics
 
-Use the new "📸 Capture Screenshot Now" button to test:
-1. Enter your webhook URL
-2. Click the capture button
-3. Check for success/error messages
+## Storage Issues
 
-### 3. Common Issues
+### Settings Not Saving
+1. **Chrome storage**: Check if storage permission is granted
+2. **Storage quota**: Clear old data if storage is full
+3. **Sync conflicts**: Settings sync across Chrome instances
 
-#### CORS Issues
-The extension now uses `no-cors` mode to avoid CORS problems. However, this means:
-- The extension can't read the response status
-- n8n must be configured to accept requests without CORS headers
+### History Not Loading
+1. **Background service**: Check if service worker is running
+2. **Storage corruption**: Clear extension storage and reconfigure
+3. **Race condition**: Refresh popup if history appears empty
 
-#### Webhook URL Format
-Ensure your webhook URL is complete:
-- ✅ `https://your-n8n.com/webhook/abc123`
-- ❌ `/webhook/abc123` (missing domain)
-- ❌ `your-n8n.com/webhook/abc123` (missing protocol)
+## Getting Help
 
-#### n8n Configuration
-1. Import `n8n-workflow-simple.json` for testing
-2. Activate the workflow
-3. Use the production webhook URL (not test URL)
-4. Ensure n8n webhook accepts multipart/form-data
+If issues persist:
 
-### 4. Test with Alternative Webhook
+1. **Check console logs**: Open DevTools (F12) on extension popup
+2. **Enable debug mode**: See debug instructions above
+3. **Test with simple fields**: Start with basic, clear criteria
+4. **Verify API independently**: Test your API with curl or Postman
+5. **Extension reload**: Disable and re-enable the extension
+6. **Browser restart**: Sometimes Chrome service workers need restart
 
-Test with webhook.site to verify the extension works:
-1. Visit https://webhook.site
-2. Copy your unique URL
-3. Use it in the extension
-4. Check if data appears on webhook.site
+## Common Solutions Summary
 
-### 5. Check n8n Webhook Settings
+| Issue | Quick Fix |
+|-------|-----------|
+| No API response | Check API key and URL |
+| Fields always false | Make criteria more specific |
+| Empty history | Refresh popup or check background service |
+| Screenshots black | Enable full-page capture |
+| Slow responses | Reduce field count or try different model |
+| Settings not saving | Check Chrome storage permissions |
 
-In your n8n workflow:
-- Set HTTP Method: POST
-- Response Mode: "Immediately"
-- Enable "Binary Data" in options
-- Don't use authentication initially (for testing)
-
-### 6. Network Debugging
-
-1. Open Chrome DevTools (F12)
-2. Go to Network tab
-3. Click the capture button
-4. Look for the webhook request
-5. Check request headers and payload
-
-### 7. Extension Permissions
-
-Verify the extension has proper permissions:
-- Should show camera icon when capturing
-- Should have access to the current tab
-- Try on a simple HTTP/HTTPS site (not chrome:// pages)
-
-## Still Not Working?
-
-1. **Check n8n logs**: Look for incoming webhook requests
-2. **Try without SSL**: Test with HTTP if using self-hosted n8n
-3. **Firewall/Network**: Ensure n8n is accessible from your browser
-4. **Browser restrictions**: Some corporate networks block certain requests
-
-## Working Example
-
-A working request should contain:
-- `screenshot`: Binary PNG file
-- `domain`: Current domain (e.g., "google.com")
-- `timestamp`: ISO timestamp
-- `tabId`: Tab ID number
-- `url`: Full page URL
-- `isManual`: "true" or "false" 
+Remember: WebSophon uses direct LLM API integration - no external services or webhooks required! 

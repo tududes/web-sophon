@@ -314,7 +314,7 @@ Return only JSON.`;
                         }
 
                         // Parse the JSON content from the LLM
-                        // Remove markdown code blocks using simple string replacement (like n8n approach)
+                        // Remove markdown code blocks using simple string replacement
                         let jsonContent = content
                             .replaceAll("```json", "")
                             .replaceAll("```", "")
