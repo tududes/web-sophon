@@ -423,27 +423,18 @@ class CleanPopupController {
 
     async handleCapture() {
         try {
-            console.log('=== Starting capture ===');
+            console.log('=== Starting manual capture ===');
 
             // 1. Validate domain consent
             if (!this.elements.consentToggle?.checked) {
                 throw new Error('Please enable WebSophon for this domain first');
             }
 
-            // 2. Use shared capture data preparation (DRY principle)
-            const prepareDataResponse = await this.sendMessageToBackground({
-                action: 'prepareCaptureData',
-                domain: this.currentDomain
-            });
-
-            if (!prepareDataResponse.success) {
-                throw new Error(prepareDataResponse.error || 'Failed to prepare capture data');
-            }
-
-            const { fields: fieldsFromStorage } = prepareDataResponse.data;
+            // 2. Get fields directly from FieldManager (original manual capture flow)
+            const fieldsForAPI = this.fieldManager.getFieldsForAPI();
 
             // 3. Validate fields exist
-            if (!fieldsFromStorage || fieldsFromStorage.length === 0) {
+            if (!fieldsForAPI || fieldsForAPI.length === 0) {
                 throw new Error('No valid fields configured for this domain');
             }
 
@@ -458,19 +449,19 @@ class CleanPopupController {
             // 6. Show capture status
             this.showStatus('Starting capture...', 'info');
 
-            // 7. Send capture request using shared preparation data
-            const response = await this.sendCaptureRequest(fieldsFromStorage, eventId, null);
+            // 7. Send capture request using original manual flow (not shared preparation)
+            const response = await this.sendCaptureRequest(fieldsForAPI, eventId, null);
 
             // 8. Handle response
             if (response.success) {
                 this.showStatus('Capture in progress...', 'info');
-                console.log('Capture initiated successfully');
+                console.log('Manual capture initiated successfully');
             } else {
                 throw new Error(response.error || 'Capture failed');
             }
 
         } catch (error) {
-            console.error('Capture failed:', error);
+            console.error('Manual capture failed:', error);
 
             // Mark fields as error atomically
             this.fieldManager.markFieldsError(error.message);
@@ -483,17 +474,14 @@ class CleanPopupController {
 
     async sendCaptureRequest(fields, eventId, llmConfig) {
         try {
-            // Use shared data preparation from background for consistency (DRY principle)
-            const prepareDataResponse = await this.sendMessageToBackground({
-                action: 'prepareCaptureData',
-                domain: this.currentDomain
-            });
+            // For manual captures: get fresh LLM config and previous evaluation directly
+            // (Don't use prepareCaptureData - that's for automatic captures only)
 
-            if (!prepareDataResponse.success) {
-                return { success: false, error: prepareDataResponse.error };
-            }
+            // Get fresh LLM config from popup settings
+            const freshLlmConfig = await this.getLlmConfig();
 
-            const { llmConfig: freshLlmConfig, previousEvaluation } = prepareDataResponse.data;
+            // Get previous evaluation for this domain
+            const previousEvaluation = await this.getPreviousEvaluation();
 
             const message = {
                 action: 'captureLLM',
@@ -501,7 +489,7 @@ class CleanPopupController {
                 domain: this.currentDomain,
                 fields: fields,
                 eventId: eventId,
-                llmConfig: freshLlmConfig, // Use fresh config from shared preparation
+                llmConfig: freshLlmConfig,
                 isManual: true,
                 refreshPage: this.elements.refreshPageToggle?.checked || false,
                 captureDelay: parseInt(this.elements.captureDelay?.value || '0'),
@@ -509,11 +497,16 @@ class CleanPopupController {
                 previousEvaluation: previousEvaluation
             };
 
+            console.log('Sending manual captureLLM message:', {
+                ...message,
+                llmConfig: { ...message.llmConfig, apiKey: 'HIDDEN' }
+            });
+
             const response = await this.sendMessageToBackground(message);
             return response;
 
         } catch (error) {
-            console.error('Error sending capture request:', error);
+            console.error('Error sending manual capture request:', error);
             return { success: false, error: error.message };
         }
     }
