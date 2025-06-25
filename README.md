@@ -14,9 +14,10 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **LLM-Powered Analysis**: Advanced AI evaluation using OpenAI GPT-4 Vision or compatible models
 - **Domain-based Management**: Each domain maintains its own independent field configurations
 - **Intelligent Field Evaluation**: Define unlimited custom criteria evaluated with confidence scores
-- **Manual & Automated Capture**: On-demand capture with configurable intervals (5 seconds to 10 minutes)
+- **Manual & Automated Capture**: On-demand capture with configurable intervals (5 seconds to 1 day)
 - **Full-Page Screenshots**: Optional full-page capture using Chrome DevTools Protocol (CDP)
 - **Page Refresh Control**: Optionally refresh pages before capture with configurable delays
+- **Previous Evaluation Context**: LLM receives previous results for enhanced change detection
 
 ### Advanced Field System (v2.0+)
 - **Custom Fields**: Define unlimited evaluation criteria with human-friendly names
@@ -26,6 +27,15 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Field History Integration**: Click field results to jump to corresponding events
 - **Smart Field Naming**: Automatic sanitization of field names for API compatibility
 - **Validation System**: Comprehensive validation prevents duplicate or invalid fields
+- **Previous Context Display**: Collapsible sections showing previous evaluation results
+
+### Capture Configuration (v2.7+)
+- **Organized Capture Controls**: All capture settings grouped in dedicated Capture tab
+- **Flexible Intervals**: Choose from 5 seconds to 1 day, or manual-only
+- **Conditional Settings**: Delay options appear only when page refresh is enabled
+- **Previous Evaluation Toggle**: Enable/disable context sharing with ON by default
+- **Clear Context Control**: Manual button to clear previous evaluation history
+- **Real-time Validation**: Automatic validation before starting automatic captures
 
 ### Event History & Notifications (v2.2+)
 - **Badge Notifications**: Extension icon shows count of unread TRUE events
@@ -36,14 +46,16 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Time-based Display**: Human-readable timestamps ("5 minutes ago")
 - **Persistent Storage**: Events stored locally with automatic cleanup
 - **Clear History**: Option to clear all stored events
+- **Previous Context Display**: Shows previous evaluation data used for each capture
 
 ### Domain Management (v2.3+)
 - **Domain-Specific Configuration**: Each domain maintains independent settings and fields
 - **Known Domains Dashboard**: View all configured domains with statistics
-- **Domain Statistics**: Shows last run time and total event count per domain
+- **Domain Statistics**: Shows accurate last run time and total event count per domain
 - **Quick Domain Access**: Click to open any configured domain in new tab
 - **Domain Cleanup**: Delete all settings and history for a domain
 - **Current Domain Highlighting**: Visual indication of currently active domain
+- **Automatic Domain Detection**: Extension automatically switches context based on current tab
 
 ### Enhanced Debugging (v2.4+)
 - **Field Status Tracking**: Each field shows last evaluation result with timestamp
@@ -53,9 +65,10 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Visual Screenshot Tools**: Click to zoom, mouse-following 2x magnification
 - **Smart Event Highlighting**: Events highlighted when accessed from field results
 - **Debug Mode**: Enable additional testing features and detailed logging
+- **Race Condition Prevention**: Robust loading mechanisms prevent empty history displays
 
 ### Long-Running Request Support (v2.5+)
-- **Extended Timeouts**: LLM requests can run up to 5 minutes (300 seconds)
+- **Extended Timeouts**: LLM requests can run up to 2 minutes (120 seconds)
 - **Pending Status Tracking**: Events show "⏳ Waiting for response..." during processing
 - **Real-time Updates**: Events update automatically when responses arrive
 - **Concurrent Processing**: Multiple captures can run simultaneously
@@ -69,6 +82,17 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Advanced Image Zoom**: Mouse-following 2x zoom for detailed screenshot inspection
 - **Cancelled Request Tracking**: Properly logs cancelled requests in history
 - **Improved Error Handling**: Better error messages and status reporting
+- **Unified Capture Logic**: DRY principle implementation ensures consistent behavior
+
+### Previous Evaluation Context System (v2.7+)
+- **Automatic Context Tracking**: Previous field results automatically stored per domain
+- **Enhanced Change Detection**: LLM receives previous results to better detect changes
+- **Confidence-Based Storage**: Only stores results with sufficient confidence scores
+- **Timestamped Context**: Previous results include evaluation timestamps and event IDs
+- **Visual Context Display**: Collapsible UI sections show previous evaluation data
+- **User Control**: Toggle to enable/disable context sharing (ON by default)
+- **Context Management**: Clear previous context button for fresh starts
+- **Color-Coded Display**: TRUE/FALSE indicators with confidence percentages
 
 ### Developer Features
 - **Clean, Modern UI**: Intuitive tabbed interface for all functionality
@@ -76,6 +100,8 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Comprehensive Logging**: Detailed console logs for troubleshooting
 - **Modular Architecture**: Clean separation of concerns across services
 - **Cross-Extension Sync**: Settings sync across Chrome instances via chrome.storage
+- **Shared Capture Logic**: DRY principle prevents code duplication
+- **Robust Error Handling**: Comprehensive error tracking and recovery
 
 ## Installation
 
@@ -90,8 +116,9 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 1. **Configure LLM API**: Enter your OpenAI API URL and key in Settings tab
 2. **Test Configuration**: Use "Test Configuration" button to verify connection
 3. **Define Fields**: Add evaluation criteria in Fields tab with descriptions
-4. **Enable Domain**: Toggle "Enable for this domain" in Capture tab
-5. **Capture**: Click "Capture Now" to test or enable automatic intervals
+4. **Configure Capture**: In Capture tab, enable domain and set capture preferences
+5. **Enable Previous Context**: Ensure "Use Previous Evaluation Context" is ON (default)
+6. **Test**: Click "Capture Now" to test or enable automatic intervals
 
 ## Architecture
 
@@ -108,7 +135,7 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - `services/CaptureService.js` - Screenshot capture using Chrome DevTools Protocol
 - `services/LLMService.js` - LLM API integration and response processing
 - `services/EventService.js` - Event tracking and history management
-- `services/MessageService.js` - Inter-component communication
+- `services/MessageService.js` - Inter-component communication with shared capture logic
 - `services/WebhookService.js` - Legacy webhook support (unused in LLM mode)
 
 **UI Components:**
@@ -117,18 +144,38 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - `utils/formatters.js` - Date formatting, data display utilities
 
 **Assets:**
-- `assets/styles.css` - Complete styling (consolidated from inline styles)
+- `assets/styles.css` - Complete styling (consolidated from all inline styles)
 - `assets/icon_*.png` - Extension icons (16, 32, 48, 128, 256px)
 
 ### Data Flow
 
 1. **Field Definition**: Users define evaluation criteria in Fields tab
-2. **Capture Trigger**: Manual capture or automatic intervals
-3. **Screenshot Capture**: Full-page or viewport screenshots via CDP
-4. **LLM Analysis**: Screenshots and field criteria sent to configured LLM API
-5. **Result Processing**: LLM responses parsed and field results updated
-6. **Event Storage**: All capture attempts stored in local history
-7. **UI Updates**: Real-time status updates across all tabs
+2. **Capture Configuration**: Settings configured in Capture tab (intervals, refresh, context)
+3. **Capture Trigger**: Manual capture or automatic intervals
+4. **Context Retrieval**: Previous evaluation results loaded for enhanced analysis
+5. **Screenshot Capture**: Full-page or viewport screenshots via CDP
+6. **LLM Analysis**: Screenshots, field criteria, and previous context sent to configured LLM API
+7. **Result Processing**: LLM responses parsed and field results updated
+8. **Context Storage**: Results automatically stored as context for next evaluation
+9. **Event Storage**: All capture attempts stored in local history
+10. **UI Updates**: Real-time status updates across all tabs
+
+### Storage Architecture
+
+WebSophon uses domain-specific storage for complete isolation:
+
+```javascript
+// Domain-specific storage keys
+consent_${domain}          // Domain enablement
+interval_${domain}         // Capture interval setting
+fields_${domain}           // Field definitions
+previousEvaluation_${domain} // Previous results context
+
+// Global storage
+llmConfig_global           // LLM API configuration
+recentEvents              // Cross-domain event history
+usePreviousEvaluation     // Global context toggle
+```
 
 ## LLM API Configuration
 
@@ -137,20 +184,28 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Any OpenAI-compatible API** with vision capabilities
 - **Custom deployments** following OpenAI message format
 
+### Enhanced System Prompt
+
+WebSophon automatically enhances the system prompt with previous evaluation context:
+
+```
+Analyze this screenshot for the following criteria:
+[Field definitions...]
+
+PREVIOUS EVALUATION CONTEXT (for change detection):
+Previous results from [timestamp]:
+- field_name_1: TRUE (confidence: 95%) 
+- field_name_2: FALSE (confidence: 78%)
+
+Use this context to better detect changes and improvements.
+```
+
 ### API Response Format
 WebSophon expects responses in this JSON format:
 ```json
 {
-  "fields": {
-    "field_name_1": {
-      "boolean": true,
-      "probability": 0.95
-    },
-    "field_name_2": {
-      "boolean": false,
-      "probability": 0.23
-    }
-  },
+  "field_name_1": [true, 0.95],
+  "field_name_2": [false, 0.23],
   "reason": "Optional explanation of what was detected"
 }
 ```
@@ -166,16 +221,31 @@ Field names are automatically sanitized for API compatibility:
 ### Basic Workflow
 1. **Open popup** on the target website
 2. **Switch to Fields tab**, add evaluation criteria
-3. **Switch to Capture tab**, enable for domain
+3. **Switch to Capture tab**, enable for domain and configure settings
 4. **Configure LLM settings** in Settings tab
 5. **Test with manual capture** or enable automatic intervals
-6. **View results** in History tab
+6. **View results** in History tab with previous context
+
+### Capture Configuration Best Practices
+- **Start with Manual**: Test field definitions before enabling automatic intervals
+- **Use Previous Context**: Keep "Use Previous Evaluation Context" enabled for better change detection
+- **Choose Appropriate Intervals**: Balance frequency with API costs and resource usage
+- **Enable Page Refresh**: For dynamic sites that need fresh content
+- **Configure Delays**: Allow time for content loading after page refresh
 
 ### Field Definition Best Practices
 - **Be specific**: "Red error message visible" vs "There's an error"
 - **Use measurable criteria**: "Price below $100" vs "Good deal"
 - **Single responsibility**: One concept per field
 - **Clear language**: Avoid ambiguous terms
+- **Test thoroughly**: Use manual captures to validate field definitions
+
+### Previous Evaluation Context Usage
+- **Automatic Context**: Results automatically stored after successful evaluations
+- **Change Detection**: LLM can better detect when things change between captures
+- **Confidence Tracking**: Only high-confidence results stored as context
+- **Context Management**: Clear context button for fresh starts
+- **Visual Feedback**: Collapsible sections show what context was used
 
 ### History Management
 - **View all events**: Complete capture history with status indicators
@@ -183,14 +253,16 @@ Field names are automatically sanitized for API compatibility:
 - **Event details**: Click events to expand full information
 - **Field navigation**: Click field results to jump to corresponding events
 - **Screenshot review**: Click screenshots to zoom and inspect details
+- **Context review**: See what previous evaluation data was used
 
 ## Storage & Privacy
 
 - **Local Storage**: All data stored locally in browser
 - **No External Transmission**: Data only sent to your configured LLM API
-- **Domain Isolation**: Each domain's settings stored separately
+- **Domain Isolation**: Each domain's settings and context stored separately
 - **Automatic Cleanup**: Old events automatically pruned to prevent storage overflow
 - **User Control**: Complete control over data retention and deletion
+- **Context Privacy**: Previous evaluation results stored locally only
 
 ## Documentation
 
@@ -220,7 +292,7 @@ tv-eyes/
 │   ├── CaptureService.js          # Screenshot capture
 │   ├── LLMService.js              # LLM API integration
 │   ├── EventService.js            # Event tracking
-│   └── MessageService.js          # Communication
+│   └── MessageService.js          # Communication + shared logic
 ├── utils/
 │   └── formatters.js              # Utilities
 └── assets/
@@ -236,6 +308,7 @@ tv-eyes/
 - **CaptureService**: Screenshot capture via Chrome DevTools Protocol
 - **LLMService**: LLM API communication and response processing
 - **EventService**: Event storage and retrieval
+- **MessageService**: Shared capture logic and inter-component communication
 
 ### Debug Mode
 Enable additional debugging features:
@@ -253,6 +326,7 @@ localStorage.setItem('websophon-debug', 'true');
 - **"Request failed"**: Check API credentials and internet connection
 - **Empty history**: Ensure background service worker is running
 - **Settings not saving**: Check Chrome storage permissions
+- **"Failed to fetch" in automatic captures**: LLM configuration missing or invalid
 
 ### Debug Steps
 1. **Check console logs**: Open DevTools on extension popup
@@ -260,16 +334,20 @@ localStorage.setItem('websophon-debug', 'true');
 3. **Enable debug mode**: See debug mode instructions above
 4. **Clear storage**: Reset extension state if needed
 5. **Check background script**: Inspect service worker in chrome://extensions
+6. **Test manual capture**: Verify configuration before enabling automatic intervals
 
 ### Performance Notes
 - **Storage Management**: Automatic cleanup prevents storage overflow
 - **Concurrent Requests**: Multiple captures supported simultaneously
 - **Memory Efficient**: Screenshots stored compressed in Chrome storage
-- **Timeout Handling**: 5-minute maximum for LLM requests
+- **Timeout Handling**: 2-minute maximum for LLM requests
+- **Context Efficiency**: Previous evaluation context stored per-domain
+- **Interval Management**: Proper cleanup prevents resource leaks
 
 ## Version History
 
-- **v2.6+**: Enhanced user controls, request cancellation, screenshot downloads
+- **v2.7**: Previous evaluation context system, UI organization improvements
+- **v2.6**: Enhanced user controls, request cancellation, screenshot downloads
 - **v2.5**: Long-running request support, real-time updates
 - **v2.4**: Enhanced debugging, field-history integration
 - **v2.3**: Domain management, statistics tracking
@@ -282,4 +360,5 @@ localStorage.setItem('websophon-debug', 'true');
 - **Local Processing**: All data processing occurs locally or via your configured APIs
 - **No Telemetry**: No usage data collected or transmitted
 - **Open Source**: Full source code available for review
-- **User Control**: Complete control over data storage and API usage 
+- **User Control**: Complete control over data storage and API usage
+- **Context Privacy**: Previous evaluation results stored locally only 
