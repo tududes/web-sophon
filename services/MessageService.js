@@ -1029,14 +1029,63 @@ export class MessageService {
 
     // CAPTCHA and token management
     async getCaptchaChallenge() {
-        // This method is no longer used - CAPTCHA challenge is now handled server-side
-        throw new Error('CAPTCHA challenge is now handled server-side. Use the authentication tab instead.');
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+
+            const response = await fetch(`${runnerEndpoint}/captcha/challenge`);
+            if (!response.ok) {
+                throw new Error(`Failed to get CAPTCHA challenge: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[CAPTCHA] Error getting challenge:', error);
+            throw error;
+        }
     }
 
     async verifyCaptchaAndGetToken(captchaResponse) {
-        // This method is no longer used - CAPTCHA verification is now handled server-side
-        // The extension retrieves tokens from the auth page after successful verification
-        throw new Error('CAPTCHA verification is now handled server-side. Use the authentication tab instead.');
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+
+            const response = await fetch(`${runnerEndpoint}/captcha/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ captchaResponse })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `CAPTCHA verification failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            // Store token and metadata
+            this.cloudSecurity.authToken = result.token;
+            this.cloudSecurity.tokenExpiry = result.expiresAt;
+            this.cloudSecurity.quotas = result.quotas;
+
+            // Save to storage for persistence
+            await chrome.storage.local.set({
+                websophon_auth_token: result.token,
+                websophon_token_expires: result.expiresAt,
+                cloudAuthToken: result.token,
+                cloudTokenExpiry: result.expiresAt,
+                cloudQuotas: result.quotas
+            });
+
+            console.log('[CAPTCHA] Token obtained successfully, expires:', new Date(result.expiresAt).toLocaleString());
+            return result;
+
+        } catch (error) {
+            console.error('[CAPTCHA] Error verifying CAPTCHA:', error);
+            throw error;
+        }
     }
 
     async ensureValidToken() {
