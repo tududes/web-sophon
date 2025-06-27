@@ -2614,11 +2614,43 @@ input:checked+.slider:hover {
     border-top: 1px dashed var(--border-color-light);
 }
 
+.domain-job-details summary {
+    cursor: pointer;
+    list-style: none;
+    /* Remove default marker */
+}
+
+.domain-job-details summary::-webkit-details-marker {
+    display: none;
+    /* For Safari */
+}
+
+.domain-job-details[open] summary {
+    margin-bottom: 8px;
+}
+
 .job-details-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    position: relative;
+    padding-right: 25px;
+    /* Space for the arrow */
+}
+
+.job-details-header::after {
+    content: '›';
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%) rotate(90deg);
+    font-size: 24px;
+    color: var(--text-color-light);
+    transition: transform 0.2s ease;
+}
+
+.domain-job-details[open] .job-details-header::after {
+    transform: translateY(-50%) rotate(-90deg);
 }
 
 .job-details-title {
@@ -2627,10 +2659,38 @@ input:checked+.slider:hover {
     color: var(--text-color-strong);
 }
 
+.job-pending-indicator {
+    background-color: var(--primary-color);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.job-pending-indicator.visible {
+    opacity: 1;
+}
+
+.job-details-content {
+    padding-left: 10px;
+    border-left: 2px solid var(--border-color);
+}
+
 .job-detail-item {
     font-size: 12px;
     color: var(--text-color);
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+}
+
+.job-detail-item:last-child {
+    margin-bottom: 0;
 }
 
 .job-detail-item .job-id {
@@ -2638,6 +2698,10 @@ input:checked+.slider:hover {
     background-color: var(--background-color);
     padding: 1px 4px;
     border-radius: 4px;
+}
+
+.job-detail-item .clear-job-btn {
+    margin-top: 8px;
 }
 
 /* === Field Management === */

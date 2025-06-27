@@ -1404,17 +1404,24 @@ class CleanPopupController {
 
     getJobDetailsHtml(jobInfo) {
         const createdDate = new Date(jobInfo.createdAt).toLocaleString();
+        const hasPending = jobInfo.resultCount > 0;
         return `
-            <div class="domain-job-details">
-                <div class="job-details-header">
+            <details class="domain-job-details">
+                <summary class="job-details-header">
                     <span class="job-details-title">☁️ Active Cloud Job</span>
-                    <button class="small-button secondary clear-job-btn" data-job-id="${jobInfo.id}" data-domain="${jobInfo.domain}" title="Stop and clear this recurring job from the server">Clear Job</button>
+                    <span class="job-pending-indicator ${hasPending ? 'visible' : ''}" title="${jobInfo.resultCount} results pending sync">${jobInfo.resultCount}</span>
+                </summary>
+                <div class="job-details-content">
+                    <div class="job-detail-item"><strong>Job ID:</strong> <span class="job-id">${jobInfo.id.substring(0, 8)}...</span></div>
+                    <div class="job-detail-item"><strong>Created:</strong> ${createdDate}</div>
+                    <div class="job-detail-item"><strong>Interval:</strong> ${jobInfo.interval}s</div>
+                    <div class="job-detail-item"><strong>Status:</strong> <span class="job-status-${jobInfo.status}">${jobInfo.status}</span></div>
+                    <div class="job-detail-item"><strong>Pending Results:</strong> ${jobInfo.resultCount}</div>
+                    <button class="small-button danger clear-job-btn" data-job-id="${jobInfo.id}" data-domain="${jobInfo.domain}" title="Stop and clear this recurring job from the server">
+                        Stop Cloud Job
+                    </button>
                 </div>
-                <div class="job-detail-item"><strong>Job ID:</strong> <span class="job-id">${jobInfo.id.substring(0, 8)}...</span></div>
-                <div class="job-detail-item"><strong>Created:</strong> ${createdDate}</div>
-                <div class="job-detail-item"><strong>Interval:</strong> ${jobInfo.interval}s</div>
-                <div class="job-detail-item"><strong>Pending Results:</strong> ${jobInfo.resultCount}</div>
-            </div>
+            </details>
         `;
     }
 
