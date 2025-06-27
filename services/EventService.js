@@ -153,11 +153,15 @@ export class EventService {
 
         const event = this.recentEvents[eventIndex];
 
+        // Preserve the original source (important for cloud jobs)
+        const originalSource = event.source;
+
         // Update event data
         event.status = 'completed';
         event.httpStatus = httpStatus;
         event.error = error;
         event.response = responseText; // ALWAYS contains response data (JSON, text, or error message)
+        event.source = originalSource; // Explicitly preserve the original source
         if (screenshot) {
             event.screenshot = screenshot;
         }
@@ -242,7 +246,7 @@ export class EventService {
             }
         }
 
-        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}`);
+        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}, source: ${originalSource} (preserved)`);
 
         // Save updated events
         this.saveEventsToStorage();
