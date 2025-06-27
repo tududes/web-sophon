@@ -942,9 +942,34 @@ app.get('/auth-success', (req, res) => {
                 🏠 <strong>Return to Extension:</strong> Go back to the WebSophon popup<br>
                 🗂️ <strong>Close This Tab:</strong> You can close this tab manually when ready
                 <div class="auto-detect-note">
-                    💡 The extension polls for your token every 3 seconds for 2 minutes. No manual action needed!
+                    💡 The extension polls for your token every 3 seconds for 5 minutes. No manual action needed!
                 </div>
             </div>
+        </div>
+        
+        <script>
+            // Try to notify the extension that authentication is complete
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const jobId = urlParams.get('jobId') || localStorage.getItem('auth_job_id');
+                
+                if (jobId && window.chrome && window.chrome.runtime) {
+                    // Try to send a message to the extension
+                    window.chrome.runtime.sendMessage('YOUR_EXTENSION_ID', {
+                        action: 'authComplete',
+                        jobId: jobId
+                    }, function(response) {
+                        if (window.chrome.runtime.lastError) {
+                            console.log('Extension not available:', window.chrome.runtime.lastError.message);
+                        } else {
+                            console.log('Successfully notified extension');
+                        }
+                    });
+                }
+            } catch (error) {
+                console.log('Could not notify extension:', error);
+            }
+        </script>
         </div>
     </body>
     </html>

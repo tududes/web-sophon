@@ -477,7 +477,7 @@ class CleanPopupController {
 
                 this.updateTokenStatusDisplay(true, response);
                 this.updateQuotaDisplay(response.quotas);
-                this.hideCapcha();
+                this.hideCaptcha();
             } else {
                 const errorMsg = response && response.error ? response.error : 'No valid token available';
                 console.log('[TOKEN] No valid token available:', errorMsg);
@@ -605,12 +605,17 @@ class CleanPopupController {
             });
 
             // Start background polling for this specific job ID
-            await this.sendMessageToBackground({
+            console.log('[AUTH] Starting polling for job ID:', jobId);
+            const pollResponse = await this.sendMessageToBackground({
                 action: 'startAuthPolling',
                 jobId: jobId
             });
+            console.log('[AUTH] Poll response:', pollResponse);
 
-            this.showCaptchaMessage('Complete the CAPTCHA in the opened tab. Authentication will be detected automatically...', 'info');
+            this.showCaptchaMessage(`Complete the CAPTCHA in the opened tab. Polling for job: ${jobId}`, 'info');
+
+            // Add a manual check button as backup
+            this.addManualCheckButton(jobId);
 
         } catch (error) {
             console.error('[AUTH] Error opening authentication tab:', error);
@@ -620,7 +625,7 @@ class CleanPopupController {
 
     // Note: Authentication is now handled via job-based polling for better reliability and security
 
-    hideCapcha() {
+    hideCaptcha() {
         if (this.elements.captchaContainer) {
             this.elements.captchaContainer.style.display = 'none';
         }
@@ -635,6 +640,84 @@ class CleanPopupController {
         if (this.elements.captchaStatus) {
             this.elements.captchaStatus.textContent = message;
             this.elements.captchaStatus.className = `status-message ${type}`;
+        }
+    }
+
+    addManualCheckButton(jobId) {
+        // Remove existing button if present
+        const existingButton = document.getElementById('manual-check-button');
+        if (existingButton) {
+            existingButton.remove();
+        }
+
+        const captchaSection = document.querySelector('.captcha-section');
+        if (captchaSection) {
+            // Add a manual check button
+            const checkButton = document.createElement('button');
+            checkButton.innerHTML = '🔍 Check for Token Manually';
+            checkButton.style.marginTop = '10px';
+            checkButton.style.padding = '8px 16px';
+            checkButton.style.backgroundColor = '#4CAF50';
+            checkButton.style.color = 'white';
+            checkButton.style.border = 'none';
+            checkButton.style.borderRadius = '4px';
+            checkButton.style.cursor = 'pointer';
+            checkButton.style.display = 'block';
+            checkButton.style.width = '100%';
+            checkButton.id = 'manual-check-button';
+
+            checkButton.onclick = async () => {
+                try {
+                    checkButton.disabled = true;
+                    checkButton.innerHTML = '🔍 Checking...';
+
+                    const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+                    const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+                    const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
+
+                    console.log('[AUTH] Manual check for job:', jobId, 'at', jobUrl);
+                    const response = await fetch(jobUrl);
+
+                    console.log('[AUTH] Manual check response:', response.status, response.statusText);
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log('[AUTH] Manual check result:', result);
+
+                        if (result.success && result.token) {
+                            // Store the token
+                            await this.sendMessageToBackground({
+                                action: 'storeAuthToken',
+                                token: result.token,
+                                expiresAt: result.expiresAt
+                            });
+
+                            this.showCaptchaMessage('✅ Authentication successful! Token retrieved manually.', 'success');
+
+                            // Refresh the token display
+                            await this.loadTokenStatus();
+                            this.hideCaptcha();
+
+                            // Remove the manual check button
+                            checkButton.remove();
+                            return;
+                        }
+                    }
+
+                    // Not ready yet
+                    checkButton.disabled = false;
+                    checkButton.innerHTML = '🔍 Check for Token Manually';
+                    this.showCaptchaMessage(`Job not ready yet. Complete CAPTCHA first. (Status: ${response.status})`, 'info');
+
+                } catch (error) {
+                    console.error('[AUTH] Manual check error:', error);
+                    checkButton.disabled = false;
+                    checkButton.innerHTML = '🔍 Check for Token Manually';
+                    this.showCaptchaMessage('❌ Manual check failed: ' + error.message, 'error');
+                }
+            };
+
+            captchaSection.appendChild(checkButton);
         }
     }
 
@@ -1118,7 +1201,7 @@ class CleanPopupController {
                         this.updateQuotaDisplay(request.tokenStats.quotas);
 
                         setTimeout(() => {
-                            this.hideCapcha();
+                            this.hideCaptcha();
                         }, 2000);
                     }
                     break;

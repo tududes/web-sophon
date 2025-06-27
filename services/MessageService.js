@@ -51,9 +51,16 @@ export class MessageService {
         const handlers = {
             'ping': (req, sender, res) => res({ pong: true }),
             'startAuthPolling': (req, sender, res) => {
+                console.log('[AUTH] Received startAuthPolling request with jobId:', req.jobId);
                 this.startAuthTokenPolling(req.jobId)
-                    .then(() => res({ success: true }))
-                    .catch(err => res({ success: false, error: err.message }));
+                    .then(() => {
+                        console.log('[AUTH] Polling started successfully');
+                        res({ success: true, jobId: req.jobId });
+                    })
+                    .catch(err => {
+                        console.error('[AUTH] Failed to start polling:', err);
+                        res({ success: false, error: err.message });
+                    });
             },
             'stopAuthPolling': (req, sender, res) => {
                 this.stopAuthTokenPolling();
@@ -1272,7 +1279,10 @@ export class MessageService {
                     const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
                     const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
 
+                    console.log(`[AUTH] Polling attempt ${pollCount}/${maxPolls} for job ${jobId} at ${jobUrl}`);
                     const response = await fetch(jobUrl);
+
+                    console.log(`[AUTH] Response status: ${response.status} ${response.statusText}`);
 
                     if (response.ok) {
                         const result = await response.json();
