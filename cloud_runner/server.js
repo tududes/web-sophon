@@ -673,15 +673,41 @@ app.get('/auth', (req, res) => {
                 });
                 
                 function initializeCaptcha() {
-                    hcaptchaWidgetId = hcaptcha.render('hcaptcha-widget', {
-                        sitekey: '${SECURITY_CONFIG.CAPTCHA_SITE_KEY}',
-                        theme: 'light',
-                        callback: onCaptchaSuccess,
-                        'error-callback': onCaptchaError,
-                        'expired-callback': onCaptchaExpired
-                    });
+                    // Check if we're in development mode
+                    const isDevelopment = '${SECURITY_CONFIG.CAPTCHA_SITE_KEY}' === 'dev_captcha_site_key';
                     
-                    showStatus('Complete the CAPTCHA to get your authentication token', 'info');
+                    if (isDevelopment) {
+                        // Development mode - show bypass button
+                        const widget = document.getElementById('hcaptcha-widget');
+                        widget.innerHTML = \`
+                            <div style="padding: 20px; border: 2px dashed #667eea; border-radius: 8px; background: #f8f9ff;">
+                                <h3 style="color: #667eea; margin-bottom: 10px;">🔧 Development Mode</h3>
+                                <p style="color: #666; margin-bottom: 15px; font-size: 0.9rem;">
+                                    CAPTCHA verification is bypassed in development mode.
+                                </p>
+                                <button id="dev-auth-btn" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                                    🚀 Get Development Token
+                                </button>
+                            </div>
+                        \`;
+                        
+                        document.getElementById('dev-auth-btn').onclick = function() {
+                            onCaptchaSuccess('dev_bypass_token');
+                        };
+                        
+                        showStatus('Development mode active - click the button below to get a token', 'info');
+                    } else {
+                        // Production mode - use real hCaptcha
+                        hcaptchaWidgetId = hcaptcha.render('hcaptcha-widget', {
+                            sitekey: '${SECURITY_CONFIG.CAPTCHA_SITE_KEY}',
+                            theme: 'light',
+                            callback: onCaptchaSuccess,
+                            'error-callback': onCaptchaError,
+                            'expired-callback': onCaptchaExpired
+                        });
+                        
+                        showStatus('Complete the CAPTCHA to get your authentication token', 'info');
+                    }
                 }
                 
                 async function onCaptchaSuccess(token) {
