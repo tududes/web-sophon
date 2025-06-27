@@ -1,16 +1,33 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSophon</title>
     <link rel="stylesheet" href="assets/styles.css">
+    <style>
+        body.service-disconnected .main-content {
+            display: none;
+        }
+
+        #connectionError {
+            display: none;
+            padding: 20px;
+            text-align: center;
+            background-color: #ffebee;
+            color: #c62828;
+            border-radius: 8px;
+        }
+    </style>
 </head>
 
-<body>
-    <div class="container">
-        <div class="header-section">
-            <div class="header-content" id="header-link">
-                <img src="assets/icon_32.png" alt="WebSophon" class="header-icon">
+<body data-theme="light">
+    <div id="connectionError"></div>
+    <div class="main-content">
+        <header>
+            <div class="logo-title">
+                <img src="assets/icon_32.png" alt="WebSophon Logo">
                 <h1>WebSophon</h1>
             </div>
             <div class="theme-controls">
@@ -18,7 +35,7 @@
                     <span class="theme-icon">🌙</span>
                 </button>
             </div>
-        </div>
+        </header>
 
         <!-- Tab Navigation -->
         <div class="tab-navigation">

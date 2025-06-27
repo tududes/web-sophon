@@ -2484,3 +2484,173 @@ input:checked+.slider:hover {
 }
 
 /* End Previous Evaluation Section */
+
+/* === Known Domains Section === */
+.domains-container {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 5px;
+}
+
+.domain-item {
+    background-color: var(--background-color-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    padding: 12px;
+    transition: all 0.2s ease;
+}
+
+.domain-item.current-domain-item {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 8px rgba(var(--primary-color-rgb), 0.2);
+}
+
+.domain-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.domain-name-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.domain-name-text {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-color-strong);
+}
+
+.domain-current-badge {
+    background-color: var(--primary-color-light);
+    color: var(--primary-color);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.domain-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.domain-status {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+}
+
+.domain-status.enabled {
+    background-color: var(--success-color-light);
+    color: var(--success-color);
+}
+
+.domain-status.disabled {
+    background-color: var(--secondary-color-light);
+    color: var(--secondary-color);
+}
+
+.domain-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.domain-delete-btn:hover {
+    opacity: 1;
+}
+
+.domain-details {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 10px;
+}
+
+.domain-detail-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.domain-detail-label {
+    font-size: 11px;
+    color: var(--text-color-light);
+    margin-bottom: 2px;
+    text-transform: uppercase;
+}
+
+.domain-detail-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.domain-last-run-value.never {
+    color: var(--text-color-light);
+    font-style: italic;
+}
+
+.no-domains {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-color-light);
+}
+
+.domain-job-details {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border-color-light);
+}
+
+.job-details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.job-details-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color-strong);
+}
+
+.job-detail-item {
+    font-size: 12px;
+    color: var(--text-color);
+    margin-bottom: 4px;
+}
+
+.job-detail-item .job-id {
+    font-family: monospace;
+    background-color: var(--background-color);
+    padding: 1px 4px;
+    border-radius: 4px;
+}
+
+/* === Field Management === */
+.fields-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+
+.fields-header h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text-primary);
+}

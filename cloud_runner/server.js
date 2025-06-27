@@ -8,8 +8,41 @@ import { getSystemPrompt } from '../utils/prompt-formatters.js';
 const app = express();
 const port = process.env.PORT || 7113;
 
-// In-memory store for jobs. In production, use a persistent store like Redis.
+// In-memory store for jobs and their results.
+// In production, this should be a persistent store like Redis.
 const jobs = {};
+
+// --- NEW: Internal Scheduler ---
+// This will run jobs on the server according to their schedule.
+const jobScheduler = {
+    intervalId: null,
+    start: () => {
+        if (jobScheduler.intervalId) return;
+        console.log('[Scheduler] Starting job scheduler...');
+        jobScheduler.intervalId = setInterval(async () => {
+            const now = Date.now();
+            for (const jobId in jobs) {
+                const job = jobs[jobId];
+                if (job.interval && job.status !== 'running') {
+                    const lastRun = job.lastRun || 0;
+                    if (now - lastRun >= job.interval * 1000) {
+                        console.log(`[Scheduler] Job ${jobId} is due. Last run was at ${new Date(lastRun).toISOString()}.`);
+                        job.lastRun = now;
+                        // Don't await this, let it run in the background
+                        processJob(jobId, job.jobData);
+                    }
+                }
+            }
+        }, 5000); // Check every 5 seconds for due jobs
+    },
+    stop: () => {
+        if (jobScheduler.intervalId) {
+            clearInterval(jobScheduler.intervalId);
+            jobScheduler.intervalId = null;
+            console.log('[Scheduler] Stopped job scheduler.');
+        }
+    }
+};
 
 // Add a simple logger middleware to see all incoming requests
 app.use((req, res, next) => {
@@ -17,15 +50,15 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(cors()); // Enable CORS for all routes
-app.use(bodyParser.json({ limit: '10mb' })); // Increase limit for larger payloads
+app.use(cors());
+app.use(bodyParser.json({ limit: '10mb' }));
 
 /**
- * Endpoint to submit a new capture job.
- * The extension will send the target URL and session data here.
+ * Endpoint to submit or update a capture job.
+ * If an interval is provided, it creates a recurring job.
  */
 app.post('/job', (req, res) => {
-    const { sessionData, llmConfig, fields, previousEvaluation } = req.body;
+    const { sessionData, llmConfig, fields, previousEvaluation, interval = null, domain } = req.body;
 
     if (!sessionData || !sessionData.url) {
         return res.status(400).json({ error: 'Session data with a URL is required' });
@@ -33,28 +66,50 @@ app.post('/job', (req, res) => {
     if (!llmConfig || !fields) {
         return res.status(400).json({ error: 'LLM config and fields are required' });
     }
+    if (!domain) {
+        return res.status(400).json({ error: 'Domain is required for job identification' });
+    }
 
-    const jobId = uuidv4();
-    jobs[jobId] = {
-        id: jobId,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        screenshotData: null,
-        llmRequestPayload: null,
-        llmResponse: null,
-        error: null,
-    };
+    // Check if a job for this domain already exists
+    let jobId = Object.keys(jobs).find(id => jobs[id].domain === domain);
+    const jobExists = !!jobId;
 
-    console.log(`[${jobId}] Job created for URL: ${sessionData.url}`);
+    if (!jobExists) {
+        jobId = uuidv4();
+        jobs[jobId] = {
+            id: jobId,
+            domain: domain,
+            status: 'idle', // Job is waiting for its interval
+            interval: interval,
+            createdAt: new Date().toISOString(),
+            lastRun: 0,
+            jobData: { sessionData, llmConfig, fields, previousEvaluation },
+            results: [], // Array to store results from each run
+            error: null,
+        };
+        console.log(`[${jobId}] New recurring job created for domain ${domain} with interval ${interval}s`);
+    } else {
+        // Update existing job
+        const job = jobs[jobId];
+        job.interval = interval;
+        job.jobData = { sessionData, llmConfig, fields, previousEvaluation };
+        job.status = 'idle';
+        console.log(`[${jobId}] Existing job for domain ${domain} updated with interval ${interval}s`);
+    }
 
-    res.status(202).json({ jobId });
 
-    processJob(jobId, { sessionData, llmConfig, fields, previousEvaluation });
+    // If it's a one-off job (no interval), run it immediately.
+    if (!interval) {
+        console.log(`[${jobId}] Job for ${domain} is a one-off. Running now.`);
+        processJob(jobId, { sessionData, llmConfig, fields, previousEvaluation });
+        res.status(202).json({ jobId, message: "One-off job started." });
+    } else {
+        res.status(201).json({ jobId, message: `Recurring job ${jobExists ? 'updated' : 'created'}.` });
+    }
 });
 
 /**
- * Endpoint to check the status of a capture job.
- * The extension will poll this endpoint using the jobId.
+ * Endpoint to get the status and accumulated results of a job.
  */
 app.get('/job/:id', (req, res) => {
     const jobId = req.params.id;
@@ -64,44 +119,95 @@ app.get('/job/:id', (req, res) => {
         return res.status(404).json({ error: 'Job not found' });
     }
 
-    console.log(`[${jobId}] Status check: ${job.status}`);
-    res.status(200).json(job);
+    // Return a summary of the job, not the full result data here
+    const jobSummary = {
+        id: job.id,
+        domain: job.domain,
+        status: job.status,
+        interval: job.interval,
+        createdAt: job.createdAt,
+        lastRun: job.lastRun,
+        resultCount: job.results.length,
+    };
+    console.log(`[${jobId}] Status check: ${job.status}, ${job.results.length} results pending.`);
+    res.status(200).json(jobSummary);
+});
+
+
+/**
+ * NEW: Endpoint to stop and delete a recurring job.
+ */
+app.delete('/job/:id', (req, res) => {
+    const jobId = req.params.id;
+    if (jobs[jobId]) {
+        delete jobs[jobId];
+        console.log(`[${jobId}] Job deleted successfully.`);
+        res.status(200).json({ message: 'Job deleted successfully.' });
+    } else {
+        res.status(404).json({ error: 'Job not found.' });
+    }
 });
 
 /**
- * Endpoint to test the cloud runner connection and payload handling.
+ * NEW: Endpoint to fetch all accumulated results for a job.
  */
-app.post('/test', (req, res) => {
-    const { testData } = req.body;
-    console.log('Received test request with data:', testData);
-
-    if (!testData) {
-        return res.status(400).json({ success: false, error: 'No testData received.' });
+app.get('/job/:id/results', (req, res) => {
+    const jobId = req.params.id;
+    const job = jobs[jobId];
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
     }
 
-    // "Decrypt" and "re-encrypt" the data (for now, just a simple transformation)
-    const processedData = `Runner processed: ${testData}`;
+    console.log(`[${jobId}] Fetching ${job.results.length} results.`);
+    res.status(200).json({ results: job.results });
+});
 
-    res.status(200).json({
-        success: true,
-        message: 'Cloud runner is running and processed the test data successfully.',
-        receivedData: testData,
-        processedData: processedData
-    });
+/**
+ * NEW: Endpoint to purge results after the extension has synced them.
+ */
+app.post('/job/:id/purge', (req, res) => {
+    const jobId = req.params.id;
+    const job = jobs[jobId];
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+    const purgedCount = job.results.length;
+    job.results = []; // Clear the results array
+    console.log(`[${jobId}] Purged ${purgedCount} results.`);
+    res.status(200).json({ message: `Purged ${purgedCount} results.` });
+});
+
+
+/**
+ * Endpoint to test the cloud runner connection.
+ */
+app.post('/test', (req, res) => {
+    res.status(200).json({ success: true, message: 'Cloud runner is running.' });
 });
 
 /**
  * Processes the capture job using Puppeteer.
- * This function runs in the background.
+ * This function now appends results to the job's results array.
  */
 async function processJob(jobId, jobData) {
     const job = jobs[jobId];
-    const { sessionData, llmConfig, fields, previousEvaluation } = jobData;
+    if (!job) {
+        console.error(`[${jobId}] Tried to process a job that does not exist.`);
+        return;
+    }
+
+    // Prevent concurrent runs for the same job
+    if (job.status === 'running') {
+        console.warn(`[${jobId}] Job is already running. Skipping this execution.`);
+        return;
+    }
+
+    const { sessionData, llmConfig, fields } = jobData;
     let browser;
 
     try {
         console.log(`[${jobId}] Launching Puppeteer...`);
-        job.status = 'launching_browser';
+        job.status = 'running';
         browser = await puppeteer.launch({
             headless: true,
             executablePath: '/usr/bin/google-chrome',
@@ -110,70 +216,69 @@ async function processJob(jobId, jobData) {
         const page = await browser.newPage();
 
         console.log(`[${jobId}] Setting up browser environment...`);
-        job.status = 'setting_environment';
 
-        // Set User Agent
-        if (sessionData.userAgent) {
-            await page.setUserAgent(sessionData.userAgent);
-        }
+        if (sessionData.userAgent) await page.setUserAgent(sessionData.userAgent);
+        if (sessionData.viewport) await page.setViewport(sessionData.viewport);
+        if (sessionData.cookies && sessionData.cookies.length > 0) await page.setCookie(...sessionData.cookies);
 
-        // Set Viewport
-        if (sessionData.viewport) {
-            await page.setViewport(sessionData.viewport);
-        }
-
-        // Set Cookies
-        if (sessionData.cookies && sessionData.cookies.length > 0) {
-            await page.setCookie(...sessionData.cookies);
-        }
-
-        // Set Local & Session Storage
         await page.evaluateOnNewDocument((storage) => {
-            for (const [key, value] of Object.entries(storage.localStorage)) {
-                window.localStorage.setItem(key, value);
-            }
-            for (const [key, value] of Object.entries(storage.sessionStorage)) {
-                window.sessionStorage.setItem(key, value);
-            }
+            for (const [key, value] of Object.entries(storage.localStorage)) window.localStorage.setItem(key, value);
+            for (const [key, value] of Object.entries(storage.sessionStorage)) window.sessionStorage.setItem(key, value);
         }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
 
-
         console.log(`[${jobId}] Navigating to ${sessionData.url}...`);
-        job.status = 'navigating';
         await page.goto(sessionData.url, { waitUntil: 'networkidle2' });
 
         console.log(`[${jobId}] Taking screenshot...`);
-        job.status = 'capturing';
         const screenshotBuffer = await page.screenshot({ fullPage: true });
-        const base64Image = screenshotBuffer.toString('base64');
-        job.screenshotData = `data:image/png;base64,${base64Image}`;
+        const screenshotData = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
 
         console.log(`[${jobId}] Sending to LLM...`);
-        job.status = 'analyzing';
-        const { response, requestPayload } = await callLlmService(base64Image, llmConfig, fields, previousEvaluation);
-        job.llmResponse = response;
-        job.llmRequestPayload = { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) };
+        // Use the job's last result as context for the next one
+        const previousEvaluation = job.results.length > 0 ? job.results[job.results.length - 1].llmResponse : jobData.previousEvaluation;
+        const { response, requestPayload } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);
 
-        job.status = 'complete';
-        job.completedAt = new Date().toISOString();
-        console.log(`[${jobId}] Job completed successfully.`);
+        // Add the new result to the job's history
+        job.results.push({
+            resultId: uuidv4(),
+            timestamp: new Date().toISOString(),
+            screenshotData: screenshotData,
+            llmRequestPayload: { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) },
+            llmResponse: response,
+            error: null
+        });
+
+        job.status = job.interval ? 'idle' : 'complete'; // Reset to idle for next interval
+        console.log(`[${jobId}] Job run completed successfully. Total results: ${job.results.length}`);
 
     } catch (error) {
         console.error(`[${jobId}] Error processing job:`, error);
         job.status = 'failed';
         job.error = error.message;
-        job.completedAt = new Date().toISOString();
+        // Also add error to results history
+        job.results.push({
+            resultId: uuidv4(),
+            timestamp: new Date().toISOString(),
+            error: error.message
+        });
     } finally {
         if (browser) {
             await browser.close();
+        }
+        // If it was a one-off job that's done, clean it up after a while
+        if (job && !job.interval) {
+            setTimeout(() => {
+                if (jobs[jobId]) {
+                    console.log(`[${jobId}] Deleting completed one-off job.`);
+                    delete jobs[jobId];
+                }
+            }, 60000 * 5); // 5 minutes
         }
     }
 }
 
 async function callLlmService(base64Image, llmConfig, fields, previousEvaluation) {
-    // This function mimics the structure of the extension's LLMService
     const systemPrompt = getSystemPrompt(fields, previousEvaluation);
-
     const requestPayload = {
         model: llmConfig.model || 'gpt-4-vision-preview',
         messages: [
@@ -192,10 +297,7 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
 
     const response = await fetch(llmConfig.apiUrl, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${llmConfig.apiKey}`,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${llmConfig.apiKey}` },
         body: JSON.stringify(requestPayload)
     });
 
@@ -207,18 +309,15 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
     const responseData = await response.json();
     let finalResponse;
 
-    // Extract the content from the typical OpenAI response structure
     if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
-        let content = responseData.choices[0].message.content;
-        content = content.replace(/^```json\s*|```\s*$/g, ''); // Trim markdown fences
+        let content = responseData.choices[0].message.content.replace(/^```json\s*|```\s*$/g, '');
         try {
             finalResponse = JSON.parse(content);
         } catch (e) {
-            // If parsing fails, return the raw content string
             finalResponse = { raw_content: content, parse_error: e.message };
         }
     } else {
-        finalResponse = responseData; // Fallback to returning the full response
+        finalResponse = responseData;
     }
 
     return { response: finalResponse, requestPayload: requestPayload };
@@ -226,4 +325,15 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
 
 app.listen(port, () => {
     console.log(`Cloud runner listening on port ${port}`);
+    jobScheduler.start();
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('SIGINT signal received: closing HTTP server');
+    jobScheduler.stop();
+    app.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
+    });
 });

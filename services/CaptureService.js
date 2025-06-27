@@ -18,84 +18,76 @@ export class CaptureService {
     }
 
     // Start capturing screenshots for a tab
-    startCapture(settings, llmService, eventService) {
-        const { tabId, domain, interval, refreshPage = false, captureDelay = 0 } = settings;
+    async startCapture(settings) {
+        const { tabId, domain, interval } = settings;
 
-        // Stop any existing capture for this tab
-        this.stopCapture(tabId);
+        // Stop any existing LOCAL capture for this tab to prevent conflicts.
+        this.stopLocalCapture(tabId);
 
-        // Store settings including new refresh and delay options
-        this.captureSettings.set(tabId, {
-            domain,
-            refreshPage,
-            captureDelay
-        });
+        console.log(`[Cloud] Instructing server to start job for ${domain} every ${interval} seconds`);
 
-        console.log(`Starting automatic LLM capture for ${domain} every ${interval} seconds`);
-
-        // Function to perform automatic capture using shared capture logic
-        const performAutomaticCapture = async () => {
-            try {
-                console.log(`Triggering automatic capture for domain ${domain}`);
-
-                // Use the shared capture method from MessageService (DRY principle)
-                const messageService = this.getMessageService();
-                if (messageService) {
-                    const response = await messageService.performCapture(tabId, domain, false); // isManual = false
-
-                    if (response.success) {
-                        console.log('Automatic capture completed successfully');
-                    } else {
-                        console.log('Automatic capture failed:', response.error);
-                    }
+        try {
+            // The MessageService will now handle the logic of sending the "start job" command
+            // to the cloud runner. We don't need a local interval here anymore.
+            const messageService = this.getMessageService();
+            if (messageService) {
+                // We store the domain and jobId to know which jobs are active.
+                // The actual interval is now managed by the server.
+                const response = await messageService.startOrUpdateCloudJob({ tabId, domain, interval });
+                if (response.success && response.jobId) {
+                    this.captureSettings.set(tabId, { domain, jobId: response.jobId, interval });
+                    console.log(`[Cloud] Server acknowledged job ${response.jobId} for domain ${domain}.`);
                 } else {
-                    console.error('MessageService not available for automatic capture');
+                    throw new Error(response.error || 'Server failed to start job.');
                 }
-
-            } catch (error) {
-                console.error('Error in automatic capture:', error);
+            } else {
+                throw new Error('MessageService not available for automatic capture');
             }
-        };
-
-        // Capture immediately
-        performAutomaticCapture();
-
-        // Set up interval for repeated captures
-        const intervalId = setInterval(performAutomaticCapture, interval * 1000);
-
-        this.captureIntervals.set(tabId, intervalId);
-        console.log(`Started automatic LLM capture for tab ${tabId} on domain ${domain} every ${interval} seconds`);
+        } catch (error) {
+            console.error(`[Cloud] Failed to start recurring job for ${domain}:`, error);
+            // Optionally, notify the UI of the failure
+            chrome.runtime.sendMessage({ action: 'captureError', error: `Failed to start cloud job: ${error.message}` });
+        }
     }
 
     // Stop capturing screenshots for a tab
-    stopCapture(tabId) {
+    async stopCapture(tabId) {
+        if (this.captureIntervals.has(tabId)) {
+            // This is a local interval, clear it.
+            this.stopLocalCapture(tabId);
+        }
+
+        if (this.captureSettings.has(tabId)) {
+            const { domain, jobId } = this.captureSettings.get(tabId);
+            console.log(`[Cloud] Instructing server to stop job ${jobId} for domain ${domain}`);
+            try {
+                const messageService = this.getMessageService();
+                if (messageService) {
+                    await messageService.stopCloudJob({ jobId, domain });
+                }
+                this.captureSettings.delete(tabId);
+            } catch (error) {
+                console.error(`[Cloud] Failed to stop job ${jobId}:`, error);
+            }
+        }
+    }
+
+    // Renamed for clarity - only stops local intervals
+    stopLocalCapture(tabId) {
         if (this.captureIntervals.has(tabId)) {
             clearInterval(this.captureIntervals.get(tabId));
             this.captureIntervals.delete(tabId);
             this.captureSettings.delete(tabId);
-
-            // Clean up any active CDP session for this tab
-            this.cleanupCdpSession(tabId);
-
-            console.log(`Stopped capture for tab ${tabId}`);
+            console.log(`Stopped local capture for tab ${tabId}`);
         }
     }
 
     // Update capture interval for a tab
     updateInterval(settings, llmService, eventService) {
-        const { tabId, interval } = settings;
-
-        if (this.captureIntervals.has(tabId)) {
-            const currentSettings = this.captureSettings.get(tabId);
-            this.stopCapture(tabId);
-            this.startCapture({
-                tabId,
-                domain: currentSettings.domain,
-                interval,
-                refreshPage: currentSettings.refreshPage || false,
-                captureDelay: currentSettings.captureDelay || 0
-            }, llmService, eventService);
-        }
+        const { tabId } = settings;
+        // The logic is now the same as starting a new capture,
+        // as the server handles updates.
+        this.startCapture(settings);
     }
 
     // Handle tab navigation - stop capture if navigated away from domain
@@ -112,7 +104,7 @@ export class CaptureService {
     // Check if any tab is capturing for a specific domain
     checkDomainCaptureStatus(domain) {
         for (const [tabId, settings] of this.captureSettings.entries()) {
-            if (settings.domain === domain) {
+            if (settings.domain === domain && (settings.interval || settings.jobId)) {
                 return true;
             }
         }
@@ -126,14 +118,22 @@ export class CaptureService {
 
     // Clean up when tab or window is closed
     cleanupTab(tabId) {
-        this.stopCapture(tabId);
+        // We no longer stop the cloud job when a tab closes.
+        // The job now lives on the server. We just clear local state.
+        if (this.captureIntervals.has(tabId)) {
+            this.stopLocalCapture(tabId);
+        }
+        if (this.captureSettings.has(tabId)) {
+            this.captureSettings.delete(tabId);
+        }
     }
 
     // Clean up all captures
     cleanupAll() {
         this.captureIntervals.forEach((intervalId, tabId) => {
-            this.stopCapture(tabId);
+            this.stopLocalCapture(tabId);
         });
+        this.captureSettings.clear();
 
         // Clean up all CDP sessions
         this.activeCdpSessions.forEach(tabId => {

@@ -8,6 +8,7 @@ export class MessageService {
         this.currentlyPolling = new Set(); // Track jobs being polled
         this.setupMessageListener();
         this.resumePendingCloudJobs();
+        this.startCloudSync(); // Start the new sync process
     }
 
     // Set up the main message listener
@@ -541,6 +542,183 @@ export class MessageService {
             for (const job of pendingCloudJobs) {
                 this.pollCloudJob(job.id, job.request.jobId);
             }
+        }
+    }
+
+    // --- NEW: Cloud Syncing ---
+    startCloudSync() {
+        // Sync immediately on startup, then every 1 minute.
+        this.syncCloudJobs();
+        setInterval(() => this.syncCloudJobs(), 60000);
+    }
+
+    async syncCloudJobs() {
+        console.log('[Sync] Starting cloud sync...');
+        const allData = await chrome.storage.local.get();
+        const jobKeys = Object.keys(allData).filter(key => key.startsWith('cloud_job_'));
+
+        if (jobKeys.length === 0) {
+            console.log('[Sync] No active cloud jobs to sync.');
+            return;
+        }
+
+        const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+        const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+
+        for (const key of jobKeys) {
+            const jobId = allData[key];
+            const domain = key.replace('cloud_job_', '');
+            console.log(`[Sync] Found active job ${jobId} for domain ${domain}. Fetching results...`);
+
+            try {
+                // 1. Fetch results
+                const resultsUrl = `${runnerEndpoint}/job/${jobId}/results`;
+                const response = await fetch(resultsUrl);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        console.log(`[Sync] Job ${jobId} not found on server. Removing local reference.`);
+                        await chrome.storage.local.remove(key);
+                    } else {
+                        const errorText = await response.text();
+                        throw new Error(`Failed to fetch results: ${response.status} - ${errorText}`);
+                    }
+                    continue; // Move to the next job
+                }
+
+                const { results } = await response.json();
+                if (!results || results.length === 0) {
+                    console.log(`[Sync] No new results for job ${jobId}.`);
+                    continue;
+                }
+
+                console.log(`[Sync] Received ${results.length} new results for job ${jobId}.`);
+
+                // 2. Add results to EventService history
+                for (const result of results) {
+                    if (result.error) {
+                        this.eventService.trackEvent(null, domain, '', false, 500, result.error, null, null, result.error, result.resultId, 'completed', 'cloud');
+                    } else {
+                        this.eventService.trackEvent(
+                            result.llmResponse.evaluation || result.llmResponse,
+                            domain,
+                            '', // We don't have the exact URL from the server run, can be added later
+                            true,
+                            200,
+                            null,
+                            result.screenshotData,
+                            result.llmRequestPayload,
+                            JSON.stringify(result.llmResponse),
+                            result.resultId,
+                            'completed',
+                            'cloud'
+                        );
+                    }
+                }
+
+                // 3. Purge results from server
+                const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
+                const purgeResponse = await fetch(purgeUrl, { method: 'POST' });
+                if (!purgeResponse.ok) {
+                    console.error(`[Sync] Failed to purge results for job ${jobId} on server.`);
+                } else {
+                    console.log(`[Sync] Successfully purged ${results.length} results from server for job ${jobId}.`);
+                }
+
+            } catch (error) {
+                console.error(`[Sync] Error syncing job ${jobId} for domain ${domain}:`, error);
+            }
+        }
+        console.log('[Sync] Cloud sync finished.');
+    }
+
+    async startOrUpdateCloudJob(request) {
+        const { tabId, domain, interval } = request;
+        try {
+            console.log(`[Cloud] Sending request to start/update recurring job for ${domain}`);
+            const tab = await chrome.tabs.get(tabId);
+
+            // 1. Gather all necessary data
+            const [sessionData, cookies, captureData] = await Promise.all([
+                this.getSessionData(tabId),
+                chrome.cookies.getAll({ url: tab.url }),
+                this.prepareCaptureData(domain)
+            ]);
+
+            if (!captureData.isValid) {
+                throw new Error(captureData.error || 'Invalid configuration for capture.');
+            }
+
+            // 2. Prepare payload for the server
+            const jobPayload = {
+                sessionData: { ...sessionData, cookies },
+                llmConfig: captureData.llmConfig,
+                fields: captureData.fields,
+                previousEvaluation: captureData.previousEvaluation,
+                interval: interval,
+                domain: domain,
+                url: tab.url // For reference
+            };
+
+            // 3. Make POST request to cloud runner's /job endpoint
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerUrl = `${runnerEndpoint}/job`;
+
+            const response = await fetch(runnerUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(jobPayload)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Cloud runner rejected job: ${response.status} - ${errorText}`);
+            }
+
+            const { jobId } = await response.json();
+            if (!jobId) {
+                throw new Error('Cloud runner did not return a valid job ID.');
+            }
+
+            // 4. Store the job ID locally to associate with the domain
+            await chrome.storage.local.set({ [`cloud_job_${domain}`]: jobId });
+            console.log(`[Cloud] Stored job ID ${jobId} for domain ${domain}`);
+
+            return { success: true, jobId };
+
+        } catch (error) {
+            console.error('[Cloud] Error starting recurring cloud job:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async stopCloudJob(request) {
+        const { jobId, domain } = request;
+        try {
+            console.log(`[Cloud] Sending request to stop recurring job ${jobId} for domain ${domain}`);
+
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerUrl = `${runnerEndpoint}/job/${jobId}`;
+
+            const response = await fetch(runnerUrl, { method: 'DELETE' });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                // If the job is already gone (404), that's a success for our purposes.
+                if (response.status !== 404) {
+                    throw new Error(`Cloud runner failed to stop job: ${response.status} - ${errorText}`);
+                }
+            }
+
+            // 4. Remove the locally stored job ID
+            await chrome.storage.local.remove([`cloud_job_${domain}`]);
+            console.log(`[Cloud] Removed job ID for domain ${domain}`);
+
+            return { success: true };
+        } catch (error) {
+            console.error('[Cloud] Error stopping recurring cloud job:', error);
+            return { success: false, error: error.message };
         }
     }
 } 

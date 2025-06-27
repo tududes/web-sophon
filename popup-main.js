@@ -19,8 +19,8 @@ class CleanPopupController {
 
     async initialize() {
         try {
-            // 0. Ping the background script to ensure it's ready
-            await this.pingBackgroundScript();
+            // 0. Ping the background script to ensure it's ready and establish connection
+            await this.pingBackgroundScriptWithRetry();
 
             // 1. Get current domain first (needed for field loading)
             this.currentDomain = await this.getCurrentDomain();
@@ -61,30 +61,31 @@ class CleanPopupController {
         }
     }
 
-    pingBackgroundScript(retries = 3, delay = 100) {
-        return new Promise(async (resolve, reject) => {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await this.sendMessageToBackground({ action: 'ping' });
-                    if (response && response.pong) {
-                        console.log('Background script ping successful.');
-                        resolve();
-                        return;
-                    }
-                } catch (error) {
-                    console.warn(`Ping attempt ${i + 1} failed. Retrying...`);
-                    if (i === retries - 1) {
-                        console.error('Failed to connect to background script after multiple retries.');
-                        // Display error in the UI
-                        const statusDiv = document.getElementById('captureStatus') || document.body;
-                        statusDiv.innerHTML = `<div class="status-message error">Could not connect to background service. Please try closing and reopening the popup.</div>`;
-                        reject(new Error('Could not establish connection with background script.'));
-                        return;
-                    }
-                    await new Promise(res => setTimeout(res, delay * (i + 1)));
+    async pingBackgroundScriptWithRetry(retries = 3, delay = 100) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await this.sendMessageToBackground({ action: 'ping' });
+                if (response && response.pong) {
+                    console.log('Background script ping successful.');
+                    // Connection established, safe to proceed.
+                    document.body.classList.remove('service-disconnected');
+                    return;
                 }
+            } catch (error) {
+                console.warn(`Ping attempt ${i + 1} of ${retries} failed. Retrying in ${delay}ms...`);
+                await new Promise(res => setTimeout(res, delay));
             }
-        });
+        }
+
+        // If all retries fail, show a persistent error message.
+        console.error('Failed to connect to background script after multiple retries.');
+        document.body.classList.add('service-disconnected');
+        const errorContainer = document.getElementById('connectionError');
+        if (errorContainer) {
+            errorContainer.innerHTML = 'Error: Could not connect to background service. Please try reloading the extension.';
+            errorContainer.style.display = 'block';
+        }
+        throw new Error('Could not establish connection with the background script.');
     }
 
     async getCurrentDomain() {
@@ -1307,7 +1308,7 @@ class CleanPopupController {
             // Get all storage data and find domain-related keys
             const allData = await chrome.storage.local.get();
             const domainKeys = Object.keys(allData).filter(key =>
-                key.startsWith('consent_') || key.startsWith('interval_') || key.startsWith('fields_')
+                key.startsWith('consent_') || key.startsWith('interval_') || key.startsWith('fields_') || key.startsWith('cloud_job_')
             );
 
             // Extract unique domains
@@ -1335,9 +1336,11 @@ class CleanPopupController {
                     const consentEnabled = allData[`consent_${domain}`] || false;
                     const interval = allData[`interval_${domain}`] || 'manual';
                     const fieldsCount = (allData[`fields_${domain}`] || []).length;
+                    const jobId = allData[`cloud_job_${domain}`] || null;
 
                     // Get last run information from history
                     const lastRunInfo = await this.getDomainLastRun(domain);
+                    const jobInfo = jobId ? await this.getCloudJobInfo(jobId) : null;
 
                     const domainHtml = `
                             <div class="domain-item ${isCurrentDomain ? 'current-domain-item' : ''}" data-domain="${domain}">
@@ -1379,14 +1382,15 @@ class CleanPopupController {
                                         <div class="domain-detail-value">${lastRunInfo.totalEvents}</div>
                                     </div>
                                 </div>
+                                ${jobInfo && jobInfo.id ? this.getJobDetailsHtml(jobInfo) : ''}
                             </div>
                         `;
 
                     this.elements.domainsContainer.insertAdjacentHTML('beforeend', domainHtml);
                 }
 
-                // Add event listeners for delete buttons
-                this.setupDomainDeleteListeners();
+                // Add event listeners for delete and clear job buttons
+                this.setupDomainActionListeners();
             }
 
             console.log(`Loaded ${domains.size} known domains`);
@@ -1395,6 +1399,43 @@ class CleanPopupController {
             if (this.elements.domainsContainer) {
                 this.elements.domainsContainer.innerHTML = '<p class="no-domains">Error loading domains</p>';
             }
+        }
+    }
+
+    getJobDetailsHtml(jobInfo) {
+        const createdDate = new Date(jobInfo.createdAt).toLocaleString();
+        return `
+            <div class="domain-job-details">
+                <div class="job-details-header">
+                    <span class="job-details-title">☁️ Active Cloud Job</span>
+                    <button class="small-button secondary clear-job-btn" data-job-id="${jobInfo.id}" data-domain="${jobInfo.domain}" title="Stop and clear this recurring job from the server">Clear Job</button>
+                </div>
+                <div class="job-detail-item"><strong>Job ID:</strong> <span class="job-id">${jobInfo.id.substring(0, 8)}...</span></div>
+                <div class="job-detail-item"><strong>Created:</strong> ${createdDate}</div>
+                <div class="job-detail-item"><strong>Interval:</strong> ${jobInfo.interval}s</div>
+                <div class="job-detail-item"><strong>Pending Results:</strong> ${jobInfo.resultCount}</div>
+            </div>
+        `;
+    }
+
+    async getCloudJobInfo(jobId) {
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get('cloudRunnerUrl');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const jobStatusUrl = `${runnerEndpoint}/job/${jobId}`;
+
+            const response = await fetch(jobStatusUrl);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.log(`Job ${jobId} not found on server.`);
+                    return null;
+                }
+                throw new Error(`Server returned status ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(`Failed to get info for cloud job ${jobId}:`, error);
+            return null;
         }
     }
 
@@ -1461,24 +1502,48 @@ class CleanPopupController {
         }
     }
 
-    setupDomainDeleteListeners() {
-        const deleteButtons = this.elements.domainsContainer.querySelectorAll('.domain-delete-btn');
-
-        deleteButtons.forEach(button => {
-            button.addEventListener('click', async (e) => {
+    setupDomainActionListeners() {
+        this.elements.domainsContainer.addEventListener('click', async (e) => {
+            const target = e.target;
+            if (target.matches('.domain-delete-btn')) {
                 e.preventDefault();
                 e.stopPropagation();
-
-                const domain = button.dataset.domain;
-
-                // Confirm deletion
+                const domain = target.dataset.domain;
                 const confirmMessage = `Delete all WebSophon settings for "${domain}"?\n\nThis will remove:\n• Domain consent settings\n• Capture interval\n• Field configurations\n• History data\n\nThis action cannot be undone.`;
-
                 if (confirm(confirmMessage)) {
                     await this.deleteDomainSettings(domain);
                 }
-            });
+            } else if (target.matches('.clear-job-btn')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const jobId = target.dataset.jobId;
+                const domain = target.dataset.domain;
+                if (confirm(`Stop the recurring cloud job for "${domain}"?`)) {
+                    await this.clearCloudJob(jobId, domain);
+                }
+            }
         });
+    }
+
+    async clearCloudJob(jobId, domain) {
+        try {
+            this.showStatus(`Clearing cloud job for ${domain}...`, 'info');
+            // This reuses the logic in CaptureService to send a DELETE request
+            const captureService = this.controller.captureService;
+            await this.sendMessageToBackground({
+                action: 'stopCapture', // This now correctly maps to stopping cloud jobs
+                tabId: null, // tabId is not needed for stopping a cloud job by ID/domain
+                domain: domain // Pass domain to identify the job
+            });
+
+            this.showStatus(`Cloud job for ${domain} cleared successfully.`, 'success');
+            // Refresh the domains list to show the change
+            await this.loadKnownDomains();
+
+        } catch (error) {
+            console.error('Failed to clear cloud job:', error);
+            this.showError(`Error clearing job: ${error.message}`);
+        }
     }
 
     async deleteDomainSettings(domain) {
