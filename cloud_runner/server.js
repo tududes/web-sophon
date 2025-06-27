@@ -1,8 +1,9 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const { v4: uuidv4 } = require('uuid');
-const puppeteer = require('puppeteer');
-const cors = require('cors');
+import express from 'express';
+import bodyParser from 'body-parser';
+import { v4 as uuidv4 } from 'uuid';
+import puppeteer from 'puppeteer';
+import cors from 'cors';
+import { getSystemPrompt } from '../utils/prompt-formatters.js';
 
 const app = express();
 const port = process.env.PORT || 7113;
@@ -39,6 +40,7 @@ app.post('/job', (req, res) => {
         status: 'pending',
         createdAt: new Date().toISOString(),
         screenshotData: null,
+        llmRequestPayload: null,
         llmResponse: null,
         error: null,
     };
@@ -148,8 +150,9 @@ async function processJob(jobId, jobData) {
 
         console.log(`[${jobId}] Sending to LLM...`);
         job.status = 'analyzing';
-        const llmResponse = await callLlmService(base64Image, llmConfig, fields, previousEvaluation);
-        job.llmResponse = llmResponse;
+        const { response, requestPayload } = await callLlmService(base64Image, llmConfig, fields, previousEvaluation);
+        job.llmResponse = response;
+        job.llmRequestPayload = { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) };
 
         job.status = 'complete';
         job.completedAt = new Date().toISOString();
@@ -202,39 +205,23 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
     }
 
     const responseData = await response.json();
+    let finalResponse;
+
     // Extract the content from the typical OpenAI response structure
     if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
         let content = responseData.choices[0].message.content;
         content = content.replace(/^```json\s*|```\s*$/g, ''); // Trim markdown fences
         try {
-            return JSON.parse(content);
+            finalResponse = JSON.parse(content);
         } catch (e) {
             // If parsing fails, return the raw content string
-            return { raw_content: content, parse_error: e.message };
+            finalResponse = { raw_content: content, parse_error: e.message };
         }
+    } else {
+        finalResponse = responseData; // Fallback to returning the full response
     }
 
-    return responseData; // Fallback to returning the full response
-}
-
-function getSystemPrompt(fields, previousEvaluation) {
-    const fieldsJson = JSON.stringify(fields, null, 2);
-    let previousContext = previousEvaluation ? `\nPREVIOUS EVALUATION CONTEXT:\n${JSON.stringify(previousEvaluation, null, 2)}` : '';
-
-    return `Analyze this screenshot and return JSON with your evaluation for each field.
-
-For each field, return: "field_name": [boolean_result, confidence_0_to_1]
-
-Fields to evaluate:
-${fieldsJson}${previousContext}
-
-Response format:
-{
-  "field_name": [true, 0.95],
-  "reason": "Brief explanation"
-}
-
-Return only JSON.`;
+    return { response: finalResponse, requestPayload: requestPayload };
 }
 
 app.listen(port, () => {

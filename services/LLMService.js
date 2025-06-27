@@ -1,4 +1,6 @@
 // LLM API service for field evaluation using multimodal models
+import { getSystemPrompt } from "../utils/prompt-formatters.js";
+
 export class LLMService {
     constructor(captureService, eventService) {
         this.captureService = captureService;
@@ -48,6 +50,7 @@ Return only JSON.`;
 
     // Capture screenshot and send to LLM API
     async captureAndSend(tabId, domain, llmConfig, isManual = false, fields = null, refreshPage = false, captureDelay = 0, previousEvaluation = null) {
+        let eventId;
         try {
             console.log(`Attempting LLM capture for tab ${tabId}, domain: ${domain}`);
             console.log(`LLM Config:`, llmConfig);
@@ -167,7 +170,7 @@ Return only JSON.`;
             console.log(`Sending to LLM API: ${llmConfig.apiUrl}`);
 
             // Generate event ID early
-            const eventId = Date.now();
+            eventId = Date.now();
 
             // Track the event immediately as pending
             this.eventService.trackEvent(null, domain, tab.url, true, null, null, dataUrl, requestData, null, eventId, 'pending');
@@ -197,7 +200,7 @@ Return only JSON.`;
 
             try {
                 // Build the system prompt with fields
-                const systemPrompt = this.getSystemPrompt(fields, previousEvaluation);
+                const systemPrompt = getSystemPrompt(fields, previousEvaluation);
 
                 // Prepare the request payload for OpenAI-compatible API
                 const requestPayload = {

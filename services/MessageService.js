@@ -5,7 +5,9 @@ export class MessageService {
         this.webhookService = webhookService;
         this.eventService = eventService;
         this.llmService = llmService;
+        this.currentlyPolling = new Set(); // Track jobs being polled
         this.setupMessageListener();
+        this.resumePendingCloudJobs();
     }
 
     // Set up the main message listener
@@ -461,6 +463,12 @@ export class MessageService {
     }
 
     pollCloudJob(eventId, jobId) {
+        if (this.currentlyPolling.has(jobId)) {
+            console.log(`[Cloud] Polling for job ${jobId} is already in progress.`);
+            return;
+        }
+        this.currentlyPolling.add(jobId);
+
         const pollInterval = 5000; // 5 seconds
         const maxPolls = 60; // 5 minutes timeout
         let pollCount = 0;
@@ -468,6 +476,7 @@ export class MessageService {
         const intervalId = setInterval(async () => {
             if (pollCount >= maxPolls) {
                 clearInterval(intervalId);
+                this.currentlyPolling.delete(jobId);
                 console.error(`[Cloud] Job ${jobId} timed out after ${maxPolls * pollInterval / 1000} seconds.`);
                 this.eventService.updateEvent(eventId, null, 504, 'Job polling timed out', 'Job polling timed out');
                 return;
@@ -483,6 +492,7 @@ export class MessageService {
                 if (!response.ok) {
                     // Stop polling on server error
                     clearInterval(intervalId);
+                    this.currentlyPolling.delete(jobId);
                     const errorText = await response.text();
                     this.eventService.updateEvent(eventId, null, response.status, `Job status check failed: ${errorText}`, errorText);
                     return;
@@ -492,6 +502,7 @@ export class MessageService {
 
                 if (job.status === 'complete' || job.status === 'failed') {
                     clearInterval(intervalId);
+                    this.currentlyPolling.delete(jobId);
                     console.log(`[Cloud] Job ${jobId} finished with status: ${job.status}`);
 
                     // The cloud runner now returns the LLM analysis directly
@@ -500,11 +511,12 @@ export class MessageService {
 
                     this.eventService.updateEvent(
                         eventId,
-                        llmResponse, // The LLM response is the new "result"
+                        llmResponse.evaluation || llmResponse, // The LLM response is the new "result"
                         job.status === 'complete' ? 200 : 500,
                         job.error,
                         job.error || finalResponseText,
-                        job.screenshotData
+                        job.screenshotData,
+                        job.llmRequestPayload // Pass the request payload for history
                     );
                 } else {
                     // Job is still pending or running
@@ -517,5 +529,18 @@ export class MessageService {
                 pollCount++;
             }
         }, pollInterval);
+    }
+
+    async resumePendingCloudJobs() {
+        await this.eventService.ensureLoaded();
+        const { events } = await this.eventService.getRecentEvents();
+        const pendingCloudJobs = events.filter(e => e.source === 'cloud' && e.status === 'pending' && e.request?.jobId);
+
+        if (pendingCloudJobs.length > 0) {
+            console.log(`[Cloud] Resuming polling for ${pendingCloudJobs.length} pending cloud jobs.`);
+            for (const job of pendingCloudJobs) {
+                this.pollCloudJob(job.id, job.request.jobId);
+            }
+        }
     }
 } 

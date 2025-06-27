@@ -135,7 +135,7 @@ export class EventService {
     }
 
     // Update an existing event with response data
-    updateEvent(eventId, results, httpStatus, error, responseText, screenshot = null) {
+    updateEvent(eventId, results, httpStatus, error, responseText, screenshot = null, requestPayload = null) {
         // Find the event
         const eventIndex = this.recentEvents.findIndex(e => e.id === eventId);
         if (eventIndex === -1) {
@@ -152,6 +152,9 @@ export class EventService {
         event.response = responseText; // ALWAYS contains response data (JSON, text, or error message)
         if (screenshot) {
             event.screenshot = screenshot;
+        }
+        if (requestPayload) {
+            event.request = requestPayload;
         }
 
         // Update success flag based on HTTP status and error
