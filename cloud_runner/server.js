@@ -235,7 +235,16 @@ async function processJob(jobId, jobData) {
 
         console.log(`[${jobId}] Sending to LLM...`);
         // Use the job's last result as context for the next one
-        const previousEvaluation = job.results.length > 0 ? job.results[job.results.length - 1].llmResponse : jobData.previousEvaluation;
+        let previousEvaluation = jobData.previousEvaluation; // Start with initial context
+        if (job.results.length > 0) {
+            const lastResult = job.results[job.results.length - 1];
+            if (lastResult.llmResponse && lastResult.llmResponse.evaluation) {
+                // For subsequent runs, construct the context from the 'evaluation' block of the last run.
+                previousEvaluation = {
+                    results: lastResult.llmResponse.evaluation
+                };
+            }
+        }
         const { response, requestPayload } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);
 
         // Add the new result to the job's history

@@ -17,13 +17,20 @@ export class MessageService {
             // Use a specific handler for each action to correctly manage async behavior.
             const handler = this.getMessageHandler(request.action);
             if (handler) {
-                handler(request, sender, sendResponse);
                 // Return true only for handlers that are actually asynchronous.
                 const asyncActions = [
-                    'getRecentEvents', 'captureNow', 'captureLLM',
-                    'testLLM', 'prepareCaptureData', 'startCloudJob'
+                    'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
+                    'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture'
                 ];
-                return asyncActions.includes(request.action);
+                const isAsync = asyncActions.includes(request.action);
+                if (isAsync) {
+                    handler(request, sender, sendResponse);
+                    return true; // Keep the message channel open for async response
+                } else {
+                    // For synchronous actions, handle directly
+                    handler(request, sender, sendResponse);
+                    return false;
+                }
             }
             // If no handler, do nothing.
         });
@@ -32,8 +39,40 @@ export class MessageService {
     getMessageHandler(action) {
         const handlers = {
             'ping': (req, sender, res) => res({ pong: true }),
-            'startCapture': (req) => this.captureService.startCapture(req, this.llmService, this.eventService),
-            'stopCapture': (req) => this.captureService.stopCapture(req.tabId),
+
+            'startCapture': async (req, sender, res) => {
+                try {
+                    await this.captureService.startCapture(req);
+                    res({ success: true });
+                } catch (error) {
+                    res({ success: false, error: error.message });
+                }
+            },
+
+            'stopCapture': async (req, sender, res) => {
+                try {
+                    // The `stopCapture` action from the UI can mean stopping a local capture
+                    // OR stopping a cloud job. This logic needs to be robust.
+                    if (req.tabId) {
+                        // If a tabId is provided, it's a request to stop captures associated with that tab.
+                        await this.captureService.stopCapture(req.tabId);
+                    } else if (req.domain) {
+                        // If a domain is provided (from settings), find the cloud job and stop it.
+                        const jobKey = `cloud_job_${req.domain}`;
+                        const data = await chrome.storage.local.get(jobKey);
+                        const jobId = data[jobKey];
+                        if (jobId) {
+                            await this.stopCloudJob({ jobId, domain: req.domain });
+                        } else {
+                            console.warn(`Stop command received for domain ${req.domain}, but no cloud job found.`);
+                        }
+                    }
+                    res({ success: true });
+                } catch (error) {
+                    res({ success: false, error: error.message });
+                }
+            },
+
             'updateInterval': (req) => this.captureService.updateInterval(req, this.llmService, this.eventService),
             'checkStatus': (req, sender, res) => res({ isActive: this.captureService.checkDomainCaptureStatus(req.domain) }),
             'tabNavigated': (req, sender) => this.captureService.handleTabNavigation(sender.tab.id, req.newDomain),

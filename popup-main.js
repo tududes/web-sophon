@@ -374,7 +374,7 @@ class CleanPopupController {
 
     async testCloudRunner() {
         const url = this.elements.cloudRunnerUrl?.value;
-        const statusEl = this.elements.testCloudRunnerStatus;
+        const statusEl = this.elements.captureStatus;
 
         if (!url) {
             this.showToast('✗ Please enter a Cloud Runner URL.', 'error', statusEl);
