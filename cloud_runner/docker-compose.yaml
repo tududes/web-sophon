@@ -3,5 +3,28 @@ services:
   runner:
     build: .
     container_name: tv-eyes-runner
-    network_mode: "host"
     restart: unless-stopped
+    networks:
+      - caddy_net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "7114:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - caddy_net
+
+networks:
+  caddy_net:
+
+
+volumes:
+  caddy_data:
+  caddy_config:
