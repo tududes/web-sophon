@@ -1,8 +1,8 @@
 {
-    http_port 7780
-    https_port 7443
+    http_port 80
+    https_port 443
 }
 
-websophon.tududes.com:7443 {
+websophon.tududes.com {
     reverse_proxy runner:7113
 } 
