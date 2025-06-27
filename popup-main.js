@@ -976,7 +976,7 @@ class CleanPopupController {
             // Load LLM configuration (global)
             const settingsData = await chrome.storage.local.get(['llmConfig_global', 'cloudRunnerUrl', 'includePremiumModels']);
             const llmConfig = settingsData.llmConfig_global || {};
-            const cloudRunnerUrl = settingsData.cloudRunnerUrl || '';
+            const cloudRunnerUrl = settingsData.cloudRunnerUrl || 'https://runner.websophon.tududes.com';
             const includePremium = settingsData.includePremiumModels || false;
 
             if (this.elements.includePremiumModelsToggle) {

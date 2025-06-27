@@ -421,7 +421,7 @@ export class MessageService {
 
             // 3. Make initial POST request to cloud runner
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'http://localhost:7113').replace(/\/$/, ''); // Remove trailing slash
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, ''); // Remove trailing slash
             const runnerUrl = `${runnerEndpoint}/job`;
 
             const initialResponse = await fetch(runnerUrl, {
@@ -475,7 +475,7 @@ export class MessageService {
 
             try {
                 const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-                const runnerEndpoint = (cloudRunnerUrl || 'http://localhost:7113').replace(/\/$/, ''); // Remove trailing slash
+                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, ''); // Remove trailing slash
                 const jobStatusUrl = `${runnerEndpoint}/job/${jobId}`;
 
                 const response = await fetch(jobStatusUrl);
