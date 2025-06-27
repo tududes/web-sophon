@@ -117,41 +117,36 @@ EOF
 
 echo "✅ Environment file created: .env"
 
-# Create extension configuration
+# Create extension configuration info
 echo ""
-echo "🔧 Creating Extension Configuration..."
+echo "🔧 Extension Configuration Info..."
 
-cat > extension-config.js << EOF
-// WebSophon Extension Security Configuration
-// Copy these values to your extension's MessageService.js
+cat > extension-info.txt << EOF
+WebSophon Extension Setup Information
+====================================
 
-// For services/MessageService.js (replace cloudSecurity object)
-const CLOUD_SECURITY_CONFIG = {
-    masterKey: '${MASTER_KEY}', // For CAPTCHA verification
-    authToken: null, // Will be obtained via CAPTCHA
-    tokenExpiry: null,
-    quotas: null
-};
+✅ NO MANUAL CONFIGURATION REQUIRED!
 
-console.log('Update your extension with these configurations:');
-console.log('');
-console.log('1. In services/MessageService.js, update the cloudSecurity object:');
-console.log('   this.cloudSecurity = {');
-console.log('       masterKey: "' + CLOUD_SECURITY_CONFIG.masterKey + '",');
-console.log('       authToken: null, // Will be obtained via CAPTCHA');
-console.log('       tokenExpiry: null,');
-console.log('       quotas: null');
-console.log('   };');
-console.log('');
-console.log('2. hCaptcha Site Key (for popup.html): ${CAPTCHA_SITE_KEY}');
-console.log('   - Replace the script src or use this in hCaptcha widget configuration');
-console.log('');
-console.log('3. Users will need to complete CAPTCHA in extension settings to get tokens');
-console.log('   - Tokens are valid for 24 hours');
-console.log('   - Quotas: 10 recurring domains, 2 manual captures');
+The WebSophon extension now automatically handles authentication 
+through the cloud runner's web interface. Users simply:
+
+1. Open WebSophon extension → Settings tab
+2. Set Cloud Runner URL to: https://your-domain.com
+3. Click "🔐 Authenticate with Cloud Runner"
+4. Complete CAPTCHA on the opened page
+5. Authentication token is automatically saved
+
+Server Details:
+- Master Key: ${MASTER_KEY}
+- hCaptcha Site Key: ${CAPTCHA_SITE_KEY}
+- Token Validity: 24 hours
+- Quotas: 10 recurring domains, 2 manual captures per token
+
+The extension automatically retrieves tokens from the authentication
+page without requiring any manual key configuration.
 EOF
 
-echo "✅ Extension configuration created: extension-config.js"
+echo "✅ Extension info created: extension-info.txt"
 
 # Install dependencies
 echo ""
@@ -366,10 +361,9 @@ echo "======================="
 echo ""
 echo "Next steps:"
 echo ""
-echo "1. 🔧 Update your browser extension:"
-echo "   - Open extension-config.js and copy the configurations"
-echo "   - Update services/MessageService.js with the cloudSecurity config"
-echo "   - Update popup-main.js with the security functions"
+echo "1. ✅ Extension Ready - No Manual Configuration Needed!"
+echo "   - Users just need to set the Cloud Runner URL in settings"
+echo "   - Authentication is handled automatically through web interface"
 echo ""
 echo "2. 🚀 Start the server:"
 echo "   ./start-secure.sh            # Native Node.js"

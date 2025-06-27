@@ -479,9 +479,9 @@ app.get('/captcha/challenge', (req, res) => {
 
 /**
  * Endpoint to verify CAPTCHA and issue authentication token
- * Requires master key for security (prevents token farming)
+ * Called server-side from auth page (no authentication required)
  */
-app.post('/captcha/verify', requireMasterKey, async (req, res) => {
+app.post('/captcha/verify', async (req, res) => {
     const { captchaResponse } = req.body;
 
     if (!captchaResponse) {
@@ -717,8 +717,7 @@ app.get('/auth', (req, res) => {
                         const response = await fetch('/captcha/verify', {
                             method: 'POST',
                             headers: {
-                                'Content-Type': 'application/json',
-                                'X-API-Key': '${SECURITY_CONFIG.MASTER_API_KEY}'
+                                'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({
                                 captchaResponse: token

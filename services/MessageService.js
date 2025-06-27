@@ -10,7 +10,6 @@ export class MessageService {
 
         // Cloud runner security configuration
         this.cloudSecurity = {
-            masterKey: 'ws_master_dev_key_change_in_production', // For CAPTCHA verification
             authToken: null, // Will be obtained via CAPTCHA
             tokenExpiry: null,
             quotas: null
@@ -1030,62 +1029,14 @@ export class MessageService {
 
     // CAPTCHA and token management
     async getCaptchaChallenge() {
-        try {
-            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
-
-            const response = await fetch(`${runnerEndpoint}/captcha/challenge`);
-            if (!response.ok) {
-                throw new Error(`Failed to get CAPTCHA challenge: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('[CAPTCHA] Error getting challenge:', error);
-            throw error;
-        }
+        // This method is no longer used - CAPTCHA challenge is now handled server-side
+        throw new Error('CAPTCHA challenge is now handled server-side. Use the authentication tab instead.');
     }
 
     async verifyCaptchaAndGetToken(captchaResponse) {
-        try {
-            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
-
-            const response = await fetch(`${runnerEndpoint}/captcha/verify`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-API-Key': this.cloudSecurity.masterKey
-                },
-                body: JSON.stringify({ captchaResponse })
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `CAPTCHA verification failed: ${response.status}`);
-            }
-
-            const result = await response.json();
-
-            // Store token and metadata
-            this.cloudSecurity.authToken = result.token;
-            this.cloudSecurity.tokenExpiry = result.expiresAt;
-            this.cloudSecurity.quotas = result.quotas;
-
-            // Save to storage for persistence
-            await chrome.storage.local.set({
-                cloudAuthToken: result.token,
-                cloudTokenExpiry: result.expiresAt,
-                cloudQuotas: result.quotas
-            });
-
-            console.log('[CAPTCHA] Token obtained successfully, expires:', new Date(result.expiresAt).toLocaleString());
-            return result;
-
-        } catch (error) {
-            console.error('[CAPTCHA] Error verifying CAPTCHA:', error);
-            throw error;
-        }
+        // This method is no longer used - CAPTCHA verification is now handled server-side
+        // The extension retrieves tokens from the auth page after successful verification
+        throw new Error('CAPTCHA verification is now handled server-side. Use the authentication tab instead.');
     }
 
     async ensureValidToken() {
