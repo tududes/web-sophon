@@ -6,6 +6,7 @@ export class MessageService {
         this.eventService = eventService;
         this.llmService = llmService;
         this.currentlyPolling = new Set(); // Track jobs being polled
+        this.currentlyPollingAuth = null; // Track auth job being polled
         this.syncIntervalId = null;
 
         // Cloud runner security configuration
@@ -31,7 +32,7 @@ export class MessageService {
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
                     'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
-                    'storeAuthToken', 'startAuthPolling', 'stopAuthPolling'
+                    'storeAuthToken'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
@@ -51,16 +52,8 @@ export class MessageService {
         const handlers = {
             'ping': (req, sender, res) => res({ pong: true }),
             'startAuthPolling': (req, sender, res) => {
-                console.log('[AUTH] Received startAuthPolling request with jobId:', req.jobId);
-                this.startAuthTokenPolling(req.jobId)
-                    .then(() => {
-                        console.log('[AUTH] Polling started successfully');
-                        res({ success: true, jobId: req.jobId });
-                    })
-                    .catch(err => {
-                        console.error('[AUTH] Failed to start polling:', err);
-                        res({ success: false, error: err.message });
-                    });
+                this.startAuthTokenPolling(req.jobId);
+                res({ success: true, jobId: req.jobId });
             },
             'stopAuthPolling': (req, sender, res) => {
                 this.stopAuthTokenPolling();
@@ -1252,117 +1245,106 @@ export class MessageService {
         }
     }
 
-    // === BACKGROUND AUTH TOKEN POLLING ===
+    // === AUTH TOKEN POLLING (Same pattern as cloud job polling) ===
 
-    async startAuthTokenPolling(jobId = null) {
-        try {
-            console.log('[AUTH] Starting background job polling for jobId:', jobId);
+    pollAuthToken(jobId) {
+        if (this.currentlyPollingAuth && this.currentlyPollingAuth === jobId) {
+            console.log(`[AUTH] Polling for job ${jobId} is already in progress.`);
+            return;
+        }
+        this.currentlyPollingAuth = jobId;
 
-            // Stop any existing polling first
-            this.stopAuthTokenPolling();
+        const pollInterval = 5000; // 5 seconds (same as cloud jobs)
+        const maxPolls = 60; // 5 minutes timeout (same as cloud jobs)
+        let pollCount = 0;
 
-            if (!jobId) {
-                console.warn('[AUTH] No job ID provided for polling');
+        const intervalId = setInterval(async () => {
+            if (pollCount >= maxPolls) {
+                clearInterval(intervalId);
+                this.currentlyPollingAuth = null;
+                console.log(`[AUTH] Job ${jobId} timed out after ${maxPolls * pollInterval / 1000} seconds.`);
+                this.sendToPopup({ action: 'authPollingTimeout' });
                 return;
             }
 
-            // Start polling every 3 seconds for up to 5 minutes (job expires after 5 minutes)
-            let pollCount = 0;
-            const maxPolls = 100; // 5 minutes (3 seconds * 100)
+            try {
+                const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+                const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
 
-            this.authPollingInterval = setInterval(async () => {
-                pollCount++;
+                const response = await fetch(jobUrl);
 
-                try {
-                    // Check server for the specific job ID
-                    const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-                    const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
-                    const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
+                if (response.ok) {
+                    const result = await response.json();
 
-                    console.log(`[AUTH] Polling attempt ${pollCount}/${maxPolls} for job ${jobId} at ${jobUrl}`);
-                    const response = await fetch(jobUrl);
+                    if (result.success && result.token) {
+                        // Token found! Store it and notify popup
+                        clearInterval(intervalId);
+                        this.currentlyPollingAuth = null;
+                        console.log(`[AUTH] Job ${jobId} completed successfully`);
 
-                    console.log(`[AUTH] Response status: ${response.status} ${response.statusText}`);
+                        await this.storeAuthToken(result.token, result.expiresAt);
 
-                    if (response.ok) {
-                        const result = await response.json();
+                        // Get token stats to verify storage worked
+                        const tokenStats = await this.getTokenStats();
 
-                        if (result.success && result.token) {
-                            // Token found! Store it and notify popup
-                            console.log('[AUTH] Background polling found token for job', jobId);
-
-                            await this.storeAuthToken(result.token, result.expiresAt);
-
-                            // Verify storage worked
-                            const tokenResult = await this.getTokenStats();
-
-                            if (tokenResult && tokenResult.quotas && tokenResult.expiresAt) {
-                                // Notify popup of successful authentication
-                                this.sendToPopup({
-                                    action: 'authTokenDetected',
-                                    tokenStats: tokenResult
-                                });
-
-                                // Close any auth tabs
-                                try {
-                                    const tabs = await chrome.tabs.query({});
-                                    const authTabs = tabs.filter(tab =>
-                                        tab.url && tab.url.includes('runner.websophon.tududes.com/auth')
-                                    );
-                                    for (const tab of authTabs) {
-                                        chrome.tabs.remove(tab.id);
-                                    }
-                                    console.log('[AUTH] Closed auth tabs after successful token retrieval');
-                                } catch (e) {
-                                    console.log('[AUTH] Could not close auth tabs:', e);
-                                }
-
-                                // Stop polling - we found it!
-                                this.stopAuthTokenPolling();
-                                return;
-                            }
-                        }
-                    } else if (response.status === 404) {
-                        console.log(`[AUTH] Job ${jobId} not found yet, continuing to poll... (${pollCount}/${maxPolls})`);
-                    } else if (response.status === 410) {
-                        console.log(`[AUTH] Job ${jobId} expired`);
-                        this.stopAuthTokenPolling();
+                        // Notify popup of successful authentication
                         this.sendToPopup({
-                            action: 'authPollingTimeout'
+                            action: 'authTokenDetected',
+                            tokenStats: tokenStats
                         });
-                        return;
+
+                        // Close any auth tabs
+                        try {
+                            const tabs = await chrome.tabs.query({});
+                            const authTabs = tabs.filter(tab =>
+                                tab.url && tab.url.includes('runner.websophon.tududes.com/auth')
+                            );
+                            for (const tab of authTabs) {
+                                chrome.tabs.remove(tab.id);
+                            }
+                            console.log('[AUTH] Closed auth tabs after successful token retrieval');
+                        } catch (e) {
+                            console.log('[AUTH] Could not close auth tabs:', e);
+                        }
                     }
-
-                } catch (error) {
-                    console.log('[AUTH] Background polling error:', error.message);
+                } else if (response.status === 410) {
+                    // Job expired
+                    clearInterval(intervalId);
+                    this.currentlyPollingAuth = null;
+                    console.log(`[AUTH] Job ${jobId} expired`);
+                    this.sendToPopup({ action: 'authPollingTimeout' });
+                    return;
+                } else if (response.status !== 404) {
+                    // Some other error (not just "not found yet")
+                    clearInterval(intervalId);
+                    this.currentlyPollingAuth = null;
+                    console.error(`[AUTH] Job status check failed: ${response.status}`);
+                    this.sendToPopup({ action: 'authPollingTimeout' });
+                    return;
+                } else {
+                    // 404 means job not ready yet, keep polling
+                    console.log(`[AUTH] Job ${jobId} not ready yet, continuing to poll...`);
+                    pollCount++;
                 }
+            } catch (error) {
+                // Network error, keep polling for a while
+                console.warn(`[AUTH] Error polling job ${jobId}:`, error.message);
+                pollCount++;
+            }
+        }, pollInterval);
+    }
 
-                // Stop polling after timeout
-                if (pollCount >= maxPolls) {
-                    console.log('[AUTH] Background polling timed out after 5 minutes');
-                    this.stopAuthTokenPolling();
-
-                    // Notify popup of timeout
-                    this.sendToPopup({
-                        action: 'authPollingTimeout'
-                    });
-                }
-            }, 3000); // Poll every 3 seconds
-
-            console.log('[AUTH] Background job polling started for:', jobId);
-
-        } catch (error) {
-            console.error('[AUTH] Error starting background polling:', error);
-            throw error;
+    startAuthTokenPolling(jobId = null) {
+        if (!jobId) {
+            console.warn('[AUTH] No job ID provided for polling');
+            return;
         }
+        this.pollAuthToken(jobId);
     }
 
     stopAuthTokenPolling() {
-        if (this.authPollingInterval) {
-            clearInterval(this.authPollingInterval);
-            this.authPollingInterval = null;
-            console.log('[AUTH] Background token polling stopped');
-        }
+        this.currentlyPollingAuth = null;
     }
 
 
