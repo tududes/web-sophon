@@ -1,24 +1,25 @@
 # Use the official Puppeteer image which includes all necessary dependencies.
 FROM ghcr.io/puppeteer/puppeteer:22.12.1
 
-# As root, create a directory for the app and give the non-root user ownership.
-USER root
-RUN mkdir -p /usr/src/app && chown -R pptruser:pptruser /usr/src/app
-
-# Switch back to the non-root user for security
-USER pptruser
-
 # Set the working directory in the container
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json
-COPY package*.json ./
+# Switch to root temporarily to handle file permissions and installations
+USER root
 
-# Install app dependencies
+# Copy package files and install dependencies as root
+# This avoids all permission issues during the build process
+COPY package*.json ./
 RUN npm install
 
-# Copy app source code
+# Copy the rest of the application source code
 COPY . .
+
+# Change ownership of the entire application directory to the non-root user
+RUN chown -R pptruser:pptruser /usr/src/app
+
+# Switch back to the non-root user for running the application
+USER pptruser
 
 # Expose the port the app runs on
 EXPOSE 7113
