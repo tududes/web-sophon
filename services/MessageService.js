@@ -10,184 +10,91 @@ export class MessageService {
 
     // Set up the main message listener
     setupMessageListener() {
-        chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-            console.log('Background received message:', request.action);
-
-            switch (request.action) {
-                case 'ping':
-                    sendResponse({ pong: true });
-                    break;
-
-                case 'startCapture':
-                    this.captureService.startCapture(request, this.llmService, this.eventService);
-                    sendResponse({ success: true });
-                    break;
-
-                case 'stopCapture':
-                    this.captureService.stopCapture(request.tabId);
-                    sendResponse({ success: true });
-                    break;
-
-                case 'updateInterval':
-                    this.captureService.updateInterval(request, this.llmService, this.eventService);
-                    sendResponse({ success: true });
-                    break;
-
-                case 'checkStatus':
-                    // Check if any tab is capturing for this domain
-                    const isActive = this.captureService.checkDomainCaptureStatus(request.domain);
-                    sendResponse({ isActive });
-                    break;
-
-                case 'tabNavigated':
-                    this.captureService.handleTabNavigation(sender.tab.id, request.newDomain);
-                    break;
-
-                case 'getRecentEvents':
-                    // Handle async getRecentEvents
-                    this.eventService.getRecentEvents()
-                        .then(result => {
-                            sendResponse(result);
-                        })
-                        .catch(error => {
-                            console.error('Error getting recent events:', error);
-                            sendResponse({ events: [], unreadCount: 0 });
-                        });
-                    return true; // Keep channel open for async response
-                    break;
-
-                case 'markEventsRead':
-                    sendResponse(this.eventService.markEventsRead());
-                    break;
-
-                case 'clearHistory':
-                    sendResponse(this.eventService.clearHistory());
-                    break;
-
-                case 'cancelRequest':
-                    // Cancel a pending request (works for both webhook and LLM)
-                    let result = this.webhookService.cancelRequest(request.eventId);
-                    if (!result.success && this.llmService) {
-                        result = this.llmService.cancelRequest(request.eventId);
-                    }
-                    sendResponse(result);
-                    break;
-
-                case 'captureNow':
-                    // Manual capture with webhook
-                    console.log('Manual webhook capture requested:', request);
-                    this.webhookService.captureAndSend(
-                        request.tabId,
-                        request.domain,
-                        request.webhookUrl,
-                        true,
-                        request.fields,
-                        request.refreshPage,
-                        request.captureDelay
-                    )
-                        .then(result => {
-                            console.log('Webhook capture result:', result);
-                            sendResponse(result);
-                        })
-                        .catch(error => {
-                            console.error('Webhook capture error in background:', error);
-                            sendResponse({ success: false, error: error.message });
-                        });
-                    return true; // Will respond asynchronously
-
-                case 'captureLLM':
-                    console.log('LLM capture requested:', request);
-                    try {
-                        const response = await this.llmService.captureAndSend(
-                            request.tabId,
-                            request.domain,
-                            request.llmConfig,
-                            request.isManual || false,
-                            request.fields,
-                            request.refreshPage || false,
-                            request.captureDelay || 0,
-                            request.previousEvaluation || null
-                        );
-                        sendResponse(response);
-                    } catch (error) {
-                        console.error('LLM capture failed:', error);
-                        sendResponse({ success: false, error: error.message });
-                    }
-                    return true; // Keep message channel open for async response
-
-                case 'testLLM':
-                    // Test LLM configuration
-                    console.log('LLM test requested:', { ...request, llmConfig: { ...request.llmConfig, apiKey: 'HIDDEN' } });
-                    if (!this.llmService) {
-                        sendResponse({ success: false, error: 'LLM service not available' });
-                        return;
-                    }
-
-                    this.llmService.testConfiguration(request.llmConfig)
-                        .then(result => {
-                            console.log('LLM test result:', result);
-                            sendResponse(result);
-                        })
-                        .catch(error => {
-                            console.error('LLM test error:', error);
-                            sendResponse({ success: false, error: error.message });
-                        });
-                    return true; // Will respond asynchronously
-
-                case 'prepareCaptureData':
-                    // Shared data preparation for DRY principle
-                    console.log('Prepare capture data requested for domain:', request.domain);
-                    try {
-                        const captureData = await this.prepareCaptureData(request.domain);
-                        if (captureData.isValid) {
-                            sendResponse({
-                                success: true,
-                                data: {
-                                    llmConfig: captureData.llmConfig,
-                                    fields: captureData.fields,
-                                    previousEvaluation: captureData.previousEvaluation,
-                                    captureSettings: captureData.captureSettings
-                                }
-                            });
-                        } else {
-                            sendResponse({
-                                success: false,
-                                error: captureData.error || 'Invalid capture configuration'
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error preparing capture data:', error);
-                        sendResponse({ success: false, error: error.message });
-                    }
-                    return true; // Will respond asynchronously
-
-                case 'captureResults':
-                    // Handle automatic capture results when popup might be closed
-                    console.log('Background received captureResults for automatic capture');
-                    try {
-                        if (request.results && request.domain && !request.isManual) {
-                            // Store automatic capture results for field updates
-                            this.storeAutomaticCaptureResults(request.domain, request.results, request.eventId);
-                        }
-                        // Always forward to popup if it's listening
-                        this.sendToPopup(request);
-                    } catch (error) {
-                        console.error('Error handling captureResults in background:', error);
-                    }
-                    sendResponse({ success: true });
-                    break;
-
-                case 'startCloudJob':
-                    this.handleStartCloudJob(request)
-                        .then(sendResponse)
-                        .catch(error => {
-                            console.error('startCloudJob failed:', error);
-                            sendResponse({ success: false, error: error.message });
-                        });
-                    return true; // Keep channel open for async response
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            // Use a specific handler for each action to correctly manage async behavior.
+            const handler = this.getMessageHandler(request.action);
+            if (handler) {
+                handler(request, sender, sendResponse);
+                // Return true only for handlers that are actually asynchronous.
+                const asyncActions = [
+                    'getRecentEvents', 'captureNow', 'captureLLM',
+                    'testLLM', 'prepareCaptureData', 'startCloudJob'
+                ];
+                return asyncActions.includes(request.action);
             }
-            return true; // Keep message channel open for async responses
+            // If no handler, do nothing.
         });
+    }
+
+    getMessageHandler(action) {
+        const handlers = {
+            'ping': (req, sender, res) => res({ pong: true }),
+            'startCapture': (req) => this.captureService.startCapture(req, this.llmService, this.eventService),
+            'stopCapture': (req) => this.captureService.stopCapture(req.tabId),
+            'updateInterval': (req) => this.captureService.updateInterval(req, this.llmService, this.eventService),
+            'checkStatus': (req, sender, res) => res({ isActive: this.captureService.checkDomainCaptureStatus(req.domain) }),
+            'tabNavigated': (req, sender) => this.captureService.handleTabNavigation(sender.tab.id, req.newDomain),
+            'getRecentEvents': (req, sender, res) => {
+                this.eventService.getRecentEvents()
+                    .then(res)
+                    .catch(err => res({ events: [], unreadCount: 0, error: err.message }));
+            },
+            'markEventsRead': (req, sender, res) => res(this.eventService.markEventsRead()),
+            'clearHistory': (req, sender, res) => res(this.eventService.clearHistory()),
+            'cancelRequest': (req, sender, res) => {
+                let result = this.webhookService.cancelRequest(req.eventId);
+                if (!result.success && this.llmService) {
+                    result = this.llmService.cancelRequest(req.eventId);
+                }
+                res(result);
+            },
+            'captureNow': (req, sender, res) => {
+                this.webhookService.captureAndSend(req.tabId, req.domain, req.webhookUrl, true, req.fields, req.refreshPage, req.captureDelay)
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'captureLLM': (req, sender, res) => {
+                this.llmService.captureAndSend(req.tabId, req.domain, req.llmConfig, req.isManual, req.fields, req.refreshPage, req.captureDelay, req.previousEvaluation)
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'testLLM': async (req, sender, res) => {
+                // This handler is now explicitly async to use await, providing the most stable
+                // way to handle the fetch call inside testConfiguration.
+                try {
+                    const result = await this.llmService.testConfiguration(req.llmConfig);
+                    res(result);
+                } catch (err) {
+                    res({ success: false, error: err.message });
+                }
+            },
+            'prepareCaptureData': (req, sender, res) => {
+                this.prepareCaptureData(req.domain)
+                    .then(data => res({ success: data.isValid, data: data, error: data.error }))
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'captureResults': (req, sender, res) => {
+                this.handleCaptureResults(req);
+                res({ success: true });
+            },
+            'startCloudJob': (req, sender, res) => {
+                this.handleStartCloudJob(req)
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            }
+        };
+        return handlers[action];
+    }
+
+    handleCaptureResults(request) {
+        try {
+            if (request.results && request.domain && !request.isManual) {
+                this.storeAutomaticCaptureResults(request.domain, request.results, request.eventId);
+            }
+            this.sendToPopup(request);
+        } catch (error) {
+            console.error('Error handling captureResults in background:', error);
+        }
     }
 
     // Set up tab cleanup listeners
@@ -513,7 +420,10 @@ export class MessageService {
             };
 
             // 3. Make initial POST request to cloud runner
-            const runnerUrl = 'http://localhost:7113/job';
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'http://localhost:7113').replace(/\/$/, ''); // Remove trailing slash
+            const runnerUrl = `${runnerEndpoint}/job`;
+
             const initialResponse = await fetch(runnerUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -564,8 +474,11 @@ export class MessageService {
             }
 
             try {
-                const runnerUrl = `http://localhost:7113/job/${jobId}`;
-                const response = await fetch(runnerUrl);
+                const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+                const runnerEndpoint = (cloudRunnerUrl || 'http://localhost:7113').replace(/\/$/, ''); // Remove trailing slash
+                const jobStatusUrl = `${runnerEndpoint}/job/${jobId}`;
+
+                const response = await fetch(jobStatusUrl);
 
                 if (!response.ok) {
                     // Stop polling on server error

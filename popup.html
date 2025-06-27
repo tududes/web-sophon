@@ -176,7 +176,25 @@
             <!-- Settings Tab -->
             <div class="tab-panel" id="settingsContent">
                 <div class="settings-section">
+                    <h3>Service Endpoints</h3>
+                    <div class="form-group">
+                        <label for="cloudRunnerUrl">Cloud Runner URL:</label>
+                        <input type="url" id="cloudRunnerUrl" placeholder="http://localhost:7113" />
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h3>LLM Configuration</h3>
+                    <div class="form-group">
+                        <div class="domain-consent-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="includePremiumModelsToggle">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="consent-label">💰 Include Premium Models</span>
+                        </div>
+                        <div class="setting-description">Show paid models in the dropdown list below.</div>
+                    </div>
                     <div class="form-group">
                         <label for="llmApiUrl">LLM API URL:</label>
                         <input type="url" id="llmApiUrl" placeholder="https://openrouter.ai/api/v1/chat/completions"

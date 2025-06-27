@@ -47,6 +47,9 @@ class CleanPopupController {
             await this.loadCaptureSettings(); // Load capture settings for default tab
             this.displayCurrentDomain();
 
+            // Populate models dynamically
+            await this.populateLlmModels(this.elements.llmModel?.value);
+
             console.log('Popup controller initialized successfully');
 
         } catch (error) {
@@ -96,10 +99,14 @@ class CleanPopupController {
             llmApiUrl: document.getElementById('llmApiUrl'),
             llmApiKey: document.getElementById('llmApiKey'),
             llmModel: document.getElementById('llmModel'),
+            includePremiumModelsToggle: document.getElementById('includePremiumModelsToggle'),
             llmTemperature: document.getElementById('llmTemperature'),
             llmMaxTokens: document.getElementById('llmMaxTokens'),
             testLlmConfig: document.getElementById('testLlmConfig'),
             testConfigStatus: document.getElementById('testConfigStatus'),
+
+            // Cloud Runner
+            cloudRunnerUrl: document.getElementById('cloudRunnerUrl'),
 
             // History section
             historyContainer: document.getElementById('historyContainer'),
@@ -170,6 +177,23 @@ class CleanPopupController {
 
         this.elements.llmApiKey?.addEventListener('input', () => {
             this.debouncedSaveLlmConfig();
+        });
+
+        this.elements.llmModel?.addEventListener('change', () => {
+            this.debouncedSaveLlmConfig();
+        });
+
+        this.elements.cloudRunnerUrl?.addEventListener('input', () => {
+            this.debouncedSaveCloudRunnerUrl();
+        });
+
+        this.elements.includePremiumModelsToggle?.addEventListener('change', async (e) => {
+            const isChecked = e.target.checked;
+            await chrome.storage.local.set({ includePremiumModels: isChecked });
+            // Repopulate models with the new setting
+            await this.populateLlmModels(this.elements.llmModel?.value);
+            // After repopulating, the selection might have changed, so save again.
+            await this.saveLlmConfig();
         });
 
         this.elements.testLlmConfig?.addEventListener('click', () => {
@@ -846,17 +870,27 @@ class CleanPopupController {
     async loadBasicSettings() {
         try {
             // Load LLM configuration (global)
-            const llmData = await chrome.storage.local.get(['llmConfig_global']);
-            const llmConfig = llmData.llmConfig_global || {};
+            const settingsData = await chrome.storage.local.get(['llmConfig_global', 'cloudRunnerUrl', 'includePremiumModels']);
+            const llmConfig = settingsData.llmConfig_global || {};
+            const cloudRunnerUrl = settingsData.cloudRunnerUrl || '';
+            const includePremium = settingsData.includePremiumModels || false;
+
+            if (this.elements.includePremiumModelsToggle) {
+                this.elements.includePremiumModelsToggle.checked = includePremium;
+            }
 
             if (this.elements.llmApiUrl) {
-                this.elements.llmApiUrl.value = llmConfig.apiUrl || '';
+                this.elements.llmApiUrl.value = llmConfig.apiUrl || 'https://openrouter.ai/api/v1/chat/completions';
             }
             if (this.elements.llmApiKey) {
                 this.elements.llmApiKey.value = llmConfig.apiKey || '';
             }
-            if (this.elements.llmModel) {
-                this.elements.llmModel.value = llmConfig.model || 'opengvlab/internvl3-14b:free';
+
+            // Populate models dynamically
+            await this.populateLlmModels(llmConfig.model);
+
+            if (this.elements.cloudRunnerUrl) {
+                this.elements.cloudRunnerUrl.value = cloudRunnerUrl;
             }
 
             // Load theme
@@ -864,6 +898,79 @@ class CleanPopupController {
 
         } catch (error) {
             console.error('Error loading basic settings:', error);
+        }
+    }
+
+    async populateLlmModels(savedModel) {
+        if (!this.elements.llmModel) return;
+
+        const select = this.elements.llmModel;
+        select.innerHTML = '<option value="">Loading models...</option>'; // Placeholder
+
+        try {
+            const { includePremiumModels } = await chrome.storage.local.get(['includePremiumModels']);
+            let apiUrl = 'https://openrouter.ai/api/frontend/models/find?fmt=json&input_modalities=image&order=context-high-to-low';
+            if (!includePremiumModels) {
+                apiUrl += '&max_price=0';
+            }
+
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch models: ${response.statusText}`);
+            }
+            const data = await response.json();
+            let models = data?.data?.models || [];
+
+            // Add more specific client-side filtering for modalities
+            models = models.filter(model => {
+                const inputs = model.input_modalities || [];
+                const outputs = model.output_modalities || [];
+                const hasImageInput = inputs.includes('image');
+                const hasTextInput = inputs.includes('text');
+                const hasTextOutput = outputs.includes('text');
+                return hasImageInput && hasTextInput && hasTextOutput;
+            });
+
+            select.innerHTML = ''; // Clear placeholder
+
+            if (models.length > 0) {
+                const modelsGroup = document.createElement('optgroup');
+                modelsGroup.label = includePremiumModels ? '📈 All Vision Models (Highest Context First)' : '📈 Free Vision Models (Highest Context First)';
+
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    const price = model.pricing?.prompt ? parseFloat(model.pricing.prompt) * 1000000 : 0;
+                    const priceString = price > 0 ? ` ($${price.toFixed(2)}/M)` : ' (Free)';
+                    option.value = model.slug;
+                    option.textContent = `${model.name} (${(model.context_length / 1000).toFixed(0)}k)${priceString}`;
+                    modelsGroup.appendChild(option);
+                });
+                select.appendChild(modelsGroup);
+
+                // Add the other groups for local/custom models
+                const otherGroupsHtml = `
+                    <optgroup label="🏠 Local/Self-hosted">
+                        <option value="llava">LLaVA (Local)</option>
+                    </optgroup>
+                    <optgroup label="⚙️ Custom">
+                         <option value="custom">Other/Custom Model...</option>
+                    </optgroup>
+                `;
+                select.insertAdjacentHTML('beforeend', otherGroupsHtml);
+
+                // Set the selected model
+                if (savedModel && models.some(m => m.slug === savedModel)) {
+                    select.value = savedModel;
+                } else if (models.length > 0) {
+                    // Default to the first model (highest context) if no valid model was saved
+                    select.value = models[0].slug;
+                }
+            } else {
+                select.innerHTML = '<option value="">Could not load models</option>';
+            }
+        } catch (error) {
+            console.error('Error populating LLM models:', error);
+            select.innerHTML = '<option value="">Error loading models</option>';
         }
     }
 
@@ -903,8 +1010,8 @@ class CleanPopupController {
             const config = {
                 apiUrl: this.elements.llmApiUrl?.value || '',
                 apiKey: this.elements.llmApiKey?.value || '',
-                model: this.elements.llmModel?.value || 'opengvlab/internvl3-14b:free',
-                temperature: parseFloat(this.elements.llmTemperature?.value) || 0.3,
+                model: this.elements.llmModel?.value,
+                temperature: parseFloat(this.elements.llmTemperature?.value) || 0.1,
                 maxTokens: parseInt(this.elements.llmMaxTokens?.value) || 1000
             };
 
@@ -923,13 +1030,18 @@ class CleanPopupController {
         }, 500);
     }
 
+    debouncedSaveCloudRunnerUrl() {
+        clearTimeout(this.saveDebounceTimer);
+        this.saveDebounceTimer = setTimeout(() => {
+            const url = this.elements.cloudRunnerUrl?.value || '';
+            chrome.storage.local.set({ cloudRunnerUrl: url });
+            console.log('Cloud runner URL saved');
+        }, 500);
+    }
+
     async testLlmConfiguration() {
         console.log('Testing LLM configuration...');
-
-        if (this.elements.testConfigStatus) {
-            this.elements.testConfigStatus.textContent = 'Testing...';
-            this.elements.testConfigStatus.className = 'status-pending';
-        }
+        this.showToast('Testing...', 'info', this.elements.testConfigStatus);
 
         try {
             const llmConfig = await this.getLlmConfig();
@@ -947,20 +1059,14 @@ class CleanPopupController {
             const response = await this.sendMessageToBackground(testMessage);
 
             if (response && response.success) {
-                if (this.elements.testConfigStatus) {
-                    this.elements.testConfigStatus.textContent = '✓ Configuration valid';
-                    this.elements.testConfigStatus.className = 'status-success';
-                }
+                this.showToast('✓ Configuration valid', 'success', this.elements.testConfigStatus);
                 console.log('LLM test successful');
             } else {
                 throw new Error(response?.error || 'Test failed');
             }
         } catch (error) {
             console.error('LLM test failed:', error);
-            if (this.elements.testConfigStatus) {
-                this.elements.testConfigStatus.textContent = `✗ ${error.message}`;
-                this.elements.testConfigStatus.className = 'status-error';
-            }
+            this.showToast(`✗ ${error.message}`, 'error', this.elements.testConfigStatus);
         }
     }
 
@@ -1043,19 +1149,22 @@ class CleanPopupController {
     }
 
     showStatus(message, type = 'info') {
-        console.log(`Status (${type}):`, message);
+        this.showToast(message, type, this.elements.captureStatus);
+    }
 
-        if (this.elements.captureStatus) {
-            this.elements.captureStatus.textContent = message;
-            this.elements.captureStatus.className = `status-message ${type}`;
+    showToast(message, type = 'info', element) {
+        if (!element) return;
 
-            setTimeout(() => {
-                if (this.elements.captureStatus.textContent === message) {
-                    this.elements.captureStatus.textContent = '';
-                    this.elements.captureStatus.className = 'status-message';
-                }
-            }, 5000);
-        }
+        console.log(`Toast (${type}) on ${element.id}:`, message);
+        element.textContent = message;
+        element.className = `status-message ${type}`;
+
+        setTimeout(() => {
+            if (element.textContent === message) {
+                element.textContent = '';
+                element.className = 'status-message';
+            }
+        }, 5000);
     }
 
     showError(message) {

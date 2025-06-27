@@ -791,7 +791,7 @@ Return only JSON.`;
     // Test LLM configuration with a simple request
     async testConfiguration(llmConfig) {
         try {
-            console.log('Testing LLM configuration...');
+            console.log('Testing LLM configuration with a multimodal request...');
 
             // Validate basic config
             if (!llmConfig || !llmConfig.apiUrl || !llmConfig.apiKey) {
@@ -804,17 +804,27 @@ Return only JSON.`;
                 throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
             }
 
-            // Create a simple test request
+            // A 1x1 transparent PNG to use as a placeholder for the multimodal request
+            const placeholderImage = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+            // Create a multimodal test request
             const testPayload = {
                 model: llmConfig.model || 'gpt-4-vision-preview',
                 messages: [
                     {
-                        role: 'system',
-                        content: 'You are a helpful assistant. Respond with a simple confirmation message.'
-                    },
-                    {
                         role: 'user',
-                        content: 'Please respond with "Configuration test successful" to confirm this connection works.'
+                        content: [
+                            {
+                                type: 'text',
+                                text: 'This is a test request. If you can see the attached image, please respond with only the words: "Configuration test successful"'
+                            },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: `data:image/png;base64,${placeholderImage}`
+                                }
+                            }
+                        ]
                     }
                 ],
                 max_tokens: 50,
