@@ -30,7 +30,8 @@ export class MessageService {
                 // Return true only for handlers that are actually asynchronous.
                 const asyncActions = [
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
-                    'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture'
+                    'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
+                    'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
