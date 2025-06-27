@@ -100,7 +100,11 @@ async function processJob(jobId, jobData) {
     try {
         console.log(`[${jobId}] Launching Puppeteer...`);
         job.status = 'launching_browser';
-        browser = await puppeteer.launch({ headless: true });
+        browser = await puppeteer.launch({
+            headless: true,
+            executablePath: '/usr/bin/google-chrome',
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
         const page = await browser.newPage();
 
         console.log(`[${jobId}] Setting up browser environment...`);

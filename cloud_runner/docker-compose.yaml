@@ -1,0 +1,7 @@
+version: '3.8'
+services:
+  runner:
+    build: .
+    container_name: tv-eyes-runner
+    network_mode: "host"
+    restart: unless-stopped
