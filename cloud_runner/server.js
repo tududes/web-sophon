@@ -58,7 +58,15 @@ app.use(bodyParser.json({ limit: '10mb' }));
  * If an interval is provided, it creates a recurring job.
  */
 app.post('/job', (req, res) => {
-    const { sessionData, llmConfig, fields, previousEvaluation, interval = null, domain } = req.body;
+    const {
+        sessionData,
+        llmConfig,
+        fields,
+        previousEvaluation,
+        interval = null,
+        domain,
+        captureSettings = {} // NEW: Include capture settings
+    } = req.body;
 
     if (!sessionData || !sessionData.url) {
         return res.status(400).json({ error: 'Session data with a URL is required' });
@@ -83,25 +91,26 @@ app.post('/job', (req, res) => {
             interval: interval,
             createdAt: new Date().toISOString(),
             lastRun: 0,
-            jobData: { sessionData, llmConfig, fields, previousEvaluation },
+            jobData: { sessionData, llmConfig, fields, previousEvaluation, captureSettings },
             results: [], // Array to store results from each run
             error: null,
         };
         console.log(`[${jobId}] New recurring job created for domain ${domain} with interval ${interval}s`);
+        console.log(`[${jobId}] Capture settings:`, captureSettings);
     } else {
         // Update existing job
         const job = jobs[jobId];
         job.interval = interval;
-        job.jobData = { sessionData, llmConfig, fields, previousEvaluation };
+        job.jobData = { sessionData, llmConfig, fields, previousEvaluation, captureSettings };
         job.status = 'idle';
         console.log(`[${jobId}] Existing job for domain ${domain} updated with interval ${interval}s`);
+        console.log(`[${jobId}] Updated capture settings:`, captureSettings);
     }
-
 
     // If it's a one-off job (no interval), run it immediately.
     if (!interval) {
         console.log(`[${jobId}] Job for ${domain} is a one-off. Running now.`);
-        processJob(jobId, { sessionData, llmConfig, fields, previousEvaluation });
+        processJob(jobId, { sessionData, llmConfig, fields, previousEvaluation, captureSettings });
         res.status(202).json({ jobId, message: "One-off job started." });
     } else {
         res.status(201).json({ jobId, message: `Recurring job ${jobExists ? 'updated' : 'created'}.` });
@@ -202,7 +211,7 @@ async function processJob(jobId, jobData) {
         return;
     }
 
-    const { sessionData, llmConfig, fields } = jobData;
+    const { sessionData, llmConfig, fields, captureSettings = {} } = jobData;
     let browser;
 
     try {
@@ -229,9 +238,30 @@ async function processJob(jobId, jobData) {
         console.log(`[${jobId}] Navigating to ${sessionData.url}...`);
         await page.goto(sessionData.url, { waitUntil: 'networkidle2' });
 
+        // Handle page refresh if enabled (similar to local implementation)
+        if (captureSettings.refreshPageToggle) {
+            console.log(`[${jobId}] Refreshing page before capture (as requested by user settings)...`);
+            await page.reload({ waitUntil: 'networkidle2' });
+            console.log(`[${jobId}] Page refresh completed`);
+        }
+
+        // Apply capture delay if specified (similar to local implementation)
+        const captureDelay = parseInt(captureSettings.captureDelay || '0');
+        if (captureDelay > 0) {
+            console.log(`[${jobId}] Waiting ${captureDelay} seconds before capture (as requested by user settings)...`);
+            await new Promise(resolve => setTimeout(resolve, captureDelay * 1000));
+            console.log(`[${jobId}] Capture delay completed`);
+        }
+
         console.log(`[${jobId}] Taking screenshot...`);
-        const screenshotBuffer = await page.screenshot({ fullPage: true });
+        // Respect full page capture setting (similar to local implementation)
+        const fullPageCapture = captureSettings.fullPageCaptureToggle || false;
+        const screenshotBuffer = await page.screenshot({
+            fullPage: fullPageCapture,
+            type: 'png'
+        });
         const screenshotData = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
+        console.log(`[${jobId}] Screenshot captured (full page: ${fullPageCapture}), size: ${screenshotBuffer.length} bytes`);
 
         console.log(`[${jobId}] Sending to LLM...`);
         // Use the job's last result as context for the next one
@@ -254,7 +284,8 @@ async function processJob(jobId, jobData) {
             screenshotData: screenshotData,
             llmRequestPayload: { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) },
             llmResponse: response,
-            error: null
+            error: null,
+            captureSettings: captureSettings // Store settings used for this capture
         });
 
         job.status = job.interval ? 'idle' : 'complete'; // Reset to idle for next interval
@@ -268,7 +299,8 @@ async function processJob(jobId, jobData) {
         job.results.push({
             resultId: uuidv4(),
             timestamp: new Date().toISOString(),
-            error: error.message
+            error: error.message,
+            captureSettings: captureSettings
         });
     } finally {
         if (browser) {

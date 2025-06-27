@@ -797,6 +797,22 @@ class CleanPopupController {
                         this.loadKnownDomains();
                     }
                     break;
+
+                case 'cloudResultsSynced':
+                    console.log('Cloud results synced:', request);
+                    // Refresh history if we're on the history tab
+                    if (this.historyManager && this.currentTab === 'history') {
+                        console.log('Refreshing history due to cloud sync...');
+                        this.historyManager.loadHistory();
+                    }
+                    // Refresh settings tab to update domain statistics
+                    if (this.currentTab === 'settings') {
+                        console.log('Refreshing settings tab after cloud sync...');
+                        this.loadKnownDomains();
+                    }
+                    // Show toast notification about new results
+                    this.showStatus(`${request.resultCount} new cloud results synced for ${request.domain}`, 'success');
+                    break;
             }
         });
     }

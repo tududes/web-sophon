@@ -439,15 +439,17 @@ export class MessageService {
             );
             console.log(`[Cloud] Created pending event ${eventId}`);
 
-            // 2. Gather all necessary data in parallel
+            // 2. Gather all necessary data in parallel including capture settings
             const [
                 sessionData,
                 cookies,
-                captureData
+                captureData,
+                captureSettings
             ] = await Promise.all([
                 this.getSessionData(tabId),
                 chrome.cookies.getAll({ url: tab.url }),
-                this.prepareCaptureData(domain) // Reuse existing data prep logic
+                this.prepareCaptureData(domain), // Reuse existing data prep logic
+                chrome.storage.local.get(['refreshPageToggle', 'captureDelay', 'fullPageCaptureToggle'])
             ]);
 
             if (!captureData.isValid) {
@@ -458,8 +460,15 @@ export class MessageService {
                 sessionData: { ...sessionData, cookies },
                 llmConfig: captureData.llmConfig,
                 fields: captureData.fields,
-                previousEvaluation: captureData.previousEvaluation
+                previousEvaluation: captureData.previousEvaluation,
+                captureSettings: {
+                    refreshPageToggle: captureSettings.refreshPageToggle || false,
+                    captureDelay: captureSettings.captureDelay || '0',
+                    fullPageCaptureToggle: captureSettings.fullPageCaptureToggle || false
+                }
             };
+
+            console.log(`[Cloud] Manual job payload includes capture settings:`, jobPayload.captureSettings);
 
             // 3. Make initial POST request to cloud runner
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
@@ -584,11 +593,22 @@ export class MessageService {
         }
     }
 
-    // --- NEW: Cloud Syncing ---
+    // --- Enhanced Cloud Syncing ---
     startCloudSync() {
-        // Sync immediately on startup, then every 1 minute.
+        console.log('[Sync] Starting enhanced cloud sync service...');
+        // Sync immediately on startup
         this.syncCloudJobs();
-        setInterval(() => this.syncCloudJobs(), 60000);
+        // Then sync every 30 seconds (more frequent than before)
+        this.syncIntervalId = setInterval(() => this.syncCloudJobs(), 30000);
+        console.log('[Sync] Cloud sync service started with 30-second intervals');
+    }
+
+    stopCloudSync() {
+        if (this.syncIntervalId) {
+            clearInterval(this.syncIntervalId);
+            this.syncIntervalId = null;
+            console.log('[Sync] Cloud sync service stopped');
+        }
     }
 
     async syncCloudJobs() {
@@ -604,24 +624,33 @@ export class MessageService {
         const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
         const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
 
+        console.log(`[Sync] Found ${jobKeys.length} active cloud jobs to sync`);
+
         for (const key of jobKeys) {
             const jobId = allData[key];
             const domain = key.replace('cloud_job_', '');
-            console.log(`[Sync] Found active job ${jobId} for domain ${domain}. Fetching results...`);
+            console.log(`[Sync] Syncing job ${jobId} for domain ${domain}...`);
 
             try {
-                // 1. Fetch results
+                // 1. Fetch results with timeout
                 const resultsUrl = `${runnerEndpoint}/job/${jobId}/results`;
-                const response = await fetch(resultsUrl);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+                const response = await fetch(resultsUrl, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
                 if (!response.ok) {
                     if (response.status === 404) {
                         console.log(`[Sync] Job ${jobId} not found on server. Removing local reference.`);
                         await chrome.storage.local.remove(key);
+                        continue;
                     } else {
                         const errorText = await response.text();
                         throw new Error(`Failed to fetch results: ${response.status} - ${errorText}`);
                     }
-                    continue; // Move to the next job
                 }
 
                 const { results } = await response.json();
@@ -632,42 +661,146 @@ export class MessageService {
 
                 console.log(`[Sync] Received ${results.length} new results for job ${jobId}.`);
 
-                // 2. Add results to EventService history
+                // 2. Add results to EventService history with proper cloud grouping and timestamps
+                let syncedCount = 0;
                 for (const result of results) {
-                    if (result.error) {
-                        this.eventService.trackEvent(null, domain, '', false, 500, result.error, null, null, result.error, result.resultId, 'completed', 'cloud');
-                    } else {
-                        this.eventService.trackEvent(
-                            result.llmResponse.evaluation || result.llmResponse,
-                            domain,
-                            '', // We don't have the exact URL from the server run, can be added later
-                            true,
-                            200,
-                            null,
-                            result.screenshotData,
-                            result.llmRequestPayload,
-                            JSON.stringify(result.llmResponse),
-                            result.resultId,
-                            'completed',
-                            'cloud'
-                        );
+                    const eventId = result.resultId || `cloud_${jobId}_${Date.now()}_${syncedCount}`;
+
+                    try {
+                        if (result.error) {
+                            // Handle error results
+                            this.eventService.trackEvent(
+                                null,
+                                domain,
+                                '', // We don't have the exact URL from the server run
+                                false,
+                                500,
+                                result.error,
+                                null,
+                                {
+                                    jobId: jobId,
+                                    captureSettings: result.captureSettings,
+                                    timestamp: result.timestamp,
+                                    source: 'cloud_sync'
+                                },
+                                result.error,
+                                eventId,
+                                'completed',
+                                'cloud',
+                                result.timestamp // Use server timestamp
+                            );
+                        } else {
+                            // Handle successful results
+                            const llmResponse = result.llmResponse || {};
+                            const fields = this.extractFieldsFromLLMResponse(llmResponse);
+
+                            this.eventService.trackEvent(
+                                llmResponse.evaluation || llmResponse, // The LLM response evaluation
+                                domain,
+                                '', // URL not available from cloud run
+                                true,
+                                200,
+                                null,
+                                result.screenshotData,
+                                {
+                                    jobId: jobId,
+                                    captureSettings: result.captureSettings,
+                                    timestamp: result.timestamp,
+                                    llmRequestPayload: result.llmRequestPayload,
+                                    source: 'cloud_sync'
+                                },
+                                JSON.stringify(llmResponse),
+                                eventId,
+                                'completed',
+                                'cloud',
+                                result.timestamp, // Use server timestamp
+                                fields // Include parsed fields for proper display
+                            );
+                        }
+                        syncedCount++;
+                    } catch (eventError) {
+                        console.error(`[Sync] Error processing result ${eventId}:`, eventError);
                     }
                 }
 
-                // 3. Purge results from server
-                const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
-                const purgeResponse = await fetch(purgeUrl, { method: 'POST' });
-                if (!purgeResponse.ok) {
-                    console.error(`[Sync] Failed to purge results for job ${jobId} on server.`);
-                } else {
-                    console.log(`[Sync] Successfully purged ${results.length} results from server for job ${jobId}.`);
+                if (syncedCount > 0) {
+                    // 3. Purge results from server after successful sync
+                    try {
+                        const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
+                        const purgeController = new AbortController();
+                        const purgeTimeoutId = setTimeout(() => purgeController.abort(), 5000);
+
+                        const purgeResponse = await fetch(purgeUrl, {
+                            method: 'POST',
+                            signal: purgeController.signal
+                        });
+                        clearTimeout(purgeTimeoutId);
+
+                        if (!purgeResponse.ok) {
+                            console.error(`[Sync] Failed to purge results for job ${jobId} on server.`);
+                        } else {
+                            console.log(`[Sync] Successfully purged ${syncedCount} results from server for job ${jobId}.`);
+                        }
+                    } catch (purgeError) {
+                        console.error(`[Sync] Error purging results for job ${jobId}:`, purgeError);
+                    }
+
+                    // 4. Notify popup about new events if it's open
+                    try {
+                        chrome.runtime.sendMessage({
+                            action: 'cloudResultsSynced',
+                            domain: domain,
+                            jobId: jobId,
+                            resultCount: syncedCount
+                        });
+                    } catch (messageError) {
+                        // Popup might not be open, ignore this error
+                        console.log('[Sync] Could not notify popup about sync (popup might not be open)');
+                    }
                 }
 
             } catch (error) {
-                console.error(`[Sync] Error syncing job ${jobId} for domain ${domain}:`, error);
+                if (error.name === 'AbortError') {
+                    console.warn(`[Sync] Timeout syncing job ${jobId} for domain ${domain}`);
+                } else {
+                    console.error(`[Sync] Error syncing job ${jobId} for domain ${domain}:`, error);
+                }
             }
         }
         console.log('[Sync] Cloud sync finished.');
+    }
+
+    // Helper method to extract fields from LLM response for history display
+    extractFieldsFromLLMResponse(llmResponse) {
+        const fields = [];
+
+        if (llmResponse.evaluation) {
+            // Handle evaluation format
+            Object.keys(llmResponse.evaluation).forEach(fieldName => {
+                const fieldData = llmResponse.evaluation[fieldName];
+                if (typeof fieldData === 'boolean') {
+                    fields.push({
+                        name: fieldName,
+                        result: fieldData,
+                        probability: null
+                    });
+                } else if (Array.isArray(fieldData) && fieldData.length >= 2) {
+                    fields.push({
+                        name: fieldName,
+                        result: fieldData[0],
+                        probability: fieldData[1]
+                    });
+                } else if (typeof fieldData === 'object' && fieldData.boolean !== undefined) {
+                    fields.push({
+                        name: fieldName,
+                        result: fieldData.boolean,
+                        probability: fieldData.probability || null
+                    });
+                }
+            });
+        }
+
+        return fields;
     }
 
     async startOrUpdateCloudJob(request) {
@@ -676,18 +809,19 @@ export class MessageService {
             console.log(`[Cloud] Sending request to start/update recurring job for ${domain}`);
             const tab = await chrome.tabs.get(tabId);
 
-            // 1. Gather all necessary data
-            const [sessionData, cookies, captureData] = await Promise.all([
+            // 1. Gather all necessary data including capture settings
+            const [sessionData, cookies, captureData, captureSettings] = await Promise.all([
                 this.getSessionData(tabId),
                 chrome.cookies.getAll({ url: tab.url }),
-                this.prepareCaptureData(domain)
+                this.prepareCaptureData(domain),
+                chrome.storage.local.get(['refreshPageToggle', 'captureDelay', 'fullPageCaptureToggle'])
             ]);
 
             if (!captureData.isValid) {
                 throw new Error(captureData.error || 'Invalid configuration for capture.');
             }
 
-            // 2. Prepare payload for the server
+            // 2. Prepare payload for the server with capture settings
             const jobPayload = {
                 sessionData: { ...sessionData, cookies },
                 llmConfig: captureData.llmConfig,
@@ -695,8 +829,15 @@ export class MessageService {
                 previousEvaluation: captureData.previousEvaluation,
                 interval: interval,
                 domain: domain,
-                url: tab.url // For reference
+                url: tab.url, // For reference
+                captureSettings: {
+                    refreshPageToggle: captureSettings.refreshPageToggle || false,
+                    captureDelay: captureSettings.captureDelay || '0',
+                    fullPageCaptureToggle: captureSettings.fullPageCaptureToggle || false
+                }
             };
+
+            console.log(`[Cloud] Job payload includes capture settings:`, jobPayload.captureSettings);
 
             // 3. Make POST request to cloud runner's /job endpoint
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
