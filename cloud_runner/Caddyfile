@@ -1,3 +1,3 @@
-websophon.tududes.com {
+runner.websophon.tududes.com {
     reverse_proxy runner:7113
 } 
