@@ -1,3 +1,7 @@
+{
+    email {$ACME_EMAIL}
+}
+
 runner.websophon.tududes.com {
     reverse_proxy runner:7113
 } 
