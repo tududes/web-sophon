@@ -176,6 +176,15 @@ export class MessageService {
                     }
                     sendResponse({ success: true });
                     break;
+
+                case 'startCloudJob':
+                    this.handleStartCloudJob(request)
+                        .then(sendResponse)
+                        .catch(error => {
+                            console.error('startCloudJob failed:', error);
+                            sendResponse({ success: false, error: error.message });
+                        });
+                    return true; // Keep channel open for async response
             }
             return true; // Keep message channel open for async responses
         });
@@ -428,5 +437,172 @@ export class MessageService {
             console.error('Error in performCapture:', error);
             return { success: false, error: error.message };
         }
+    }
+
+    // === CLOUD RUNNER LOGIC ===
+
+    async getSessionData(tabId) {
+        try {
+            const [result] = await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                    return {
+                        localStorage: { ...window.localStorage },
+                        sessionStorage: { ...window.sessionStorage },
+                        viewport: {
+                            width: window.innerWidth,
+                            height: window.innerHeight,
+                            deviceScaleFactor: window.devicePixelRatio
+                        },
+                        userAgent: navigator.userAgent,
+                        url: window.location.href
+                    };
+                }
+            });
+            return result.result;
+        } catch (error) {
+            console.error('[Cloud] Failed to inject script to get session data:', error);
+            // Fallback for pages where script injection is not allowed
+            const tab = await chrome.tabs.get(tabId);
+            return {
+                localStorage: {},
+                sessionStorage: {},
+                viewport: { width: 1920, height: 1080, deviceScaleFactor: 1 },
+                userAgent: navigator.userAgent, // Background script's user agent
+                url: tab.url
+            };
+        }
+    }
+
+    async handleStartCloudJob(request) {
+        const { tabId, domain } = request;
+        let eventId;
+
+        try {
+            console.log(`[Cloud] Starting job for tab ${tabId} on domain ${domain}`);
+            const tab = await chrome.tabs.get(tabId);
+
+            // 1. Create a pending event immediately so the user sees feedback.
+            eventId = this.eventService.trackEvent(
+                null, domain, tab.url, true, null, null, null,
+                { source: 'cloud', status: 'gathering_data' },
+                null, null, 'pending', 'cloud'
+            );
+            console.log(`[Cloud] Created pending event ${eventId}`);
+
+            // 2. Gather all necessary data in parallel
+            const [
+                sessionData,
+                cookies,
+                captureData
+            ] = await Promise.all([
+                this.getSessionData(tabId),
+                chrome.cookies.getAll({ url: tab.url }),
+                this.prepareCaptureData(domain) // Reuse existing data prep logic
+            ]);
+
+            if (!captureData.isValid) {
+                throw new Error(captureData.error || 'Invalid configuration for capture.');
+            }
+
+            const jobPayload = {
+                sessionData: { ...sessionData, cookies },
+                llmConfig: captureData.llmConfig,
+                fields: captureData.fields,
+                previousEvaluation: captureData.previousEvaluation
+            };
+
+            // 3. Make initial POST request to cloud runner
+            const runnerUrl = 'http://localhost:7113/job';
+            const initialResponse = await fetch(runnerUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(jobPayload)
+            });
+
+            if (!initialResponse.ok) {
+                const errorText = await initialResponse.text();
+                throw new Error(`Cloud runner rejected job: ${initialResponse.status} - ${errorText}`);
+            }
+
+            const { jobId } = await initialResponse.json();
+            if (!jobId) {
+                throw new Error('Cloud runner did not return a valid job ID.');
+            }
+
+            console.log(`[Cloud] Job submitted successfully. Job ID: ${jobId}`);
+
+            // 4. Update event with jobId and request data for history
+            this.eventService.updateEventRequestData(eventId, { jobId, jobPayload: { ...jobPayload, llmConfig: { ...jobPayload.llmConfig, apiKey: 'REDACTED' } } });
+
+            // 5. Start polling for the result
+            this.pollCloudJob(eventId, jobId);
+
+            // 6. Return success to the popup
+            return { success: true, eventId: eventId };
+
+        } catch (error) {
+            console.error('[Cloud] Error starting cloud job:', error);
+            if (eventId) {
+                this.eventService.updateEvent(eventId, null, null, error.message, error.message);
+            }
+            return { success: false, error: error.message };
+        }
+    }
+
+    pollCloudJob(eventId, jobId) {
+        const pollInterval = 5000; // 5 seconds
+        const maxPolls = 60; // 5 minutes timeout
+        let pollCount = 0;
+
+        const intervalId = setInterval(async () => {
+            if (pollCount >= maxPolls) {
+                clearInterval(intervalId);
+                console.error(`[Cloud] Job ${jobId} timed out after ${maxPolls * pollInterval / 1000} seconds.`);
+                this.eventService.updateEvent(eventId, null, 504, 'Job polling timed out', 'Job polling timed out');
+                return;
+            }
+
+            try {
+                const runnerUrl = `http://localhost:7113/job/${jobId}`;
+                const response = await fetch(runnerUrl);
+
+                if (!response.ok) {
+                    // Stop polling on server error
+                    clearInterval(intervalId);
+                    const errorText = await response.text();
+                    this.eventService.updateEvent(eventId, null, response.status, `Job status check failed: ${errorText}`, errorText);
+                    return;
+                }
+
+                const job = await response.json();
+
+                if (job.status === 'complete' || job.status === 'failed') {
+                    clearInterval(intervalId);
+                    console.log(`[Cloud] Job ${jobId} finished with status: ${job.status}`);
+
+                    // The cloud runner now returns the LLM analysis directly
+                    const llmResponse = job.llmResponse || {};
+                    const finalResponseText = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
+
+                    this.eventService.updateEvent(
+                        eventId,
+                        llmResponse, // The LLM response is the new "result"
+                        job.status === 'complete' ? 200 : 500,
+                        job.error,
+                        job.error || finalResponseText,
+                        job.screenshotData
+                    );
+                } else {
+                    // Job is still pending or running
+                    console.log(`[Cloud] Job ${jobId} status: ${job.status}`);
+                    pollCount++;
+                }
+            } catch (error) {
+                // Network error, keep polling for a while
+                console.warn(`[Cloud] Error polling job ${jobId}:`, error.message);
+                pollCount++;
+            }
+        }, pollInterval);
     }
 } 

@@ -117,7 +117,8 @@ class CleanPopupController {
             captureDelay: document.getElementById('captureDelay'),
             fullPageCaptureToggle: document.getElementById('fullPageCaptureToggle'),
             usePreviousEvaluationToggle: document.getElementById('usePreviousEvaluationToggle'),
-            clearPreviousEvaluationBtn: document.getElementById('clearPreviousEvaluationBtn')
+            clearPreviousEvaluationBtn: document.getElementById('clearPreviousEvaluationBtn'),
+            cloudRunnerToggle: document.getElementById('cloudRunnerToggle')
         };
     }
 
@@ -221,6 +222,11 @@ class CleanPopupController {
         // Clear previous evaluation button
         this.elements.clearPreviousEvaluationBtn?.addEventListener('click', () => {
             this.clearPreviousEvaluation();
+        });
+
+        // Cloud runner toggle
+        this.elements.cloudRunnerToggle?.addEventListener('change', (e) => {
+            chrome.storage.local.set({ cloudRunnerEnabled: e.target.checked });
         });
     }
 
@@ -425,39 +431,46 @@ class CleanPopupController {
         try {
             console.log('=== Starting manual capture ===');
 
-            // 1. Validate domain consent
+            // 1. Check if cloud runner is enabled
+            if (this.elements.cloudRunnerToggle?.checked) {
+                console.log('Cloud runner is enabled. Starting cloud capture flow.');
+                await this.handleCloudCapture();
+                return;
+            }
+
+            // 2. Validate domain consent for local capture
             if (!this.elements.consentToggle?.checked) {
                 throw new Error('Please enable WebSophon for this domain first');
             }
 
-            // 2. Get fields directly from FieldManager (original manual capture flow)
+            // 3. Get fields directly from FieldManager (original manual capture flow)
             const fieldsForAPI = this.fieldManager.getFieldsForAPI();
 
-            // 3. Validate fields exist
+            // 4. Validate fields exist
             if (!fieldsForAPI || fieldsForAPI.length === 0) {
                 throw new Error('No valid fields configured for this domain');
             }
 
-            // 4. Mark all fields as pending atomically (UI management)
+            // 5. Mark all fields as pending atomically (UI management)
             const eventId = Date.now().toString();
             this.fieldManager.markFieldsPending(eventId);
             await this.fieldManager.saveToStorage();
 
-            // 5. Re-render to show pending state
+            // 6. Re-render to show pending state
             this.renderFields();
 
-            // 6. Show capture status
-            this.showStatus('Starting capture...', 'info');
+            // 7. Show capture status
+            this.showStatus('Starting local capture...', 'info');
 
-            // 7. Send capture request using original manual flow (not shared preparation)
+            // 8. Send capture request using original manual flow (not shared preparation)
             const response = await this.sendCaptureRequest(fieldsForAPI, eventId, null);
 
-            // 8. Handle response
+            // 9. Handle response
             if (response.success) {
-                this.showStatus('Capture in progress...', 'info');
-                console.log('Manual capture initiated successfully');
+                this.showStatus('Local capture in progress...', 'info');
+                console.log('Manual local capture initiated successfully');
             } else {
-                throw new Error(response.error || 'Capture failed');
+                throw new Error(response.error || 'Local capture failed');
             }
 
         } catch (error) {
@@ -468,6 +481,38 @@ class CleanPopupController {
             await this.fieldManager.saveToStorage();
             this.renderFields();
 
+            this.showError(error.message);
+        }
+    }
+
+    async handleCloudCapture() {
+        try {
+            this.showStatus('Starting cloud capture...', 'info');
+            const tabId = await this.getCurrentTabId();
+            if (!tabId) {
+                throw new Error('Could not get current tab ID.');
+            }
+
+            const message = {
+                action: 'startCloudJob',
+                tabId: tabId,
+                domain: this.currentDomain
+            };
+
+            console.log('Sending startCloudJob message:', message);
+            const response = await this.sendMessageToBackground(message);
+
+            if (response && response.success) {
+                this.showStatus('Cloud job created. Waiting for results...', 'info');
+                // Optional: immediately switch to history tab and highlight the pending job
+                if (response.eventId) {
+                    this.navigateToHistoryEvent(response.eventId);
+                }
+            } else {
+                throw new Error(response.error || 'Failed to start cloud job.');
+            }
+        } catch (error) {
+            console.error('Cloud capture failed:', error);
             this.showError(error.message);
         }
     }
@@ -750,11 +795,12 @@ class CleanPopupController {
             const consentKey = `consent_${this.currentDomain}`;
             const intervalKey = `interval_${this.currentDomain}`;
 
-            const [consentData, intervalData, captureSettings, previousEvalData] = await Promise.all([
+            const [consentData, intervalData, captureSettings, previousEvalData, cloudRunnerData] = await Promise.all([
                 chrome.storage.local.get([consentKey]),
                 chrome.storage.local.get([intervalKey]),
                 chrome.storage.local.get(['refreshPageToggle', 'captureDelay', 'fullPageCaptureToggle']),
-                chrome.storage.local.get(['usePreviousEvaluation'])
+                chrome.storage.local.get(['usePreviousEvaluation']),
+                chrome.storage.local.get(['cloudRunnerEnabled'])
             ]);
 
             // Set consent toggle
@@ -785,6 +831,11 @@ class CleanPopupController {
             // Load previous evaluation setting
             if (this.elements.usePreviousEvaluationToggle) {
                 this.elements.usePreviousEvaluationToggle.checked = previousEvalData.usePreviousEvaluation !== false; // Default to true
+            }
+
+            // Load cloud runner setting
+            if (this.elements.cloudRunnerToggle) {
+                this.elements.cloudRunnerToggle.checked = cloudRunnerData.cloudRunnerEnabled || false;
             }
 
         } catch (error) {

@@ -207,7 +207,8 @@ export class HistoryManager {
                 screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
                 request: { test: 'pending request' },
                 response: null,
-                status: 'pending'
+                status: 'pending',
+                source: 'cloud'
             },
             {
                 id: Date.now() + 2,
@@ -227,7 +228,8 @@ export class HistoryManager {
                 screenshot: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
                 request: { test: 'success request' },
                 response: '{"fields":{"test_field":{"boolean":true,"probability":0.95},"another_field":{"boolean":false,"probability":0.23}},"reason":"Test evaluation completed successfully"}',
-                status: 'completed'
+                status: 'completed',
+                source: 'local'
             },
             {
                 id: Date.now() + 3,
@@ -339,6 +341,7 @@ export class HistoryManager {
               <div class="history-item ${unreadClass} ${errorClass}" data-event-index="${index}" data-event-id="${event.id}">
                 <div class="history-header">
                   <div class="history-header-left">
+                    ${event.source === 'cloud' ? '<span class="history-source-icon" title="Cloud Job">☁️</span>' : ''}
                     <div class="history-domain">${event.domain}</div>
                   </div>
                   <div class="history-header-right">
