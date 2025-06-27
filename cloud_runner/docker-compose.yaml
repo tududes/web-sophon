@@ -3,8 +3,7 @@ services:
     build: .
     container_name: tv-eyes-runner
     restart: unless-stopped
-    networks:
-      - caddy_net
+    network_mode: "host"
 
   caddy:
     image: caddy:2-alpine
@@ -12,19 +11,11 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    ports:
-      - "80:80"
-      - "443:443"
+    network_mode: "host"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    networks:
-      - caddy_net
-
-networks:
-  caddy_net:
-
 
 volumes:
   caddy_data:
