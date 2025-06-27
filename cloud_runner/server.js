@@ -10,6 +10,12 @@ const port = process.env.PORT || 7113;
 // In-memory store for jobs. In production, use a persistent store like Redis.
 const jobs = {};
 
+// Add a simple logger middleware to see all incoming requests
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] Received ${req.method} request for ${req.url}`);
+    next();
+});
+
 app.use(cors()); // Enable CORS for all routes
 app.use(bodyParser.json({ limit: '10mb' })); // Increase limit for larger payloads
 
