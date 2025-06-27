@@ -461,6 +461,7 @@ export class MessageService {
                 llmConfig: captureData.llmConfig,
                 fields: captureData.fields,
                 previousEvaluation: captureData.previousEvaluation,
+                domain: domain,
                 captureSettings: {
                     refreshPageToggle: captureSettings.refreshPageToggle || false,
                     captureDelay: captureSettings.captureDelay || '0',
