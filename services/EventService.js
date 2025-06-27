@@ -32,7 +32,7 @@ export class EventService {
     }
 
     // Track capture event
-    trackEvent(results, domain, url, success = true, httpStatus = null, error = null, screenshot = null, request = null, response = null, eventId = null, status = 'completed') {
+    trackEvent(results, domain, url, success = true, httpStatus = null, error = null, screenshot = null, request = null, response = null, eventId = null, status = 'completed', source = 'local') {
         // Check if any field evaluated to true
         let hasTrueResult = false;
         const fieldResults = [];
@@ -109,7 +109,8 @@ export class EventService {
             screenshot: screenshot, // Store the base64 screenshot
             request: request,
             response: response, // Contains response data, error messages, or null for pending events
-            status: status // 'pending' or 'completed'
+            status: status, // 'pending' or 'completed'
+            source: source // 'local' or 'cloud'
         };
 
         console.log('Tracking event:', event);
@@ -128,10 +129,13 @@ export class EventService {
 
         // Save to storage (note: screenshots can be large, may need to handle storage limits)
         this.saveEventsToStorage();
+
+        // Return the ID of the created event
+        return event.id;
     }
 
     // Update an existing event with response data
-    updateEvent(eventId, results, httpStatus, error, responseText) {
+    updateEvent(eventId, results, httpStatus, error, responseText, screenshot = null) {
         // Find the event
         const eventIndex = this.recentEvents.findIndex(e => e.id === eventId);
         if (eventIndex === -1) {
@@ -146,6 +150,9 @@ export class EventService {
         event.httpStatus = httpStatus;
         event.error = error;
         event.response = responseText; // ALWAYS contains response data (JSON, text, or error message)
+        if (screenshot) {
+            event.screenshot = screenshot;
+        }
 
         // Update success flag based on HTTP status and error
         if (error) {
