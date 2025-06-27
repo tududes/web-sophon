@@ -145,6 +145,18 @@ class CleanPopupController {
             testCloudRunnerBtn: document.getElementById('testCloudRunnerBtn'),
             testCloudRunnerStatus: document.getElementById('testCloudRunnerStatus'),
 
+            // Token and CAPTCHA elements
+            tokenStatus: document.getElementById('tokenStatus'),
+            tokenStatusText: document.getElementById('tokenStatusText'),
+            quotaDisplay: document.getElementById('quotaDisplay'),
+            quotaRecurring: document.getElementById('quotaRecurring'),
+            quotaManual: document.getElementById('quotaManual'),
+            captchaContainer: document.getElementById('captchaContainer'),
+            hcaptchaWidget: document.getElementById('hcaptcha-widget'),
+            captchaStatus: document.getElementById('captchaStatus'),
+            refreshTokenBtn: document.getElementById('refreshTokenBtn'),
+            clearTokenBtn: document.getElementById('clearTokenBtn'),
+
             // History section
             historyContainer: document.getElementById('historyContainer'),
             showTrueOnly: document.getElementById('showTrueOnly'),
@@ -293,6 +305,15 @@ class CleanPopupController {
         this.elements.cloudRunnerToggle?.addEventListener('change', (e) => {
             chrome.storage.local.set({ cloudRunnerEnabled: e.target.checked });
         });
+
+        // CAPTCHA and token management
+        this.elements.refreshTokenBtn?.addEventListener('click', () => {
+            this.refreshTokenStats();
+        });
+
+        this.elements.clearTokenBtn?.addEventListener('click', () => {
+            this.clearAuthToken();
+        });
     }
 
     initializeTabSystem() {
@@ -371,6 +392,8 @@ class CleanPopupController {
                 // Always reload known domains to show current statistics
                 console.log('Loading known domains for settings tab...');
                 await this.loadKnownDomains();
+                // Load token status and quotas
+                await this.loadTokenStatus();
                 break;
         }
     }
@@ -387,29 +410,317 @@ class CleanPopupController {
         this.showToast('Testing connection...', 'info', statusEl);
 
         try {
+            // Check if we have a valid token first
+            const tokenResponse = await this.sendMessageToBackground({ action: 'getTokenStats' });
+
+            if (!tokenResponse.success) {
+                this.showToast('✗ No valid authentication token. Complete CAPTCHA first.', 'error', statusEl);
+                return;
+            }
+
             const runnerEndpoint = url.replace(/\/$/, '');
             const testUrl = `${runnerEndpoint}/test`;
 
-            const response = await fetch(testUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ testData: 'ping' })
+            // Use token-based authentication
+            const payload = JSON.stringify({ testData: 'ping' });
+
+            // Use MessageService to make authenticated request
+            const testResponse = await this.sendMessageToBackground({
+                action: 'testCloudRunner',
+                url: testUrl,
+                payload: payload
             });
 
-            const result = await response.json();
+            if (testResponse.success) {
+                const quotaInfo = testResponse.quotas ?
+                    ` (${testResponse.quotas.recurringDomains}/${testResponse.quotas.maxRecurringDomains} domains, ${testResponse.quotas.manualCaptures}/${testResponse.quotas.maxManualCaptures} manual)` : '';
+                this.showToast(`✓ ${testResponse.message}${quotaInfo}`, 'success', statusEl);
 
-            if (response.ok && result.success) {
-                this.showToast(`✓ ${result.message}`, 'success', statusEl);
+                // Update quota display with latest data
+                if (testResponse.quotas) {
+                    this.updateQuotaDisplay(testResponse.quotas);
+                }
             } else {
-                throw new Error(result.error || `Server responded with status ${response.status}`);
+                throw new Error(testResponse.error || 'Test failed');
             }
+
         } catch (error) {
             console.error('Cloud Runner test failed:', error);
             let errorMessage = error.message;
             if (errorMessage.includes('Failed to fetch')) {
-                errorMessage = 'Connection failed. Check URL and CORS policy on the server.';
+                errorMessage = 'Connection failed. Check URL and authentication token.';
+            } else if (errorMessage.includes('No valid authentication token')) {
+                errorMessage = 'Authentication required. Complete CAPTCHA first.';
             }
             this.showToast(`✗ ${errorMessage}`, 'error', statusEl);
+        }
+    }
+
+    // === CAPTCHA AND TOKEN MANAGEMENT ===
+
+    async loadTokenStatus() {
+        try {
+            if (!this.elements.tokenStatusText) return;
+
+            console.log('[TOKEN] Loading token status...');
+
+            // Check if we have a valid token and get its stats
+            const response = await this.sendMessageToBackground({ action: 'getTokenStats' });
+
+            if (response.success) {
+                const stats = response;
+                console.log('[TOKEN] Token stats loaded:', stats);
+
+                this.updateTokenStatusDisplay(true, stats);
+                this.updateQuotaDisplay(stats.quotas);
+                this.hideCapcha();
+            } else {
+                console.log('[TOKEN] No valid token available:', response.error);
+                this.updateTokenStatusDisplay(false);
+                this.showCaptcha();
+            }
+
+        } catch (error) {
+            console.error('[TOKEN] Error loading token status:', error);
+            this.updateTokenStatusDisplay(false);
+            this.showCaptcha();
+        }
+    }
+
+    updateTokenStatusDisplay(hasValidToken, stats = null) {
+        if (!this.elements.tokenStatusText) return;
+
+        if (hasValidToken && stats) {
+            const expiryDate = new Date(stats.expiresAt);
+            const timeRemaining = stats.timeRemaining;
+
+            this.elements.tokenStatusText.textContent = `✅ Valid token (expires ${expiryDate.toLocaleString()})`;
+            this.elements.tokenStatusText.className = 'valid';
+
+            // Show refresh and clear buttons
+            if (this.elements.refreshTokenBtn) this.elements.refreshTokenBtn.style.display = 'inline-block';
+            if (this.elements.clearTokenBtn) this.elements.clearTokenBtn.style.display = 'inline-block';
+
+            // Show token expiry warning if less than 1 hour remaining
+            if (timeRemaining < 60 * 60 * 1000) {
+                this.showTokenExpiryWarning(timeRemaining);
+            }
+        } else {
+            this.elements.tokenStatusText.textContent = '❌ No valid authentication token';
+            this.elements.tokenStatusText.className = 'invalid';
+
+            // Hide refresh and clear buttons
+            if (this.elements.refreshTokenBtn) this.elements.refreshTokenBtn.style.display = 'none';
+            if (this.elements.clearTokenBtn) this.elements.clearTokenBtn.style.display = 'none';
+        }
+    }
+
+    updateQuotaDisplay(quotas) {
+        if (!quotas || !this.elements.quotaDisplay) return;
+
+        // Show quota display
+        this.elements.quotaDisplay.style.display = 'block';
+
+        // Update recurring domains quota
+        if (this.elements.quotaRecurring) {
+            const recurringText = `${quotas.recurringDomains}/${quotas.maxRecurringDomains}`;
+            this.elements.quotaRecurring.textContent = recurringText;
+
+            // Add styling based on usage
+            this.elements.quotaRecurring.className = 'quota-value';
+            if (quotas.recurringDomains >= quotas.maxRecurringDomains) {
+                this.elements.quotaRecurring.classList.add('at-limit');
+            } else if (quotas.recurringDomains > quotas.maxRecurringDomains * 0.8) {
+                this.elements.quotaRecurring.classList.add('over-limit');
+            }
+        }
+
+        // Update manual captures quota
+        if (this.elements.quotaManual) {
+            const manualText = `${quotas.manualCaptures}/${quotas.maxManualCaptures}`;
+            this.elements.quotaManual.textContent = manualText;
+
+            // Add styling based on usage
+            this.elements.quotaManual.className = 'quota-value';
+            if (quotas.manualCaptures >= quotas.maxManualCaptures) {
+                this.elements.quotaManual.classList.add('at-limit');
+            } else if (quotas.manualCaptures > quotas.maxManualCaptures * 0.8) {
+                this.elements.quotaManual.classList.add('over-limit');
+            }
+        }
+    }
+
+    async showCaptcha() {
+        if (!this.elements.captchaContainer) return;
+
+        try {
+            // Show the CAPTCHA container
+            this.elements.captchaContainer.style.display = 'block';
+
+            // Get CAPTCHA challenge info
+            const challenge = await this.sendMessageToBackground({ action: 'getCaptchaChallenge' });
+
+            if (challenge.success === false) {
+                this.showCaptchaError('Failed to load CAPTCHA challenge: ' + challenge.error);
+                return;
+            }
+
+            // Initialize hCaptcha widget
+            if (window.hcaptcha && this.elements.hcaptchaWidget) {
+                console.log('[CAPTCHA] Initializing hCaptcha widget...');
+
+                // Clear any existing widget
+                this.elements.hcaptchaWidget.innerHTML = '';
+
+                // Render hCaptcha
+                window.hcaptcha.render(this.elements.hcaptchaWidget, {
+                    sitekey: challenge.siteKey,
+                    theme: document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+                    callback: (token) => this.onCaptchaSuccess(token),
+                    'error-callback': (error) => this.onCaptchaError(error),
+                    'expired-callback': () => this.onCaptchaExpired(),
+                    'chalexpired-callback': () => this.onCaptchaExpired()
+                });
+
+                this.showCaptchaMessage('Complete the CAPTCHA to get an authentication token');
+            } else {
+                this.showCaptchaError('CAPTCHA service not available');
+            }
+
+        } catch (error) {
+            console.error('[CAPTCHA] Error showing CAPTCHA:', error);
+            this.showCaptchaError('Error loading CAPTCHA: ' + error.message);
+        }
+    }
+
+    hideCapcha() {
+        if (this.elements.captchaContainer) {
+            this.elements.captchaContainer.style.display = 'none';
+        }
+        if (this.elements.quotaDisplay) {
+            this.elements.quotaDisplay.style.display = 'block';
+        }
+    }
+
+    async onCaptchaSuccess(captchaResponse) {
+        try {
+            this.showCaptchaMessage('Verifying CAPTCHA...', 'info');
+
+            const response = await this.sendMessageToBackground({
+                action: 'verifyCaptcha',
+                captchaResponse: captchaResponse
+            });
+
+            if (response.success) {
+                this.showCaptchaMessage('✅ Authentication token obtained successfully!', 'success');
+
+                // Update displays
+                this.updateTokenStatusDisplay(true, response);
+                this.updateQuotaDisplay(response.quotas);
+
+                // Hide CAPTCHA and show quotas
+                setTimeout(() => {
+                    this.hideCapcha();
+                }, 2000);
+
+            } else {
+                this.showCaptchaError('CAPTCHA verification failed: ' + response.error);
+                // Reset CAPTCHA
+                if (window.hcaptcha) {
+                    window.hcaptcha.reset();
+                }
+            }
+
+        } catch (error) {
+            console.error('[CAPTCHA] Error verifying CAPTCHA:', error);
+            this.showCaptchaError('Error verifying CAPTCHA: ' + error.message);
+        }
+    }
+
+    onCaptchaError(error) {
+        console.error('[CAPTCHA] CAPTCHA error:', error);
+        this.showCaptchaError('CAPTCHA error occurred. Please try again.');
+    }
+
+    onCaptchaExpired() {
+        console.log('[CAPTCHA] CAPTCHA expired');
+        this.showCaptchaMessage('CAPTCHA expired. Please solve it again.');
+    }
+
+    showCaptchaMessage(message, type = 'info') {
+        if (this.elements.captchaStatus) {
+            this.elements.captchaStatus.textContent = message;
+            this.elements.captchaStatus.className = `status-message ${type}`;
+        }
+    }
+
+    showCaptchaError(message) {
+        this.showCaptchaMessage(message, 'error');
+    }
+
+    showTokenExpiryWarning(timeRemaining) {
+        const hours = Math.floor(timeRemaining / (60 * 60 * 1000));
+        const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
+
+        let warningText;
+        if (hours > 0) {
+            warningText = `⚠️ Token expires in ${hours}h ${minutes}m`;
+        } else {
+            warningText = `⚠️ Token expires in ${minutes}m`;
+        }
+
+        // Add warning element if it doesn't exist
+        let warningElement = document.getElementById('tokenExpiryWarning');
+        if (!warningElement) {
+            warningElement = document.createElement('div');
+            warningElement.id = 'tokenExpiryWarning';
+            warningElement.className = 'token-expiry-warning';
+            this.elements.tokenStatus.appendChild(warningElement);
+        }
+
+        warningElement.textContent = warningText;
+    }
+
+    async refreshTokenStats() {
+        try {
+            this.showToast('Refreshing token stats...', 'info', this.elements.testCloudRunnerStatus);
+
+            const response = await this.sendMessageToBackground({ action: 'getTokenStats' });
+
+            if (response.success) {
+                this.updateTokenStatusDisplay(true, response);
+                this.updateQuotaDisplay(response.quotas);
+                this.showToast('✅ Token stats refreshed', 'success', this.elements.testCloudRunnerStatus);
+            } else {
+                this.showToast('❌ Failed to refresh: ' + response.error, 'error', this.elements.testCloudRunnerStatus);
+            }
+
+        } catch (error) {
+            console.error('[TOKEN] Error refreshing stats:', error);
+            this.showToast('❌ Error refreshing stats', 'error', this.elements.testCloudRunnerStatus);
+        }
+    }
+
+    async clearAuthToken() {
+        if (!confirm('Clear the authentication token? You will need to complete a CAPTCHA again to use cloud runner features.')) {
+            return;
+        }
+
+        try {
+            await this.sendMessageToBackground({ action: 'clearToken' });
+
+            // Update UI
+            this.updateTokenStatusDisplay(false);
+            if (this.elements.quotaDisplay) {
+                this.elements.quotaDisplay.style.display = 'none';
+            }
+            this.showCaptcha();
+
+            this.showToast('✅ Authentication token cleared', 'success', this.elements.testCloudRunnerStatus);
+
+        } catch (error) {
+            console.error('[TOKEN] Error clearing token:', error);
+            this.showToast('❌ Error clearing token', 'error', this.elements.testCloudRunnerStatus);
         }
     }
 

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSophon</title>
     <link rel="stylesheet" href="assets/styles.css">
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <style>
         body.service-disconnected .main-content {
             display: none;
@@ -192,6 +193,39 @@
 
             <!-- Settings Tab -->
             <div class="tab-panel" id="settingsContent">
+                <div class="settings-section">
+                    <h3>Cloud Runner Authentication</h3>
+                    <div id="tokenStatus" class="token-status">
+                        <div class="token-info">
+                            <span id="tokenStatusText">No authentication token</span>
+                            <button id="refreshTokenBtn" class="small-button secondary" style="display: none;">🔄
+                                Refresh</button>
+                        </div>
+                        <div id="quotaDisplay" class="quota-display" style="display: none;">
+                            <div class="quota-item">
+                                <span class="quota-label">Recurring domains:</span>
+                                <span id="quotaRecurring" class="quota-value">0/10</span>
+                            </div>
+                            <div class="quota-item">
+                                <span class="quota-label">Manual captures:</span>
+                                <span id="quotaManual" class="quota-value">0/2</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="captchaContainer" class="captcha-container">
+                        <div class="form-group">
+                            <p class="setting-description">Complete the CAPTCHA below to obtain an authentication token
+                                for cloud runner access:</p>
+                            <div id="hcaptcha-widget" class="hcaptcha-widget"></div>
+                            <div id="captchaStatus" class="status-message"></div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <button id="clearTokenBtn" class="small-button danger" style="display: none;">🗑️ Clear
+                            Token</button>
+                    </div>
+                </div>
+
                 <div class="settings-section">
                     <h3>Service Endpoints</h3>
                     <div class="form-group">

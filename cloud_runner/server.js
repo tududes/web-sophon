@@ -3,14 +3,536 @@ import bodyParser from 'body-parser';
 import { v4 as uuidv4 } from 'uuid';
 import puppeteer from 'puppeteer';
 import cors from 'cors';
+import crypto from 'crypto';
 import { getSystemPrompt } from './utils/prompt-formatters.js';
 
 const app = express();
 const port = process.env.PORT || 7113;
 
-// In-memory store for jobs and their results.
-// In production, this should be a persistent store like Redis.
-const jobs = {};
+// Security Configuration
+const SECURITY_CONFIG = {
+    // Master API Key for CAPTCHA verification (should be set via environment variable)
+    MASTER_API_KEY: process.env.WEBSOPHON_MASTER_KEY || 'ws_master_dev_key_change_in_production',
+    // Secret for HMAC signing (should be set via environment variable)
+    SIGNING_SECRET: process.env.WEBSOPHON_SIGNING_SECRET || 'dev_signing_secret_change_in_production',
+    // CAPTCHA Configuration
+    CAPTCHA_SECRET: process.env.CAPTCHA_SECRET_KEY || 'dev_captcha_secret',
+    CAPTCHA_SITE_KEY: process.env.CAPTCHA_SITE_KEY || 'dev_captcha_site_key',
+    // Token Configuration
+    TOKEN_EXPIRY: 24 * 60 * 60 * 1000, // 24 hours
+    TOKEN_CLEANUP_INTERVAL: 60 * 60 * 1000, // 1 hour
+    // Usage Quotas
+    MAX_CONCURRENT_DOMAINS: 10, // Max domains with recurring jobs
+    MAX_CONCURRENT_MANUAL: 2,   // Max concurrent manual captures
+    // Rate limiting
+    MAX_REQUESTS_PER_MINUTE: 60, // Increased for token-based auth
+    MAX_PAYLOAD_SIZE: '50mb',
+    // IP Whitelisting (empty = allow all)
+    ALLOWED_IPS: process.env.ALLOWED_IPS ? process.env.ALLOWED_IPS.split(',') : [],
+    // Job limits
+    MAX_TOTAL_JOBS: 500, // Increased for multi-tenant
+    MAX_RESULTS_PER_JOB: 1000
+};
+
+// In-memory stores
+const jobs = {}; // jobId -> job data
+const authTokens = new Map(); // token -> { clientId, expiresAt, quotas, createdAt }
+const clientMetrics = new Map(); // clientId -> { requests: [], lastSeen: timestamp }
+const blockedIPs = new Set();
+const blockedClients = new Set();
+
+// Token and quota management
+class TokenManager {
+    constructor() {
+        this.tokens = authTokens;
+        // Start cleanup interval
+        setInterval(() => this.cleanupExpiredTokens(), SECURITY_CONFIG.TOKEN_CLEANUP_INTERVAL);
+    }
+
+    generateToken() {
+        return `wst_${crypto.randomBytes(32).toString('hex')}`;
+    }
+
+    createToken(clientId, captchaResponse) {
+        const token = this.generateToken();
+        const now = Date.now();
+
+        const tokenData = {
+            clientId: clientId,
+            createdAt: now,
+            expiresAt: now + SECURITY_CONFIG.TOKEN_EXPIRY,
+            captchaResponse: captchaResponse, // Store for audit
+            quotas: {
+                recurringDomains: new Set(), // Active recurring job domains
+                manualCaptures: 0, // Current concurrent manual captures
+                totalRequests: 0,
+                lastRequestTime: now
+            },
+            stats: {
+                totalJobs: 0,
+                totalManualCaptures: 0,
+                totalRecurringJobs: 0
+            }
+        };
+
+        this.tokens.set(token, tokenData);
+        console.log(`[TOKEN] Created token for client ${clientId}: ${token.substring(0, 16)}...`);
+        return token;
+    }
+
+    validateToken(token) {
+        const tokenData = this.tokens.get(token);
+        if (!tokenData) {
+            return { valid: false, reason: 'Token not found' };
+        }
+
+        if (Date.now() > tokenData.expiresAt) {
+            this.tokens.delete(token);
+            return { valid: false, reason: 'Token expired' };
+        }
+
+        return { valid: true, data: tokenData };
+    }
+
+    checkQuotas(token, operationType, domain = null) {
+        const validation = this.validateToken(token);
+        if (!validation.valid) {
+            return { allowed: false, reason: validation.reason };
+        }
+
+        const tokenData = validation.data;
+        const quotas = tokenData.quotas;
+
+        switch (operationType) {
+            case 'recurring_job':
+                if (quotas.recurringDomains.size >= SECURITY_CONFIG.MAX_CONCURRENT_DOMAINS) {
+                    return {
+                        allowed: false,
+                        reason: `Quota exceeded: Maximum ${SECURITY_CONFIG.MAX_CONCURRENT_DOMAINS} concurrent recurring domains allowed`,
+                        current: quotas.recurringDomains.size,
+                        limit: SECURITY_CONFIG.MAX_CONCURRENT_DOMAINS
+                    };
+                }
+                break;
+
+            case 'manual_capture':
+                if (quotas.manualCaptures >= SECURITY_CONFIG.MAX_CONCURRENT_MANUAL) {
+                    return {
+                        allowed: false,
+                        reason: `Quota exceeded: Maximum ${SECURITY_CONFIG.MAX_CONCURRENT_MANUAL} concurrent manual captures allowed`,
+                        current: quotas.manualCaptures,
+                        limit: SECURITY_CONFIG.MAX_CONCURRENT_MANUAL
+                    };
+                }
+                break;
+        }
+
+        return { allowed: true, data: tokenData };
+    }
+
+    updateQuotas(token, operation, domain = null) {
+        const tokenData = this.tokens.get(token);
+        if (!tokenData) return false;
+
+        const quotas = tokenData.quotas;
+        const stats = tokenData.stats;
+
+        switch (operation.type) {
+            case 'start_recurring':
+                quotas.recurringDomains.add(domain);
+                stats.totalRecurringJobs++;
+                break;
+            case 'stop_recurring':
+                quotas.recurringDomains.delete(domain);
+                break;
+            case 'start_manual':
+                quotas.manualCaptures++;
+                stats.totalManualCaptures++;
+                break;
+            case 'finish_manual':
+                quotas.manualCaptures = Math.max(0, quotas.manualCaptures - 1);
+                break;
+        }
+
+        quotas.totalRequests++;
+        quotas.lastRequestTime = Date.now();
+        stats.totalJobs++;
+
+        console.log(`[QUOTA] Updated quotas for token ${token.substring(0, 16)}...: recurring=${quotas.recurringDomains.size}, manual=${quotas.manualCaptures}`);
+        return true;
+    }
+
+    getTokenStats(token) {
+        const tokenData = this.tokens.get(token);
+        if (!tokenData) return null;
+
+        return {
+            clientId: tokenData.clientId,
+            createdAt: tokenData.createdAt,
+            expiresAt: tokenData.expiresAt,
+            quotas: {
+                recurringDomains: tokenData.quotas.recurringDomains.size,
+                maxRecurringDomains: SECURITY_CONFIG.MAX_CONCURRENT_DOMAINS,
+                manualCaptures: tokenData.quotas.manualCaptures,
+                maxManualCaptures: SECURITY_CONFIG.MAX_CONCURRENT_MANUAL,
+                activeDomains: Array.from(tokenData.quotas.recurringDomains)
+            },
+            stats: tokenData.stats,
+            timeRemaining: tokenData.expiresAt - Date.now()
+        };
+    }
+
+    cleanupExpiredTokens() {
+        const now = Date.now();
+        let cleanedCount = 0;
+
+        for (const [token, data] of this.tokens.entries()) {
+            if (now > data.expiresAt) {
+                this.tokens.delete(token);
+                cleanedCount++;
+            }
+        }
+
+        if (cleanedCount > 0) {
+            console.log(`[CLEANUP] Removed ${cleanedCount} expired tokens`);
+        }
+    }
+}
+
+const tokenManager = new TokenManager();
+
+// CAPTCHA verification utility
+async function verifyCaptcha(captchaResponse, clientIP) {
+    // In development, skip actual CAPTCHA verification
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`[CAPTCHA] Development mode: accepting test CAPTCHA for ${clientIP}`);
+        return { success: true, challenge_ts: new Date().toISOString() };
+    }
+
+    try {
+        // Use hCaptcha or reCAPTCHA verification
+        const verifyUrl = 'https://hcaptcha.com/siteverify'; // or https://www.google.com/recaptcha/api/siteverify
+        const response = await fetch(verifyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                secret: SECURITY_CONFIG.CAPTCHA_SECRET,
+                response: captchaResponse,
+                remoteip: clientIP
+            })
+        });
+
+        const result = await response.json();
+        return result;
+    } catch (error) {
+        console.error('[CAPTCHA] Verification error:', error);
+        return { success: false, 'error-codes': ['verification-failed'] };
+    }
+}
+
+// Attack pattern detection
+const suspiciousPatterns = [
+    /\.env/i, /\.git/i, /\.ssh/i, /\.aws/i, /\.vscode/i, /\.svn/i,
+    /wp-admin/i, /wp-config/i, /phpinfo/i, /config\.(php|yml|yaml|xml|json)/i,
+    /secrets/i, /backup/i, /dump\.sql/i, /database/i, /server\.key/i,
+    /id_rsa/i, /id_ecdsa/i, /id_ed25519/i, /credentials/i, /setup-config/i,
+    /server-status/i, /schema\.rb/i, /web\.config/i, /docker-compose/i
+];
+
+// Utility functions
+function generateClientId(req) {
+    const ip = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+    const userAgent = req.headers['user-agent'] || '';
+    return crypto.createHash('sha256').update(`${ip}:${userAgent}`).digest('hex').substring(0, 16);
+}
+
+function verifyMasterKey(apiKey) {
+    return apiKey === SECURITY_CONFIG.MASTER_API_KEY;
+}
+
+function verifyHMACSignature(payload, signature, secret) {
+    if (!signature) return false;
+    const expectedSignature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'));
+}
+
+// Rate limiting utility functions
+function isRateLimited(clientId) {
+    const now = Date.now();
+    const client = clientMetrics.get(clientId) || { requests: [], lastSeen: now };
+
+    // Clean old requests (older than 1 minute)
+    client.requests = client.requests.filter(time => now - time < 60000);
+
+    // Check rate limits
+    if (client.requests.length >= SECURITY_CONFIG.MAX_REQUESTS_PER_MINUTE) {
+        return true;
+    }
+
+    // Update metrics
+    client.requests.push(now);
+    client.lastSeen = now;
+    clientMetrics.set(clientId, client);
+
+    return false;
+}
+
+// Authentication middleware for different security levels
+function requireMasterKey(req, res, next) {
+    const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+
+    if (!apiKey || !verifyMasterKey(apiKey)) {
+        console.warn(`[SECURITY] Invalid master key from ${req.clientIP} (${req.clientId})`);
+        return res.status(401).json({ error: 'Master API key required' });
+    }
+
+    next();
+}
+
+function requireValidToken(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.warn(`[SECURITY] Missing token from ${req.clientIP} (${req.clientId})`);
+        return res.status(401).json({ error: 'Authentication token required' });
+    }
+
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const validation = tokenManager.validateToken(token);
+
+    if (!validation.valid) {
+        console.warn(`[SECURITY] Invalid token from ${req.clientIP} (${req.clientId}): ${validation.reason}`);
+        return res.status(401).json({ error: validation.reason });
+    }
+
+    req.authToken = token;
+    req.tokenData = validation.data;
+    next();
+}
+
+// IP Whitelisting middleware
+app.use((req, res, next) => {
+    if (SECURITY_CONFIG.ALLOWED_IPS.length > 0) {
+        const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+        if (!SECURITY_CONFIG.ALLOWED_IPS.includes(clientIP)) {
+            console.warn(`[SECURITY] Rejected request from non-whitelisted IP: ${clientIP}`);
+            return res.status(403).json({ error: 'IP not whitelisted' });
+        }
+    }
+    next();
+});
+
+// Enhanced security middleware
+app.use((req, res, next) => {
+    const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+    const clientId = generateClientId(req);
+    const userAgent = req.headers['user-agent'] || '';
+
+    // Block already identified malicious IPs/clients
+    if (blockedIPs.has(clientIP) || blockedClients.has(clientId)) {
+        console.warn(`[SECURITY] Blocked request from banned client: ${clientIP} (${clientId})`);
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Check for suspicious path patterns
+    const isSuspicious = suspiciousPatterns.some(pattern => pattern.test(req.path));
+
+    if (isSuspicious) {
+        console.warn(`[SECURITY] Suspicious request detected from ${clientIP}: ${req.method} ${req.path}`);
+        console.warn(`[SECURITY] User-Agent: ${userAgent}`);
+
+        // Ban suspicious clients immediately
+        blockedIPs.add(clientIP);
+        blockedClients.add(clientId);
+        console.warn(`[SECURITY] IP ${clientIP} and client ${clientId} banned for suspicious activity`);
+
+        return res.status(404).json({ error: 'Not Found' });
+    }
+
+    // Rate limiting check
+    if (isRateLimited(clientId)) {
+        console.warn(`[SECURITY] Rate limit exceeded for client ${clientId} from ${clientIP}`);
+        return res.status(429).json({
+            error: 'Rate limit exceeded',
+            retryAfter: 60
+        });
+    }
+
+    // Add client info to request
+    req.clientId = clientId;
+    req.clientIP = clientIP;
+
+    next();
+});
+
+// API Key authentication middleware for protected endpoints
+function requireAPIKey(req, res, next) {
+    const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+
+    if (!apiKey) {
+        console.warn(`[SECURITY] Missing API key from ${req.clientIP} (${req.clientId})`);
+        return res.status(401).json({ error: 'API key required' });
+    }
+
+    if (!verifyAPIKey(apiKey)) {
+        console.warn(`[SECURITY] Invalid API key from ${req.clientIP} (${req.clientId}): ${apiKey}`);
+        blockedClients.add(req.clientId);
+        return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    next();
+}
+
+// HMAC signature verification middleware for sensitive operations
+function requireSignature(req, res, next) {
+    const signature = req.headers['x-signature'];
+    const timestamp = req.headers['x-timestamp'];
+
+    if (!signature || !timestamp) {
+        console.warn(`[SECURITY] Missing signature or timestamp from ${req.clientIP} (${req.clientId})`);
+        return res.status(400).json({ error: 'Signature and timestamp required' });
+    }
+
+    // Check timestamp (prevent replay attacks)
+    const now = Date.now();
+    const requestTime = parseInt(timestamp);
+    if (Math.abs(now - requestTime) > 300000) { // 5 minutes tolerance
+        console.warn(`[SECURITY] Request timestamp too old/future from ${req.clientIP} (${req.clientId})`);
+        return res.status(400).json({ error: 'Request timestamp invalid' });
+    }
+
+    // Verify signature
+    const payload = JSON.stringify(req.body) + timestamp;
+    if (!verifyHMACSignature(payload, signature, SECURITY_CONFIG.SIGNING_SECRET)) {
+        console.warn(`[SECURITY] Invalid signature from ${req.clientIP} (${req.clientId})`);
+        blockedClients.add(req.clientId);
+        return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    next();
+}
+
+// Whitelist only specific endpoints we actually use
+const allowedEndpoints = [
+    '/',
+    '/captcha/challenge',
+    '/captcha/verify',
+    '/auth/token/stats',
+    '/job',
+    '/test',
+    /^\/job\/[a-f0-9-]+$/,
+    /^\/job\/[a-f0-9-]+\/results$/,
+    /^\/job\/[a-f0-9-]+\/purge$/
+];
+
+app.use((req, res, next) => {
+    const isAllowed = allowedEndpoints.some(endpoint => {
+        if (typeof endpoint === 'string') {
+            return req.path === endpoint;
+        } else {
+            return endpoint.test(req.path);
+        }
+    });
+
+    if (!isAllowed) {
+        console.log(`[SECURITY] Blocked access to unauthorized endpoint: ${req.method} ${req.path}`);
+        return res.status(404).json({ error: 'Endpoint not found' });
+    }
+
+    next();
+});
+
+// Security headers
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Server', 'WebSophon-Runner');
+    next();
+});
+
+// Add a simple logger middleware to see legitimate requests only
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.clientId} - ${req.method} ${req.url}`);
+    next();
+});
+
+app.use(cors());
+app.use(bodyParser.json({ limit: SECURITY_CONFIG.MAX_PAYLOAD_SIZE }));
+
+// --- CAPTCHA and Authentication Endpoints ---
+
+/**
+ * Endpoint to get CAPTCHA challenge information
+ * No authentication required - this is the entry point
+ */
+app.get('/captcha/challenge', (req, res) => {
+    console.log(`[CAPTCHA] Challenge requested by ${req.clientId}`);
+    res.status(200).json({
+        siteKey: SECURITY_CONFIG.CAPTCHA_SITE_KEY,
+        service: 'hcaptcha', // or 'recaptcha'
+        message: 'Complete the CAPTCHA to obtain an authentication token'
+    });
+});
+
+/**
+ * Endpoint to verify CAPTCHA and issue authentication token
+ * Requires master key for security (prevents token farming)
+ */
+app.post('/captcha/verify', requireMasterKey, async (req, res) => {
+    const { captchaResponse } = req.body;
+
+    if (!captchaResponse) {
+        return res.status(400).json({ error: 'CAPTCHA response required' });
+    }
+
+    try {
+        console.log(`[CAPTCHA] Verification requested by ${req.clientId}`);
+
+        // Verify CAPTCHA with the service
+        const verification = await verifyCaptcha(captchaResponse, req.clientIP);
+
+        if (!verification.success) {
+            console.warn(`[CAPTCHA] Failed verification for ${req.clientId}: ${verification['error-codes']}`);
+            return res.status(400).json({
+                error: 'CAPTCHA verification failed',
+                details: verification['error-codes']
+            });
+        }
+
+        // Create authentication token
+        const token = tokenManager.createToken(req.clientId, captchaResponse);
+        const tokenStats = tokenManager.getTokenStats(token);
+
+        console.log(`[CAPTCHA] Successfully verified and issued token for ${req.clientId}`);
+
+        res.status(200).json({
+            success: true,
+            token: token,
+            expiresAt: tokenStats.expiresAt,
+            quotas: tokenStats.quotas,
+            message: 'Authentication token issued successfully'
+        });
+
+    } catch (error) {
+        console.error(`[CAPTCHA] Error during verification for ${req.clientId}:`, error);
+        res.status(500).json({ error: 'CAPTCHA verification service error' });
+    }
+});
+
+/**
+ * Endpoint to get current token statistics and quota usage
+ * Requires valid authentication token
+ */
+app.get('/auth/token/stats', requireValidToken, (req, res) => {
+    const stats = tokenManager.getTokenStats(req.authToken);
+    if (!stats) {
+        return res.status(404).json({ error: 'Token statistics not found' });
+    }
+
+    console.log(`[TOKEN] Stats requested by ${req.clientId} for token ${req.authToken.substring(0, 16)}...`);
+    res.status(200).json(stats);
+});
 
 // --- NEW: Internal Scheduler ---
 // This will run jobs on the server according to their schedule.
@@ -44,20 +566,18 @@ const jobScheduler = {
     }
 };
 
-// Add a simple logger middleware to see all incoming requests
-app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] Received ${req.method} request for ${req.url}`);
-    next();
-});
-
-app.use(cors());
-app.use(bodyParser.json({ limit: '10mb' }));
-
 /**
  * Endpoint to submit or update a capture job.
  * If an interval is provided, it creates a recurring job.
+ * Requires valid authentication token and enforces quotas.
  */
-app.post('/job', (req, res) => {
+app.post('/job', requireValidToken, (req, res) => {
+    // Check global job limits
+    if (Object.keys(jobs).length >= SECURITY_CONFIG.MAX_TOTAL_JOBS) {
+        console.warn(`[SECURITY] Job limit exceeded - total jobs: ${Object.keys(jobs).length}`);
+        return res.status(429).json({ error: 'Server job limit exceeded. Try again later.' });
+    }
+
     const {
         sessionData,
         llmConfig,
@@ -78,8 +598,27 @@ app.post('/job', (req, res) => {
         return res.status(400).json({ error: 'Domain is required for job identification' });
     }
 
+    // Security: Validate payload size and content
+    if (JSON.stringify(req.body).length > 1024 * 1024) { // 1MB limit for job payload
+        return res.status(413).json({ error: 'Job payload too large' });
+    }
+
+    // Determine operation type and check quotas
+    const operationType = interval ? 'recurring_job' : 'manual_capture';
+    const quotaCheck = tokenManager.checkQuotas(req.authToken, operationType, domain);
+
+    if (!quotaCheck.allowed) {
+        console.warn(`[QUOTA] ${req.clientId} quota exceeded: ${quotaCheck.reason}`);
+        return res.status(429).json({
+            error: quotaCheck.reason,
+            current: quotaCheck.current,
+            limit: quotaCheck.limit,
+            quotaType: operationType
+        });
+    }
+
     // Check if a job for this domain already exists
-    let jobId = Object.keys(jobs).find(id => jobs[id].domain === domain);
+    let jobId = Object.keys(jobs).find(id => jobs[id].domain === domain && jobs[id].authToken === req.authToken);
     const jobExists = !!jobId;
 
     if (!jobExists) {
@@ -91,41 +630,88 @@ app.post('/job', (req, res) => {
             interval: interval,
             createdAt: new Date().toISOString(),
             lastRun: 0,
+            clientId: req.clientId, // Track which client created this job
+            authToken: req.authToken, // Track which token owns this job
             jobData: { sessionData, llmConfig, fields, previousEvaluation, captureSettings },
             results: [], // Array to store results from each run
             error: null,
         };
-        console.log(`[${jobId}] New recurring job created for domain ${domain} with interval ${interval}s`);
+
+        // Update quotas based on operation type
+        if (interval) {
+            tokenManager.updateQuotas(req.authToken, { type: 'start_recurring' }, domain);
+        } else {
+            tokenManager.updateQuotas(req.authToken, { type: 'start_manual' });
+        }
+
+        console.log(`[${jobId}] New ${operationType} job created by ${req.clientId} for domain ${domain}`);
         console.log(`[${jobId}] Capture settings:`, captureSettings);
     } else {
+        // Security: Only allow the token owner to update their job
+        const existingJob = jobs[jobId];
+        if (existingJob.authToken !== req.authToken) {
+            console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to modify job ${jobId} owned by different token`);
+            return res.status(403).json({ error: 'Unauthorized to modify this job' });
+        }
+
         // Update existing job
         const job = jobs[jobId];
+        const wasRecurring = !!job.interval;
+        const willBeRecurring = !!interval;
+
         job.interval = interval;
         job.jobData = { sessionData, llmConfig, fields, previousEvaluation, captureSettings };
         job.status = 'idle';
-        console.log(`[${jobId}] Existing job for domain ${domain} updated with interval ${interval}s`);
+
+        // Update quotas if job type changed
+        if (wasRecurring && !willBeRecurring) {
+            // Recurring -> Manual
+            tokenManager.updateQuotas(req.authToken, { type: 'stop_recurring' }, domain);
+            tokenManager.updateQuotas(req.authToken, { type: 'start_manual' });
+        } else if (!wasRecurring && willBeRecurring) {
+            // Manual -> Recurring
+            tokenManager.updateQuotas(req.authToken, { type: 'finish_manual' });
+            tokenManager.updateQuotas(req.authToken, { type: 'start_recurring' }, domain);
+        }
+
+        console.log(`[${jobId}] Existing job for domain ${domain} updated by ${req.clientId}`);
         console.log(`[${jobId}] Updated capture settings:`, captureSettings);
     }
 
     // If it's a one-off job (no interval), run it immediately.
     if (!interval) {
-        console.log(`[${jobId}] Job for ${domain} is a one-off. Running now.`);
+        console.log(`[${jobId}] Manual job for ${domain} starting immediately.`);
         processJob(jobId, { sessionData, llmConfig, fields, previousEvaluation, captureSettings });
-        res.status(202).json({ jobId, message: "One-off job started." });
+        res.status(202).json({
+            jobId,
+            message: "Manual job started.",
+            operationType: 'manual_capture'
+        });
     } else {
-        res.status(201).json({ jobId, message: `Recurring job ${jobExists ? 'updated' : 'created'}.` });
+        res.status(201).json({
+            jobId,
+            message: `Recurring job ${jobExists ? 'updated' : 'created'}.`,
+            operationType: 'recurring_job'
+        });
     }
 });
 
 /**
  * Endpoint to get the status and accumulated results of a job.
+ * Requires valid authentication token.
  */
-app.get('/job/:id', (req, res) => {
+app.get('/job/:id', requireValidToken, (req, res) => {
     const jobId = req.params.id;
     const job = jobs[jobId];
 
     if (!job) {
         return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Security: Only allow the token owner to view their job
+    if (job.authToken !== req.authToken) {
+        console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to access job ${jobId} owned by different token`);
+        return res.status(403).json({ error: 'Unauthorized to access this job' });
     }
 
     // Return a summary of the job, not the full result data here
@@ -134,64 +720,121 @@ app.get('/job/:id', (req, res) => {
         domain: job.domain,
         status: job.status,
         interval: job.interval,
+        operationType: job.interval ? 'recurring_job' : 'manual_capture',
         createdAt: job.createdAt,
         lastRun: job.lastRun,
         resultCount: job.results.length,
     };
-    console.log(`[${jobId}] Status check: ${job.status}, ${job.results.length} results pending.`);
+    console.log(`[${jobId}] Status check by ${req.clientId}: ${job.status}, ${job.results.length} results pending.`);
     res.status(200).json(jobSummary);
 });
 
 
 /**
  * NEW: Endpoint to stop and delete a recurring job.
+ * Requires valid authentication token.
  */
-app.delete('/job/:id', (req, res) => {
+app.delete('/job/:id', requireValidToken, (req, res) => {
     const jobId = req.params.id;
-    if (jobs[jobId]) {
-        delete jobs[jobId];
-        console.log(`[${jobId}] Job deleted successfully.`);
-        res.status(200).json({ message: 'Job deleted successfully.' });
-    } else {
-        res.status(404).json({ error: 'Job not found.' });
+    const job = jobs[jobId];
+
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
     }
+
+    // Security: Only allow the token owner to delete their job
+    if (job.authToken !== req.authToken) {
+        console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to delete job ${jobId} owned by different token`);
+        return res.status(403).json({ error: 'Unauthorized to delete this job' });
+    }
+
+    // Update quotas when deleting job
+    if (job.interval) {
+        // Recurring job
+        tokenManager.updateQuotas(req.authToken, { type: 'stop_recurring' }, job.domain);
+    } else {
+        // Manual job
+        tokenManager.updateQuotas(req.authToken, { type: 'finish_manual' });
+    }
+
+    delete jobs[jobId];
+    console.log(`[${jobId}] Job deleted by ${req.clientId}, quotas updated.`);
+    res.status(200).json({ message: 'Job deleted successfully.' });
 });
 
 /**
  * NEW: Endpoint to fetch all accumulated results for a job.
+ * Requires valid authentication token.
  */
-app.get('/job/:id/results', (req, res) => {
+app.get('/job/:id/results', requireValidToken, (req, res) => {
     const jobId = req.params.id;
     const job = jobs[jobId];
     if (!job) {
         return res.status(404).json({ error: 'Job not found' });
     }
 
-    console.log(`[${jobId}] Fetching ${job.results.length} results.`);
-    res.status(200).json({ results: job.results });
+    // Security: Only allow the token owner to access their job results
+    if (job.authToken !== req.authToken) {
+        console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to access results for job ${jobId} owned by different token`);
+        return res.status(403).json({ error: 'Unauthorized to access this job' });
+    }
+
+    // Limit results returned to prevent memory issues
+    const results = job.results.slice(-SECURITY_CONFIG.MAX_RESULTS_PER_JOB);
+    console.log(`[${jobId}] Fetching ${results.length} results for ${req.clientId}.`);
+    res.status(200).json({ results: results });
 });
 
 /**
  * NEW: Endpoint to purge results after the extension has synced them.
+ * Requires valid authentication token.
  */
-app.post('/job/:id/purge', (req, res) => {
+app.post('/job/:id/purge', requireValidToken, (req, res) => {
     const jobId = req.params.id;
     const job = jobs[jobId];
     if (!job) {
         return res.status(404).json({ error: 'Job not found' });
     }
+
+    // Security: Only allow the token owner to purge their job results
+    if (job.authToken !== req.authToken) {
+        console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to purge results for job ${jobId} owned by different token`);
+        return res.status(403).json({ error: 'Unauthorized to purge this job' });
+    }
+
     const purgedCount = job.results.length;
     job.results = []; // Clear the results array
-    console.log(`[${jobId}] Purged ${purgedCount} results.`);
+    console.log(`[${jobId}] Purged ${purgedCount} results for ${req.clientId}.`);
     res.status(200).json({ message: `Purged ${purgedCount} results.` });
 });
 
+/**
+ * Root endpoint - minimal information disclosure
+ */
+app.get('/', (req, res) => {
+    res.status(200).json({
+        service: 'WebSophon Cloud Runner',
+        status: 'operational',
+        version: '1.0.0',
+        jobsActive: Object.keys(jobs).length,
+        totalClients: clientMetrics.size
+    });
+});
 
 /**
  * Endpoint to test the cloud runner connection.
+ * Requires valid authentication token.
  */
-app.post('/test', (req, res) => {
-    res.status(200).json({ success: true, message: 'Cloud runner is running.' });
+app.post('/test', requireValidToken, (req, res) => {
+    console.log(`[TEST] Token test by client ${req.clientId}`);
+    const tokenStats = tokenManager.getTokenStats(req.authToken);
+    res.status(200).json({
+        success: true,
+        message: 'Cloud runner is running with valid token.',
+        clientId: req.clientId,
+        timestamp: new Date().toISOString(),
+        quotas: tokenStats ? tokenStats.quotas : null
+    });
 });
 
 /**
@@ -289,12 +932,26 @@ async function processJob(jobId, jobData) {
         });
 
         job.status = job.interval ? 'idle' : 'complete'; // Reset to idle for next interval
+
+        // Update quotas when manual job completes
+        if (!job.interval && job.authToken) {
+            tokenManager.updateQuotas(job.authToken, { type: 'finish_manual' });
+            console.log(`[${jobId}] Manual job completed, quota updated`);
+        }
+
         console.log(`[${jobId}] Job run completed successfully. Total results: ${job.results.length}`);
 
     } catch (error) {
         console.error(`[${jobId}] Error processing job:`, error);
         job.status = 'failed';
         job.error = error.message;
+
+        // Update quotas even on failure for manual jobs
+        if (!job.interval && job.authToken) {
+            tokenManager.updateQuotas(job.authToken, { type: 'finish_manual' });
+            console.log(`[${jobId}] Manual job failed, quota updated`);
+        }
+
         // Also add error to results history
         job.results.push({
             resultId: uuidv4(),
@@ -457,6 +1114,42 @@ function normalizeCloudLLMResponse(rawResponse, fields) {
     console.log('Cloud runner final normalized response:', normalized);
     return normalized;
 }
+
+// Cleanup function for expired jobs and client metrics
+function cleanup() {
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+    // Clean up old client metrics
+    for (const [clientId, client] of clientMetrics.entries()) {
+        if (now - client.lastSeen > maxAge) {
+            clientMetrics.delete(clientId);
+            console.log(`[CLEANUP] Removed expired client metrics for ${clientId}`);
+        }
+    }
+
+    // Clean up completed one-off jobs older than 1 hour
+    const jobCleanupAge = 60 * 60 * 1000; // 1 hour
+    for (const [jobId, job] of Object.entries(jobs)) {
+        if (!job.interval && job.status === 'complete') {
+            const jobAge = now - new Date(job.createdAt).getTime();
+            if (jobAge > jobCleanupAge) {
+                delete jobs[jobId];
+                console.log(`[CLEANUP] Removed expired job ${jobId}`);
+            }
+        }
+    }
+
+    // Clear blocked IPs periodically (reset every 24 hours)
+    if (Math.random() < 0.01) { // 1% chance each cleanup
+        blockedIPs.clear();
+        blockedClients.clear();
+        console.log(`[CLEANUP] Reset blocked IPs and clients`);
+    }
+}
+
+// Run cleanup every 10 minutes
+setInterval(cleanup, 10 * 60 * 1000);
 
 app.listen(port, () => {
     console.log(`Cloud runner listening on port ${port}`);

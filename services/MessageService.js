@@ -6,6 +6,16 @@ export class MessageService {
         this.eventService = eventService;
         this.llmService = llmService;
         this.currentlyPolling = new Set(); // Track jobs being polled
+        this.syncIntervalId = null;
+
+        // Cloud runner security configuration
+        this.cloudSecurity = {
+            masterKey: 'ws_master_dev_key_change_in_production', // For CAPTCHA verification
+            authToken: null, // Will be obtained via CAPTCHA
+            tokenExpiry: null,
+            quotas: null
+        };
+
         this.setupMessageListener();
         this.resumePendingCloudJobs();
         this.startCloudSync(); // Start the new sync process
@@ -121,6 +131,31 @@ export class MessageService {
             },
             'startCloudJob': (req, sender, res) => {
                 this.handleStartCloudJob(req)
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'getCaptchaChallenge': (req, sender, res) => {
+                this.getCaptchaChallenge()
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'verifyCaptcha': (req, sender, res) => {
+                this.verifyCaptchaAndGetToken(req.captchaResponse)
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'getTokenStats': (req, sender, res) => {
+                this.getTokenStats()
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'clearToken': (req, sender, res) => {
+                this.clearStoredToken()
+                    .then(() => res({ success: true }))
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'testCloudRunner': (req, sender, res) => {
+                this.testCloudRunnerWithToken(req.url, req.payload)
                     .then(res)
                     .catch(err => res({ success: false, error: err.message }));
             }
@@ -476,9 +511,8 @@ export class MessageService {
             const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, ''); // Remove trailing slash
             const runnerUrl = `${runnerEndpoint}/job`;
 
-            const initialResponse = await fetch(runnerUrl, {
+            const initialResponse = await this.makeAuthenticatedRequest(runnerUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(jobPayload)
             });
 
@@ -537,7 +571,9 @@ export class MessageService {
                 const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, ''); // Remove trailing slash
                 const jobStatusUrl = `${runnerEndpoint}/job/${jobId}`;
 
-                const response = await fetch(jobStatusUrl);
+                const response = await this.makeAuthenticatedRequest(jobStatusUrl, {
+                    method: 'GET'
+                });
 
                 if (!response.ok) {
                     // Stop polling on server error
@@ -568,7 +604,9 @@ export class MessageService {
                         // Job completed successfully - fetch the results
                         try {
                             const resultsUrl = `${runnerEndpoint}/job/${jobId}/results`;
-                            const resultsResponse = await fetch(resultsUrl);
+                            const resultsResponse = await this.makeAuthenticatedRequest(resultsUrl, {
+                                method: 'GET'
+                            });
 
                             if (!resultsResponse.ok) {
                                 throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
@@ -602,7 +640,7 @@ export class MessageService {
                                 // Purge the result from server since we've processed it
                                 try {
                                     const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
-                                    await fetch(purgeUrl, { method: 'POST' });
+                                    await this.makeAuthenticatedRequest(purgeUrl, { method: 'POST' });
                                     console.log(`[Cloud] Purged result for completed job ${jobId}`);
                                 } catch (purgeError) {
                                     console.warn(`[Cloud] Failed to purge result for job ${jobId}:`, purgeError);
@@ -698,7 +736,8 @@ export class MessageService {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-                const response = await fetch(resultsUrl, {
+                const response = await this.makeAuthenticatedRequest(resultsUrl, {
+                    method: 'GET',
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
@@ -799,7 +838,7 @@ export class MessageService {
                         const purgeController = new AbortController();
                         const purgeTimeoutId = setTimeout(() => purgeController.abort(), 5000);
 
-                        const purgeResponse = await fetch(purgeUrl, {
+                        const purgeResponse = await this.makeAuthenticatedRequest(purgeUrl, {
                             method: 'POST',
                             signal: purgeController.signal
                         });
@@ -920,9 +959,8 @@ export class MessageService {
             const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
             const runnerUrl = `${runnerEndpoint}/job`;
 
-            const response = await fetch(runnerUrl, {
+            const response = await this.makeAuthenticatedRequest(runnerUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(jobPayload)
             });
 
@@ -957,7 +995,7 @@ export class MessageService {
             const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
             const runnerUrl = `${runnerEndpoint}/job/${jobId}`;
 
-            const response = await fetch(runnerUrl, { method: 'DELETE' });
+            const response = await this.makeAuthenticatedRequest(runnerUrl, { method: 'DELETE' });
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -975,6 +1013,188 @@ export class MessageService {
         } catch (error) {
             console.error('[Cloud] Error stopping recurring cloud job:', error);
             return { success: false, error: error.message };
+        }
+    }
+
+
+
+    // CAPTCHA and token management
+    async getCaptchaChallenge() {
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+
+            const response = await fetch(`${runnerEndpoint}/captcha/challenge`);
+            if (!response.ok) {
+                throw new Error(`Failed to get CAPTCHA challenge: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('[CAPTCHA] Error getting challenge:', error);
+            throw error;
+        }
+    }
+
+    async verifyCaptchaAndGetToken(captchaResponse) {
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+
+            const response = await fetch(`${runnerEndpoint}/captcha/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': this.cloudSecurity.masterKey
+                },
+                body: JSON.stringify({ captchaResponse })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `CAPTCHA verification failed: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            // Store token and metadata
+            this.cloudSecurity.authToken = result.token;
+            this.cloudSecurity.tokenExpiry = result.expiresAt;
+            this.cloudSecurity.quotas = result.quotas;
+
+            // Save to storage for persistence
+            await chrome.storage.local.set({
+                cloudAuthToken: result.token,
+                cloudTokenExpiry: result.expiresAt,
+                cloudQuotas: result.quotas
+            });
+
+            console.log('[CAPTCHA] Token obtained successfully, expires:', new Date(result.expiresAt).toLocaleString());
+            return result;
+
+        } catch (error) {
+            console.error('[CAPTCHA] Error verifying CAPTCHA:', error);
+            throw error;
+        }
+    }
+
+    async ensureValidToken() {
+        // Check if we have a stored token
+        if (!this.cloudSecurity.authToken) {
+            const { cloudAuthToken, cloudTokenExpiry, cloudQuotas } = await chrome.storage.local.get([
+                'cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas'
+            ]);
+
+            if (cloudAuthToken && cloudTokenExpiry) {
+                this.cloudSecurity.authToken = cloudAuthToken;
+                this.cloudSecurity.tokenExpiry = cloudTokenExpiry;
+                this.cloudSecurity.quotas = cloudQuotas;
+            }
+        }
+
+        // Check if token is expired
+        if (this.cloudSecurity.authToken && this.cloudSecurity.tokenExpiry) {
+            if (Date.now() >= this.cloudSecurity.tokenExpiry) {
+                console.log('[TOKEN] Token expired, clearing stored token');
+                await this.clearStoredToken();
+                return false;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    async clearStoredToken() {
+        this.cloudSecurity.authToken = null;
+        this.cloudSecurity.tokenExpiry = null;
+        this.cloudSecurity.quotas = null;
+
+        await chrome.storage.local.remove(['cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas']);
+        console.log('[TOKEN] Cleared stored authentication token');
+    }
+
+    async getTokenStats() {
+        if (!(await this.ensureValidToken())) {
+            throw new Error('No valid authentication token available');
+        }
+
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+
+            const response = await this.makeAuthenticatedRequest(`${runnerEndpoint}/auth/token/stats`, {
+                method: 'GET'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `Failed to get token stats: ${response.status}`);
+            }
+
+            const stats = await response.json();
+
+            // Update local quota cache
+            this.cloudSecurity.quotas = stats.quotas;
+            await chrome.storage.local.set({ cloudQuotas: stats.quotas });
+
+            return stats;
+
+        } catch (error) {
+            console.error('[TOKEN] Error getting stats:', error);
+            throw error;
+        }
+    }
+
+    async makeAuthenticatedRequest(url, options = {}) {
+        if (!(await this.ensureValidToken())) {
+            throw new Error('No valid authentication token available');
+        }
+
+        const authOptions = {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.cloudSecurity.authToken}`,
+                ...options.headers
+            }
+        };
+
+        return fetch(url, authOptions);
+    }
+
+    async testCloudRunnerWithToken(testUrl, payload) {
+        if (!(await this.ensureValidToken())) {
+            throw new Error('No valid authentication token available');
+        }
+
+        try {
+            const response = await this.makeAuthenticatedRequest(testUrl, {
+                method: 'POST',
+                body: payload
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Server responded with status ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                return {
+                    success: true,
+                    message: result.message,
+                    clientId: result.clientId,
+                    quotas: result.quotas
+                };
+            } else {
+                throw new Error(result.error || 'Cloud runner test failed');
+            }
+
+        } catch (error) {
+            console.error('[CLOUD] Test failed:', error);
+            throw error;
         }
     }
 } 

@@ -3069,4 +3069,196 @@ input:checked+.slider:hover {
 
 .history-group.expanded .history-group-details {
     max-height: none;
+    opacity: 1;
+}
+
+/* === CAPTCHA AND TOKEN STYLES === */
+
+.token-status {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.token-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-sm);
+}
+
+#tokenStatusText {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+}
+
+#tokenStatusText.valid {
+    color: var(--success);
+}
+
+#tokenStatusText.expired {
+    color: var(--warning);
+}
+
+#tokenStatusText.invalid {
+    color: var(--danger);
+}
+
+.quota-display {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm);
+    margin-top: var(--space-sm);
+}
+
+.quota-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-xs) 0;
+}
+
+.quota-item:not(:last-child) {
+    border-bottom: 1px solid var(--border-primary);
+    margin-bottom: var(--space-xs);
+    padding-bottom: var(--space-xs);
+}
+
+.quota-label {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.quota-value {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+}
+
+.quota-value.at-limit {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.quota-value.over-limit {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.captcha-container {
+    margin: var(--space-md) 0;
+}
+
+.hcaptcha-widget {
+    display: flex;
+    justify-content: center;
+    margin: var(--space-md) 0;
+}
+
+.captcha-loading {
+    text-align: center;
+    padding: var(--space-lg);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.captcha-error {
+    background-color: var(--danger-light);
+    color: var(--danger);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin: var(--space-sm) 0;
+    font-size: var(--text-sm);
+}
+
+.captcha-success {
+    background-color: var(--success-light);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin: var(--space-sm) 0;
+    font-size: var(--text-sm);
+}
+
+/* Token expiry warning */
+.token-expiry-warning {
+    background-color: var(--warning-light);
+    color: var(--warning);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm);
+    margin: var(--space-sm) 0;
+    font-size: var(--text-xs);
+    text-align: center;
+}
+
+/* Quota exceeded styling */
+.quota-exceeded-warning {
+    background-color: var(--danger-light);
+    color: var(--danger);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin: var(--space-md) 0;
+    font-size: var(--text-sm);
+    text-align: center;
+}
+
+.quota-exceeded-warning .quota-details {
+    margin-top: var(--space-sm);
+    font-size: var(--text-xs);
+    opacity: 0.8;
+}
+
+/* CAPTCHA integration styling */
+.captcha-integration {
+    border: 2px dashed var(--border-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    margin: var(--space-md) 0;
+    text-align: center;
+    background-color: var(--bg-tertiary);
+}
+
+.captcha-integration.hidden {
+    display: none;
+}
+
+.captcha-integration h4 {
+    margin: 0 0 var(--space-sm) 0;
+    color: var(--text-primary);
+    font-size: var(--text-base);
+}
+
+.captcha-integration p {
+    margin: 0 0 var(--space-md) 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+/* Responsive adjustments for CAPTCHA */
+@media (max-width: 400px) {
+    .token-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-sm);
+    }
+
+    .quota-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-xs);
+    }
+
+    .hcaptcha-widget {
+        transform: scale(0.8);
+        transform-origin: center;
+    }
 }
