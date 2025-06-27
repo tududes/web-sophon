@@ -38,6 +38,28 @@ SIGNING_SECRET="$(openssl rand -hex 64)"
 echo "✅ Master Key generated: ${MASTER_KEY:0:16}..."
 echo "✅ Signing Secret generated: ${SIGNING_SECRET:0:16}..."
 
+# Get SSL/ACME email for Caddy
+echo ""
+echo "🔐 SSL Certificate Configuration"
+echo "================================"
+echo "Caddy will automatically obtain SSL certificates from Let's Encrypt."
+echo "This requires a valid email address for ACME registration."
+echo ""
+
+read -p "Enter your email for SSL certificates (ACME): " ACME_EMAIL
+
+if [ -z "$ACME_EMAIL" ]; then
+    echo "⚠️  No email provided. Using default (you should change this!)"
+    ACME_EMAIL="admin@example.com"
+fi
+
+# Validate email format (basic)
+if [[ ! "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+    echo "⚠️  Email format looks invalid, but continuing..."
+fi
+
+echo "✅ ACME email set: $ACME_EMAIL"
+
 # Get CAPTCHA credentials
 echo ""
 echo "🔐 CAPTCHA Configuration"
@@ -64,6 +86,9 @@ echo "📝 Creating Environment Configuration..."
 cat > .env << EOF
 # WebSophon Cloud Runner Security Configuration
 # Generated on $(date)
+
+# Required: SSL/ACME Configuration for Caddy
+ACME_EMAIL=${ACME_EMAIL}
 
 # Required: CAPTCHA-based Authentication
 WEBSOPHON_MASTER_KEY=${MASTER_KEY}
@@ -366,6 +391,7 @@ echo "   - Rotate API keys periodically"
 echo ""
 echo "📚 For detailed security information, see docs/SECURITY_GUIDE.md"
 echo ""
+echo "📧 Your ACME Email: ${ACME_EMAIL}"
 echo "🔑 Your Master Key: ${MASTER_KEY:0:20}..."
 echo "🔐 Your Signing Secret: ${SIGNING_SECRET:0:20}..."
 echo "🔑 Your hCaptcha Site Key: ${CAPTCHA_SITE_KEY:0:20}..."
