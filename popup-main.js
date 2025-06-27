@@ -1122,7 +1122,13 @@ class CleanPopupController {
                 config.model = this.elements.llmModel.value;
             }
 
-            return config;
+            return {
+                apiUrl: config.apiUrl || 'https://openrouter.ai/api/v1/chat/completions',
+                apiKey: config.apiKey || '',
+                model: config.model,
+                temperature: parseFloat(config.temperature) || 0.1,
+                maxTokens: parseInt(config.maxTokens) || 5000 // Increased from 2000 to 5000
+            };
         } catch (error) {
             console.error('Failed to get LLM config:', error);
             return {};
@@ -1136,7 +1142,7 @@ class CleanPopupController {
                 apiKey: this.elements.llmApiKey?.value || '',
                 model: this.elements.llmModel?.value,
                 temperature: parseFloat(this.elements.llmTemperature?.value) || 0.1,
-                maxTokens: parseInt(this.elements.llmMaxTokens?.value) || 1000
+                maxTokens: parseInt(this.elements.llmMaxTokens?.value) || 5000 // Increased from 2000 to 5000
             };
 
             await chrome.storage.local.set({ llmConfig_global: config });

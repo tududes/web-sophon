@@ -258,16 +258,16 @@ export class MessageService {
     // Shared capture preparation logic (DRY principle)
     async prepareCaptureData(domain) {
         try {
-            // Get fresh LLM config from storage (same format as popup)
-            const llmData = await chrome.storage.local.get(['llmConfig_global']);
-            const storedConfig = llmData.llmConfig_global || {};
+            // Get global LLM configuration
+            const llmConfigData = await chrome.storage.local.get(['llmConfig_global']);
+            const storedConfig = llmConfigData.llmConfig_global || {};
 
             const llmConfig = {
-                apiUrl: storedConfig.apiUrl || '',
+                apiUrl: storedConfig.apiUrl || 'https://openrouter.ai/api/v1/chat/completions',
                 apiKey: storedConfig.apiKey || '',
-                model: storedConfig.model || 'opengvlab/internvl3-14b:free',
+                model: storedConfig.model || 'gpt-4-vision-preview',
                 temperature: storedConfig.temperature !== undefined ? parseFloat(storedConfig.temperature) : 0.1,
-                maxTokens: storedConfig.maxTokens !== undefined ? parseInt(storedConfig.maxTokens) : 1000
+                maxTokens: storedConfig.maxTokens !== undefined ? parseInt(storedConfig.maxTokens) : 5000 // Increased from 2000 to 5000
             };
 
             console.log('Prepared LLM config for automatic capture:', {

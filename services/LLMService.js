@@ -226,7 +226,7 @@ Return only JSON.`;
                             ]
                         }
                     ],
-                    max_tokens: 1000,
+                    max_tokens: 5000, // Increased from 2000 to 5000 for complete responses
                     temperature: 0.1, // Low temperature for consistent results
                     stream: false // Disable streaming to avoid chunked responses
                 };

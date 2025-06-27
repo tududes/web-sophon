@@ -332,7 +332,7 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
                 ]
             }
         ],
-        max_tokens: llmConfig.maxTokens || 1000,
+        max_tokens: llmConfig.maxTokens || 5000,
         temperature: llmConfig.temperature || 0.1,
     };
 
@@ -352,12 +352,44 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
 
     if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
         let content = responseData.choices[0].message.content.replace(/^```json\s*|```\s*$/g, '');
+
+        // Check if response was truncated
+        const finishReason = responseData.choices[0].finish_reason;
+        if (finishReason === 'length') {
+            console.warn('LLM response was truncated due to max_tokens limit. Consider increasing max_tokens.');
+            // Try to salvage partial JSON by adding closing braces
+            if (content.includes('{') && !content.trim().endsWith('}')) {
+                console.log('Attempting to repair truncated JSON...');
+                const openBraces = (content.match(/\{/g) || []).length;
+                const closeBraces = (content.match(/\}/g) || []).length;
+                const missingBraces = openBraces - closeBraces;
+
+                // Add missing closing braces
+                for (let i = 0; i < missingBraces; i++) {
+                    content += '}';
+                }
+                console.log('Added', missingBraces, 'closing braces to repair JSON');
+            }
+        }
+
         try {
             const parsedContent = JSON.parse(content);
             // Normalize the response to ensure consistent format
             finalResponse = normalizeCloudLLMResponse(parsedContent, fields);
+            console.log('Successfully parsed LLM response');
         } catch (e) {
-            finalResponse = { raw_content: content, parse_error: e.message };
+            console.error('JSON parsing failed:', e.message);
+            console.error('Raw content length:', content.length);
+            console.error('Raw content preview:', content.substring(0, 200) + '...');
+
+            // Return both the error and the raw content for debugging
+            finalResponse = {
+                raw_content: content,
+                parse_error: e.message,
+                finish_reason: finishReason,
+                content_length: content.length,
+                truncated: finishReason === 'length'
+            };
         }
     } else {
         finalResponse = responseData;
