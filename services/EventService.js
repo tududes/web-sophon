@@ -169,62 +169,58 @@ export class EventService {
             event.fields = [];
             let hasTrueResult = false;
 
-            // Handle old format (results.fields) and new format (direct fields)
-            if (results.fields && typeof results.fields === 'object') {
-                // Old format: results.fields.fieldName.boolean
-                for (const [fieldName, result] of Object.entries(results.fields)) {
+            // Handle responses with "evaluation" wrapper (newer format)
+            let dataToProcess = results;
+            if (results.evaluation && typeof results.evaluation === 'object') {
+                dataToProcess = results.evaluation;
+                console.log('EventService: Found evaluation wrapper, processing inner data');
+            }
+
+            // New format: results.fieldName.result or results.fieldName.boolean OR LLM array format
+            for (const [fieldName, fieldData] of Object.entries(dataToProcess)) {
+                if (fieldName === 'reason' || fieldName === 'summary') continue; // Skip reason/summary fields
+
+                let resultValue = null;
+                let probabilityValue = null;
+
+                // Handle LLM array format: [boolean, probability]
+                if (Array.isArray(fieldData) && fieldData.length >= 1) {
+                    resultValue = fieldData[0]; // boolean result
+                    probabilityValue = fieldData.length > 1 ? fieldData[1] : null; // probability
+                    console.log(`LLM array format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
+                }
+                // Handle NEW format: {result: boolean, confidence: number} from Gemini and other LLMs
+                else if (fieldData && typeof fieldData === 'object' && fieldData.result !== undefined) {
+                    resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
+                    probabilityValue = fieldData.confidence || fieldData.probability || null;
+                    console.log(`Result/confidence format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
+                }
+                // Handle legacy object format: {result: boolean, probability: number} or {boolean: boolean, probability: number}
+                else if (fieldData && typeof fieldData === 'object') {
+                    // Check for 'boolean' property (legacy)
+                    if ('boolean' in fieldData) {
+                        resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
+                    }
+
+                    // Get probability
+                    if ('probability' in fieldData) {
+                        probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
+                    }
+                    console.log(`Legacy object format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
+                }
+
+                if (resultValue !== null && typeof resultValue === 'boolean') {
                     event.fields.push({
                         name: fieldName,
-                        result: result.boolean,
-                        probability: result.probability
+                        result: resultValue,
+                        probability: probabilityValue
                     });
-                    if (result.boolean === true) {
+                    if (resultValue === true) {
                         hasTrueResult = true;
                     }
-                }
-            } else {
-                // New format: results.fieldName.result or results.fieldName.boolean OR LLM array format
-                for (const [fieldName, fieldData] of Object.entries(results)) {
-                    if (fieldName === 'reason') continue; // Skip reason field
-
-                    let resultValue = null;
-                    let probabilityValue = null;
-
-                    // Handle LLM array format: [boolean, probability]
-                    if (Array.isArray(fieldData) && fieldData.length >= 1) {
-                        resultValue = fieldData[0]; // boolean result
-                        probabilityValue = fieldData.length > 1 ? fieldData[1] : null; // probability
-                        console.log(`LLM array format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
-                    }
-                    // Handle object format: {result: boolean, probability: number}
-                    else if (fieldData && typeof fieldData === 'object') {
-                        // Check for 'result' or 'boolean' property
-                        if ('result' in fieldData) {
-                            resultValue = Array.isArray(fieldData.result) ? fieldData.result[0] : fieldData.result;
-                        } else if ('boolean' in fieldData) {
-                            resultValue = Array.isArray(fieldData.boolean) ? fieldData.boolean[0] : fieldData.boolean;
-                        }
-
-                        // Get probability
-                        if ('probability' in fieldData) {
-                            probabilityValue = Array.isArray(fieldData.probability) ? fieldData.probability[0] : fieldData.probability;
-                        }
-                        console.log(`Object format - Field "${fieldName}": result=${resultValue}, probability=${probabilityValue}`);
-                    }
-
-                    if (resultValue !== null && typeof resultValue === 'boolean') {
-                        event.fields.push({
-                            name: fieldName,
-                            result: resultValue,
-                            probability: probabilityValue
-                        });
-                        if (resultValue === true) {
-                            hasTrueResult = true;
-                        }
-                        console.log(`✓ Added field "${fieldName}" to event: result=${resultValue}, probability=${probabilityValue}`);
-                    } else {
-                        console.warn(`✗ Skipped field "${fieldName}": invalid data format`, fieldData);
-                    }
+                    console.log(`✓ Added field "${fieldName}" to event: result=${resultValue}, probability=${probabilityValue}`);
+                } else {
+                    console.warn(`✗ Skipped field "${fieldName}": invalid data format`, fieldData);
                 }
             }
 

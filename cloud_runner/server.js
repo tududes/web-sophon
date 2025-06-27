@@ -353,7 +353,9 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
     if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
         let content = responseData.choices[0].message.content.replace(/^```json\s*|```\s*$/g, '');
         try {
-            finalResponse = JSON.parse(content);
+            const parsedContent = JSON.parse(content);
+            // Normalize the response to ensure consistent format
+            finalResponse = normalizeCloudLLMResponse(parsedContent, fields);
         } catch (e) {
             finalResponse = { raw_content: content, parse_error: e.message };
         }
@@ -362,6 +364,66 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
     }
 
     return { response: finalResponse, requestPayload: requestPayload };
+}
+
+// Normalize cloud LLM response to match local parsing logic
+function normalizeCloudLLMResponse(rawResponse, fields) {
+    console.log('Cloud runner normalizing LLM response:', rawResponse);
+
+    // Handle responses with "evaluation" wrapper (newer format)
+    let dataToProcess = rawResponse;
+    if (rawResponse.evaluation && typeof rawResponse.evaluation === 'object') {
+        dataToProcess = rawResponse.evaluation;
+        console.log('Cloud runner: Found evaluation wrapper, processing inner data');
+    }
+
+    const normalized = { evaluation: {} };
+    const fieldNames = fields.map(f => f.name);
+
+    for (const fieldName of fieldNames) {
+        const fieldData = dataToProcess[fieldName];
+        let result = null;
+        let probability = null;
+
+        if (fieldData !== undefined) {
+            // Handle LLM array format: [boolean, probability]
+            if (Array.isArray(fieldData) && fieldData.length >= 1) {
+                result = fieldData[0];
+                probability = fieldData.length > 1 ? fieldData[1] : 0.8;
+            }
+            // Handle {result: boolean, confidence: number} format from Gemini and other LLMs
+            else if (typeof fieldData === 'object' && fieldData.result !== undefined) {
+                result = fieldData.result;
+                probability = fieldData.confidence || fieldData.probability || 0.8;
+            }
+            // Handle legacy {boolean: boolean, probability: number} format
+            else if (typeof fieldData === 'object' && fieldData.boolean !== undefined) {
+                result = fieldData.boolean;
+                probability = fieldData.probability || 0.8;
+            }
+            // Handle direct boolean
+            else if (typeof fieldData === 'boolean') {
+                result = fieldData;
+                probability = 0.8;
+            }
+
+            if (result !== null) {
+                // Convert to our standard array format
+                normalized.evaluation[fieldName] = [result, probability];
+                console.log(`Cloud runner normalized field "${fieldName}": [${result}, ${probability}]`);
+            }
+        }
+    }
+
+    // Preserve summary/reason
+    if (rawResponse.summary) {
+        normalized.reason = rawResponse.summary;
+    } else if (rawResponse.reason) {
+        normalized.reason = rawResponse.reason;
+    }
+
+    console.log('Cloud runner final normalized response:', normalized);
+    return normalized;
 }
 
 app.listen(port, () => {

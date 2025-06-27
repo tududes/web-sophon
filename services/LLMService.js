@@ -716,47 +716,57 @@ Return only JSON.`;
         console.log('Normalizing response for fields:', fieldNames);
         console.log('Raw response data:', rawResponseData);
 
+        // Handle responses with "evaluation" wrapper (newer format)
+        let dataToProcess = rawResponseData;
+        if (rawResponseData.evaluation && typeof rawResponseData.evaluation === 'object') {
+            dataToProcess = rawResponseData.evaluation;
+            console.log('Found evaluation wrapper, processing inner data:', dataToProcess);
+        }
+
         // Handle various LLM response formats
         for (const fieldName of fieldNames) {
             let result = null;
             let probability = null;
 
             // Format 1: Correct format - "field_name": [boolean, probability]
-            if (rawResponseData[fieldName] && Array.isArray(rawResponseData[fieldName])) {
-                const fieldArray = rawResponseData[fieldName];
+            if (dataToProcess[fieldName] && Array.isArray(dataToProcess[fieldName])) {
+                const fieldArray = dataToProcess[fieldName];
                 result = fieldArray[0];
                 probability = fieldArray.length > 1 ? fieldArray[1] : null;
-                console.log(`Field "${fieldName}" - Format 1 (correct): result=${result}, probability=${probability}`);
+                console.log(`Field "${fieldName}" - Format 1 (array): result=${result}, probability=${probability}`);
             }
-            // Format 2: Boolean only - "field_name": [boolean] + separate probability array
-            else if (rawResponseData[fieldName] && Array.isArray(rawResponseData[fieldName]) && rawResponseData[fieldName].length === 1) {
-                result = rawResponseData[fieldName][0];
-
-                // Look for separate probability array
-                if (rawResponseData.probability && Array.isArray(rawResponseData.probability)) {
-                    const fieldIndex = fieldNames.indexOf(fieldName);
-                    if (fieldIndex >= 0 && fieldIndex < rawResponseData.probability.length) {
-                        probability = rawResponseData.probability[fieldIndex];
-                    }
-                }
-                console.log(`Field "${fieldName}" - Format 2 (separate probability): result=${result}, probability=${probability}`);
+            // Format 2: NEW - {result: boolean, confidence: number} format from Gemini and other LLMs
+            else if (dataToProcess[fieldName] && typeof dataToProcess[fieldName] === 'object' &&
+                dataToProcess[fieldName].result !== undefined) {
+                result = dataToProcess[fieldName].result;
+                probability = dataToProcess[fieldName].confidence || dataToProcess[fieldName].probability || null;
+                console.log(`Field "${fieldName}" - Format 2 (result/confidence): result=${result}, probability=${probability}`);
             }
-            // Format 3: Separate probability fields - "probability_field_name": number
-            else if (rawResponseData[fieldName] && Array.isArray(rawResponseData[fieldName]) && rawResponseData[fieldName].length === 1) {
-                result = rawResponseData[fieldName][0];
-
-                // Look for separate probability field
-                const probField = `probability_${fieldName}`;
-                if (rawResponseData[probField] !== undefined) {
-                    probability = rawResponseData[probField];
-                }
-                console.log(`Field "${fieldName}" - Format 3 (separate prob field): result=${result}, probability=${probability}`);
+            // Format 3: Legacy - {boolean: boolean, probability: number} format
+            else if (dataToProcess[fieldName] && typeof dataToProcess[fieldName] === 'object' &&
+                dataToProcess[fieldName].boolean !== undefined) {
+                result = dataToProcess[fieldName].boolean;
+                probability = dataToProcess[fieldName].probability || null;
+                console.log(`Field "${fieldName}" - Format 3 (boolean/probability): result=${result}, probability=${probability}`);
             }
             // Format 4: Direct boolean - "field_name": boolean
-            else if (rawResponseData[fieldName] !== undefined && typeof rawResponseData[fieldName] === 'boolean') {
-                result = rawResponseData[fieldName];
+            else if (dataToProcess[fieldName] !== undefined && typeof dataToProcess[fieldName] === 'boolean') {
+                result = dataToProcess[fieldName];
                 probability = 0.8; // Default probability
                 console.log(`Field "${fieldName}" - Format 4 (direct boolean): result=${result}, probability=${probability} (default)`);
+            }
+            // Format 5: Boolean only array - "field_name": [boolean] + separate probability array
+            else if (dataToProcess[fieldName] && Array.isArray(dataToProcess[fieldName]) && dataToProcess[fieldName].length === 1) {
+                result = dataToProcess[fieldName][0];
+
+                // Look for separate probability array
+                if (dataToProcess.probability && Array.isArray(dataToProcess.probability)) {
+                    const fieldIndex = fieldNames.indexOf(fieldName);
+                    if (fieldIndex >= 0 && fieldIndex < dataToProcess.probability.length) {
+                        probability = dataToProcess.probability[fieldIndex];
+                    }
+                }
+                console.log(`Field "${fieldName}" - Format 5 (separate probability): result=${result}, probability=${probability}`);
             }
 
             // If we found a result, add it to normalized response
@@ -782,9 +792,11 @@ Return only JSON.`;
             }
         }
 
-        // Preserve reason field if it exists
+        // Preserve reason/summary field if it exists
         if (rawResponseData.reason) {
             normalized.reason = rawResponseData.reason;
+        } else if (rawResponseData.summary) {
+            normalized.reason = rawResponseData.summary;
         }
 
         console.log('Final normalized response:', normalized);

@@ -1890,6 +1890,13 @@ class FieldManagerLLM {
     }
 
     updateResults(results, eventId = null) {
+        // Handle responses with "evaluation" wrapper (newer format)
+        let dataToProcess = results;
+        if (results && results.evaluation && typeof results.evaluation === 'object') {
+            dataToProcess = results.evaluation;
+            console.log('FieldManager: Found evaluation wrapper, processing inner data');
+        }
+
         this.fields.forEach(field => {
             // Skip if this field doesn't belong to this event
             if (eventId && field.lastEventId !== eventId) {
@@ -1897,14 +1904,19 @@ class FieldManagerLLM {
             }
 
             // Look for the result using the field's sanitized name (which is what LLM returns)
-            const fieldResult = results[field.name];
+            const fieldResult = dataToProcess[field.name];
 
             if (fieldResult !== null && fieldResult !== undefined) {
-                // Parse the result format: [boolean, probability] or {boolean: true, probability: 0.95}
+                // Parse the result format: [boolean, probability] or {boolean: true, probability: 0.95} or {result: true, confidence: 0.95}
                 if (Array.isArray(fieldResult) && fieldResult.length >= 2) {
                     field.result = fieldResult[0];
                     field.probability = fieldResult[1];
+                } else if (typeof fieldResult === 'object' && fieldResult.result !== undefined) {
+                    // NEW: Handle {result: boolean, confidence: number} format from Gemini and other LLMs
+                    field.result = fieldResult.result;
+                    field.probability = fieldResult.confidence || fieldResult.probability || null;
                 } else if (typeof fieldResult === 'object' && fieldResult.boolean !== undefined) {
+                    // Legacy: Handle {boolean: boolean, probability: number} format
                     field.result = fieldResult.boolean;
                     field.probability = fieldResult.probability || null;
                 } else if (typeof fieldResult === 'boolean') {

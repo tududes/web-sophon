@@ -797,6 +797,13 @@ export class MessageService {
                         result: fieldData.boolean,
                         probability: fieldData.probability || null
                     });
+                } else if (typeof fieldData === 'object' && fieldData.result !== undefined) {
+                    // NEW: Handle {result: boolean, confidence: number} format from Gemini and other LLMs
+                    fields.push({
+                        name: fieldName,
+                        result: fieldData.result,
+                        probability: fieldData.confidence || fieldData.probability || null
+                    });
                 }
             });
         }
