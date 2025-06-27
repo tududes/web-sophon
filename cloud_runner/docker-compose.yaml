@@ -5,41 +5,21 @@ services:
       dockerfile: cloud_runner/Dockerfile
     container_name: tv-eyes-runner
     restart: unless-stopped
+    network_mode: "host"
     env_file:
       - .env
-    expose:
-      - "7113"
-    networks:
-      - websophon-network
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:7113/" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   caddy:
     image: caddy:2-alpine
     container_name: caddy-proxy
     restart: unless-stopped
+    network_mode: "host"
     env_file:
       - .env
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    networks:
-      - websophon-network
-    depends_on:
-      runner:
-        condition: service_healthy
-
-networks:
-  websophon-network:
-    driver: bridge
 
 volumes:
   caddy_data:
