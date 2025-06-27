@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 const puppeteer = require('puppeteer');
+const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 7113;
@@ -9,6 +10,7 @@ const port = process.env.PORT || 7113;
 // In-memory store for jobs. In production, use a persistent store like Redis.
 const jobs = {};
 
+app.use(cors()); // Enable CORS for all routes
 app.use(bodyParser.json({ limit: '10mb' })); // Increase limit for larger payloads
 
 /**
@@ -56,6 +58,28 @@ app.get('/job/:id', (req, res) => {
 
     console.log(`[${jobId}] Status check: ${job.status}`);
     res.status(200).json(job);
+});
+
+/**
+ * Endpoint to test the cloud runner connection and payload handling.
+ */
+app.post('/test', (req, res) => {
+    const { testData } = req.body;
+    console.log('Received test request with data:', testData);
+
+    if (!testData) {
+        return res.status(400).json({ success: false, error: 'No testData received.' });
+    }
+
+    // "Decrypt" and "re-encrypt" the data (for now, just a simple transformation)
+    const processedData = `Runner processed: ${testData}`;
+
+    res.status(200).json({
+        success: true,
+        message: 'Cloud runner is running and processed the test data successfully.',
+        receivedData: testData,
+        processedData: processedData
+    });
 });
 
 /**

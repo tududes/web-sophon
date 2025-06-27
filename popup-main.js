@@ -19,6 +19,9 @@ class CleanPopupController {
 
     async initialize() {
         try {
+            // 0. Ping the background script to ensure it's ready
+            await this.pingBackgroundScript();
+
             // 1. Get current domain first (needed for field loading)
             this.currentDomain = await this.getCurrentDomain();
             console.log('Current domain:', this.currentDomain);
@@ -56,6 +59,32 @@ class CleanPopupController {
             console.error('Failed to initialize popup controller:', error);
             throw error;
         }
+    }
+
+    pingBackgroundScript(retries = 3, delay = 100) {
+        return new Promise(async (resolve, reject) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await this.sendMessageToBackground({ action: 'ping' });
+                    if (response && response.pong) {
+                        console.log('Background script ping successful.');
+                        resolve();
+                        return;
+                    }
+                } catch (error) {
+                    console.warn(`Ping attempt ${i + 1} failed. Retrying...`);
+                    if (i === retries - 1) {
+                        console.error('Failed to connect to background script after multiple retries.');
+                        // Display error in the UI
+                        const statusDiv = document.getElementById('captureStatus') || document.body;
+                        statusDiv.innerHTML = `<div class="status-message error">Could not connect to background service. Please try closing and reopening the popup.</div>`;
+                        reject(new Error('Could not establish connection with background script.'));
+                        return;
+                    }
+                    await new Promise(res => setTimeout(res, delay * (i + 1)));
+                }
+            }
+        });
     }
 
     async getCurrentDomain() {
@@ -107,6 +136,8 @@ class CleanPopupController {
 
             // Cloud Runner
             cloudRunnerUrl: document.getElementById('cloudRunnerUrl'),
+            testCloudRunnerBtn: document.getElementById('testCloudRunnerBtn'),
+            testCloudRunnerStatus: document.getElementById('testCloudRunnerStatus'),
 
             // History section
             historyContainer: document.getElementById('historyContainer'),
@@ -194,6 +225,10 @@ class CleanPopupController {
             await this.populateLlmModels(this.elements.llmModel?.value);
             // After repopulating, the selection might have changed, so save again.
             await this.saveLlmConfig();
+        });
+
+        this.elements.testCloudRunnerBtn?.addEventListener('click', () => {
+            this.testCloudRunner();
         });
 
         this.elements.testLlmConfig?.addEventListener('click', () => {
@@ -333,6 +368,75 @@ class CleanPopupController {
                 console.log('Loading known domains for settings tab...');
                 await this.loadKnownDomains();
                 break;
+        }
+    }
+
+    async testCloudRunner() {
+        const url = this.elements.cloudRunnerUrl?.value;
+        const statusEl = this.elements.testCloudRunnerStatus;
+
+        if (!url) {
+            this.showToast('✗ Please enter a Cloud Runner URL.', 'error', statusEl);
+            return;
+        }
+
+        this.showToast('Testing connection...', 'info', statusEl);
+
+        try {
+            const runnerEndpoint = url.replace(/\/$/, '');
+            const testUrl = `${runnerEndpoint}/test`;
+
+            const response = await fetch(testUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ testData: 'ping' })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                this.showToast(`✓ ${result.message}`, 'success', statusEl);
+            } else {
+                throw new Error(result.error || `Server responded with status ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Cloud Runner test failed:', error);
+            let errorMessage = error.message;
+            if (errorMessage.includes('Failed to fetch')) {
+                errorMessage = 'Connection failed. Check URL and CORS policy on the server.';
+            }
+            this.showToast(`✗ ${errorMessage}`, 'error', statusEl);
+        }
+    }
+
+    async testLlmConfiguration() {
+        console.log('Testing LLM configuration...');
+        this.showToast('Testing...', 'info', this.elements.testConfigStatus);
+
+        try {
+            const llmConfig = await this.getLlmConfig();
+
+            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+                throw new Error('Missing API URL or API Key');
+            }
+
+            // Test with a simple request
+            const testMessage = {
+                action: 'testLLM',
+                llmConfig: llmConfig
+            };
+
+            const response = await this.sendMessageToBackground(testMessage);
+
+            if (response && response.success) {
+                this.showToast('✓ Configuration valid', 'success', this.elements.testConfigStatus);
+                console.log('LLM test successful');
+            } else {
+                throw new Error(response?.error || 'Test failed');
+            }
+        } catch (error) {
+            console.error('LLM test failed:', error);
+            this.showToast(`✗ ${error.message}`, 'error', this.elements.testConfigStatus);
         }
     }
 
@@ -949,13 +1053,13 @@ class CleanPopupController {
 
                 // Add the other groups for local/custom models
                 const otherGroupsHtml = `
-                    <optgroup label="🏠 Local/Self-hosted">
-                        <option value="llava">LLaVA (Local)</option>
-                    </optgroup>
-                    <optgroup label="⚙️ Custom">
-                         <option value="custom">Other/Custom Model...</option>
-                    </optgroup>
-                `;
+                        <optgroup label="🏠 Local/Self-hosted">
+                            <option value="llava">LLaVA (Local)</option>
+                        </optgroup>
+                        <optgroup label="⚙️ Custom">
+                             <option value="custom">Other/Custom Model...</option>
+                        </optgroup>
+                    `;
                 select.insertAdjacentHTML('beforeend', otherGroupsHtml);
 
                 // Set the selected model
@@ -1039,37 +1143,6 @@ class CleanPopupController {
         }, 500);
     }
 
-    async testLlmConfiguration() {
-        console.log('Testing LLM configuration...');
-        this.showToast('Testing...', 'info', this.elements.testConfigStatus);
-
-        try {
-            const llmConfig = await this.getLlmConfig();
-
-            if (!llmConfig.apiUrl || !llmConfig.apiKey) {
-                throw new Error('Missing API URL or API Key');
-            }
-
-            // Test with a simple request
-            const testMessage = {
-                action: 'testLLM',
-                llmConfig: llmConfig
-            };
-
-            const response = await this.sendMessageToBackground(testMessage);
-
-            if (response && response.success) {
-                this.showToast('✓ Configuration valid', 'success', this.elements.testConfigStatus);
-                console.log('LLM test successful');
-            } else {
-                throw new Error(response?.error || 'Test failed');
-            }
-        } catch (error) {
-            console.error('LLM test failed:', error);
-            this.showToast(`✗ ${error.message}`, 'error', this.elements.testConfigStatus);
-        }
-    }
-
     // === HISTORY ===
 
     async initializeHistoryManager() {
@@ -1096,12 +1169,12 @@ class CleanPopupController {
                 // Add fallback placeholder
                 if (this.elements.historyContainer) {
                     this.elements.historyContainer.innerHTML = `
-                        <div class="history-empty">
-                            <h3>📊 History</h3>
-                            <p>No capture events yet. Try running a manual capture to see results here.</p>
-                            <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">History manager failed to load</p>
-                        </div>
-                    `;
+                            <div class="history-empty">
+                                <h3>📊 History</h3>
+                                <p>No capture events yet. Try running a manual capture to see results here.</p>
+                                <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">History manager failed to load</p>
+                            </div>
+                        `;
                 }
             }
         } catch (error) {
@@ -1109,12 +1182,12 @@ class CleanPopupController {
             // Add error placeholder with better styling
             if (this.elements.historyContainer) {
                 this.elements.historyContainer.innerHTML = `
-                    <div class="history-empty">
-                        <h3>📊 History</h3>
-                        <p>No capture events yet. Try running a manual capture to see results here.</p>
-                        <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">Error: ${error.message}</p>
-                    </div>
-                `;
+                        <div class="history-empty">
+                            <h3>📊 History</h3>
+                            <p>No capture events yet. Try running a manual capture to see results here.</p>
+                            <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">Error: ${error.message}</p>
+                        </div>
+                    `;
             }
         }
     }
@@ -1267,47 +1340,47 @@ class CleanPopupController {
                     const lastRunInfo = await this.getDomainLastRun(domain);
 
                     const domainHtml = `
-                        <div class="domain-item ${isCurrentDomain ? 'current-domain-item' : ''}" data-domain="${domain}">
-                            <div class="domain-header">
-                                <div class="domain-name-section">
-                                    <div class="domain-name">
-                                        <span class="domain-name-text" title="${domain}">${domain}</span>
-                                        ${isCurrentDomain ? '<span class="domain-current-badge">CURRENT</span>' : ''}
+                            <div class="domain-item ${isCurrentDomain ? 'current-domain-item' : ''}" data-domain="${domain}">
+                                <div class="domain-header">
+                                    <div class="domain-name-section">
+                                        <div class="domain-name">
+                                            <span class="domain-name-text" title="${domain}">${domain}</span>
+                                            ${isCurrentDomain ? '<span class="domain-current-badge">CURRENT</span>' : ''}
+                                        </div>
+                                    </div>
+                                    <div class="domain-actions">
+                                        <span class="domain-status ${consentEnabled ? 'enabled' : 'disabled'}">
+                                            ${consentEnabled ? '✓ Enabled' : '○ Disabled'}
+                                        </span>
+                                        <button class="domain-delete-btn" data-domain="${domain}" title="Delete all settings for ${domain}">
+                                            🗑️
+                                        </button>
                                     </div>
                                 </div>
-                                <div class="domain-actions">
-                                    <span class="domain-status ${consentEnabled ? 'enabled' : 'disabled'}">
-                                        ${consentEnabled ? '✓ Enabled' : '○ Disabled'}
-                                    </span>
-                                    <button class="domain-delete-btn" data-domain="${domain}" title="Delete all settings for ${domain}">
-                                        🗑️
-                                    </button>
+                                <div class="domain-details">
+                                    <div class="domain-detail-item">
+                                        <div class="domain-detail-label">Interval</div>
+                                        <div class="domain-detail-value domain-interval-value">
+                                            ${interval === 'manual' ? 'Manual Only' : interval + 's'}
+                                        </div>
+                                    </div>
+                                    <div class="domain-detail-item">
+                                        <div class="domain-detail-label">Fields</div>
+                                        <div class="domain-detail-value domain-fields-value">${fieldsCount} field${fieldsCount !== 1 ? 's' : ''}</div>
+                                    </div>
+                                    <div class="domain-detail-item">
+                                        <div class="domain-detail-label">Last Run</div>
+                                        <div class="domain-detail-value domain-last-run-value ${lastRunInfo.never ? 'never' : ''}">
+                                            ${lastRunInfo.display}
+                                        </div>
+                                    </div>
+                                    <div class="domain-detail-item">
+                                        <div class="domain-detail-label">Total Events</div>
+                                        <div class="domain-detail-value">${lastRunInfo.totalEvents}</div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="domain-details">
-                                <div class="domain-detail-item">
-                                    <div class="domain-detail-label">Interval</div>
-                                    <div class="domain-detail-value domain-interval-value">
-                                        ${interval === 'manual' ? 'Manual Only' : interval + 's'}
-                                    </div>
-                                </div>
-                                <div class="domain-detail-item">
-                                    <div class="domain-detail-label">Fields</div>
-                                    <div class="domain-detail-value domain-fields-value">${fieldsCount} field${fieldsCount !== 1 ? 's' : ''}</div>
-                                </div>
-                                <div class="domain-detail-item">
-                                    <div class="domain-detail-label">Last Run</div>
-                                    <div class="domain-detail-value domain-last-run-value ${lastRunInfo.never ? 'never' : ''}">
-                                        ${lastRunInfo.display}
-                                    </div>
-                                </div>
-                                <div class="domain-detail-item">
-                                    <div class="domain-detail-label">Total Events</div>
-                                    <div class="domain-detail-value">${lastRunInfo.totalEvents}</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                        `;
 
                     this.elements.domainsContainer.insertAdjacentHTML('beforeend', domainHtml);
                 }

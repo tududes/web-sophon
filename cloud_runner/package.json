@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "puppeteer": "^24.10.2",
     "uuid": "^11.1.0"
