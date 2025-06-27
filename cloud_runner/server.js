@@ -201,6 +201,27 @@ class TokenManager {
 
 const tokenManager = new TokenManager();
 
+// Temporary storage for authentication jobs (jobId -> {token, expiresAt, timestamp})
+const authJobs = new Map();
+
+// Clean up expired auth jobs every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [jobId, authJob] of authJobs.entries()) {
+        const jobAge = now - authJob.timestamp;
+        if (jobAge > 5 * 60 * 1000) { // 5 minutes max lifetime
+            authJobs.delete(jobId);
+            cleanedCount++;
+        }
+    }
+
+    if (cleanedCount > 0) {
+        console.log(`[CLEANUP] Removed ${cleanedCount} expired auth jobs`);
+    }
+}, 10 * 60 * 1000); // Run every 10 minutes
+
 // CAPTCHA verification utility
 async function verifyCaptcha(captchaResponse, clientIP) {
     // In development, skip actual CAPTCHA verification
@@ -423,7 +444,8 @@ const allowedEndpoints = [
     '/test',
     /^\/job\/[a-f0-9-]+$/,
     /^\/job\/[a-f0-9-]+\/results$/,
-    /^\/job\/[a-f0-9-]+\/purge$/
+    /^\/job\/[a-f0-9-]+\/purge$/,
+    /^\/auth\/job\/auth_[0-9]+_[a-z0-9]+$/
 ];
 
 app.use((req, res, next) => {
@@ -482,14 +504,14 @@ app.get('/captcha/challenge', (req, res) => {
  * Called server-side from auth page (no authentication required)
  */
 app.post('/captcha/verify', async (req, res) => {
-    const { captchaResponse } = req.body;
+    const { captchaResponse, jobId } = req.body;
 
     if (!captchaResponse) {
         return res.status(400).json({ error: 'CAPTCHA response required' });
     }
 
     try {
-        console.log(`[CAPTCHA] Verification requested by ${req.clientId}`);
+        console.log(`[CAPTCHA] Verification requested by ${req.clientId}, jobId: ${jobId || 'none'}`);
 
         // Verify CAPTCHA with the service
         const verification = await verifyCaptcha(captchaResponse, req.clientIP);
@@ -506,14 +528,24 @@ app.post('/captcha/verify', async (req, res) => {
         const token = tokenManager.createToken(req.clientId, captchaResponse);
         const tokenStats = tokenManager.getTokenStats(token);
 
+        // If jobId provided, store token for job-based retrieval
+        if (jobId) {
+            authJobs.set(jobId, {
+                token: token,
+                expiresAt: tokenStats.expiresAt,
+                quotas: tokenStats.quotas,
+                timestamp: Date.now(),
+                clientId: req.clientId
+            });
+            console.log(`[CAPTCHA] Token stored for job ${jobId}`);
+        }
+
         console.log(`[CAPTCHA] Successfully verified and issued token for ${req.clientId}`);
 
         res.status(200).json({
             success: true,
-            token: token,
-            expiresAt: tokenStats.expiresAt,
-            quotas: tokenStats.quotas,
-            message: 'Authentication token issued successfully'
+            message: 'Authentication token issued successfully',
+            jobId: jobId || null
         });
 
     } catch (error) {
@@ -527,7 +559,8 @@ app.post('/captcha/verify', async (req, res) => {
  * No authentication required - this is the entry point
  */
 app.get('/auth', (req, res) => {
-    console.log(`[AUTH] Authentication page requested by ${req.clientId}`);
+    const jobId = req.query.jobId || '';
+    console.log(`[AUTH] Authentication page requested by ${req.clientId}, jobId: ${jobId}`);
 
     const authPageHTML = `
     <!DOCTYPE html>
@@ -714,24 +747,24 @@ app.get('/auth', (req, res) => {
                     showStatus('Verifying CAPTCHA...', 'info');
                     
                     try {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const jobId = urlParams.get('jobId') || '';
+                        
                         const response = await fetch('/captcha/verify', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({
-                                captchaResponse: token
+                                captchaResponse: token,
+                                jobId: jobId
                             })
                         });
                         
                         const result = await response.json();
                         
                         if (result.success) {
-                            showStatus('✅ Authentication successful! Token has been saved to your browser.', 'success');
-                            
-                            // Save token to localStorage for the extension to access
-                            localStorage.setItem('websophon_auth_token', result.token);
-                            localStorage.setItem('websophon_token_expires', result.expiresAt.toString());
+                            showStatus('✅ Authentication successful! Token will be automatically detected by the extension.', 'success');
                             
                             // Redirect to success page after a short delay
                             setTimeout(() => {
@@ -775,6 +808,46 @@ app.get('/auth', (req, res) => {
 
     res.setHeader('Content-Type', 'text/html');
     res.status(200).send(authPageHTML);
+});
+
+/**
+ * Endpoint to retrieve authentication token by job ID (one-time use)
+ * No authentication required - this is the retrieval endpoint
+ */
+app.get('/auth/job/:jobId', (req, res) => {
+    const jobId = req.params.jobId;
+
+    if (!jobId) {
+        return res.status(400).json({ error: 'Job ID required' });
+    }
+
+    const authJob = authJobs.get(jobId);
+
+    if (!authJob) {
+        return res.status(404).json({ error: 'Authentication job not found or already claimed' });
+    }
+
+    // Check if job is expired (5 minutes max lifetime)
+    const jobAge = Date.now() - authJob.timestamp;
+    if (jobAge > 5 * 60 * 1000) {
+        authJobs.delete(jobId);
+        return res.status(410).json({ error: 'Authentication job expired' });
+    }
+
+    // Return token data and immediately delete the job (one-time use)
+    const tokenData = {
+        token: authJob.token,
+        expiresAt: authJob.expiresAt,
+        quotas: authJob.quotas
+    };
+
+    authJobs.delete(jobId);
+    console.log(`[AUTH] Token retrieved for job ${jobId} by ${req.clientId}, job deleted`);
+
+    res.status(200).json({
+        success: true,
+        ...tokenData
+    });
 });
 
 /**

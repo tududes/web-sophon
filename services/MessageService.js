@@ -51,7 +51,7 @@ export class MessageService {
         const handlers = {
             'ping': (req, sender, res) => res({ pong: true }),
             'startAuthPolling': (req, sender, res) => {
-                this.startAuthTokenPolling()
+                this.startAuthTokenPolling(req.jobId)
                     .then(() => res({ success: true }))
                     .catch(err => res({ success: false, error: err.message }));
             },
@@ -1247,38 +1247,41 @@ export class MessageService {
 
     // === BACKGROUND AUTH TOKEN POLLING ===
 
-    async startAuthTokenPolling() {
+    async startAuthTokenPolling(jobId = null) {
         try {
-            console.log('[AUTH] Starting background token polling...');
+            console.log('[AUTH] Starting background job polling for jobId:', jobId);
 
             // Stop any existing polling first
             this.stopAuthTokenPolling();
 
-            // Start polling every 3 seconds for up to 2 minutes
+            if (!jobId) {
+                console.warn('[AUTH] No job ID provided for polling');
+                return;
+            }
+
+            // Start polling every 3 seconds for up to 5 minutes (job expires after 5 minutes)
             let pollCount = 0;
-            const maxPolls = 40; // 2 minutes (3 seconds * 40)
+            const maxPolls = 100; // 5 minutes (3 seconds * 100)
 
             this.authPollingInterval = setInterval(async () => {
                 pollCount++;
 
                 try {
-                    // Get all tabs from the auth domain
-                    const tabs = await chrome.tabs.query({});
-                    const authTabs = tabs.filter(tab =>
-                        tab.url && (
-                            tab.url.includes('/auth-success') ||
-                            tab.url.includes('runner.websophon.tududes.com')
-                        )
-                    );
+                    // Check server for the specific job ID
+                    const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+                    const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+                    const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
 
-                    // Try to extract token from any auth tab
-                    for (const tab of authTabs) {
-                        const tokenData = await this.getTokenFromAuthTab(tab.id);
-                        if (tokenData) {
+                    const response = await fetch(jobUrl);
+
+                    if (response.ok) {
+                        const result = await response.json();
+
+                        if (result.success && result.token) {
                             // Token found! Store it and notify popup
-                            console.log('[AUTH] Background polling found token, storing...');
+                            console.log('[AUTH] Background polling found token for job', jobId);
 
-                            await this.storeAuthToken(tokenData.token, tokenData.expiresAt);
+                            await this.storeAuthToken(result.token, result.expiresAt);
 
                             // Verify storage worked
                             const tokenResult = await this.getTokenStats();
@@ -1290,12 +1293,18 @@ export class MessageService {
                                     tokenStats: tokenResult
                                 });
 
-                                // Close the auth tab
+                                // Close any auth tabs
                                 try {
-                                    chrome.tabs.remove(tab.id);
-                                    console.log('[AUTH] Closed auth tab after successful token extraction');
+                                    const tabs = await chrome.tabs.query({});
+                                    const authTabs = tabs.filter(tab =>
+                                        tab.url && tab.url.includes('runner.websophon.tududes.com/auth')
+                                    );
+                                    for (const tab of authTabs) {
+                                        chrome.tabs.remove(tab.id);
+                                    }
+                                    console.log('[AUTH] Closed auth tabs after successful token retrieval');
                                 } catch (e) {
-                                    console.log('[AUTH] Could not close auth tab:', e);
+                                    console.log('[AUTH] Could not close auth tabs:', e);
                                 }
 
                                 // Stop polling - we found it!
@@ -1303,17 +1312,24 @@ export class MessageService {
                                 return;
                             }
                         }
+                    } else if (response.status === 404) {
+                        console.log(`[AUTH] Job ${jobId} not found yet, continuing to poll... (${pollCount}/${maxPolls})`);
+                    } else if (response.status === 410) {
+                        console.log(`[AUTH] Job ${jobId} expired`);
+                        this.stopAuthTokenPolling();
+                        this.sendToPopup({
+                            action: 'authPollingTimeout'
+                        });
+                        return;
                     }
 
-                    console.log(`[AUTH] Background polling attempt ${pollCount}/${maxPolls} - no token found yet`);
-
                 } catch (error) {
-                    console.log('[AUTH] Background polling error:', error);
+                    console.log('[AUTH] Background polling error:', error.message);
                 }
 
                 // Stop polling after timeout
                 if (pollCount >= maxPolls) {
-                    console.log('[AUTH] Background polling timed out after 2 minutes');
+                    console.log('[AUTH] Background polling timed out after 5 minutes');
                     this.stopAuthTokenPolling();
 
                     // Notify popup of timeout
@@ -1323,7 +1339,7 @@ export class MessageService {
                 }
             }, 3000); // Poll every 3 seconds
 
-            console.log('[AUTH] Background polling started');
+            console.log('[AUTH] Background job polling started for:', jobId);
 
         } catch (error) {
             console.error('[AUTH] Error starting background polling:', error);
@@ -1339,29 +1355,5 @@ export class MessageService {
         }
     }
 
-    async getTokenFromAuthTab(tabId) {
-        try {
-            console.log('[AUTH] Attempting to get token from tab:', tabId);
-            const results = await chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                func: () => {
-                    const token = localStorage.getItem('websophon_auth_token');
-                    const expiresAt = localStorage.getItem('websophon_token_expires');
-                    console.log('[AUTH TAB] Found token:', token ? `${token.substring(0, 16)}...` : 'none');
 
-                    if (token && expiresAt) {
-                        return { token, expiresAt: parseInt(expiresAt) };
-                    }
-                    return null;
-                }
-            });
-
-            const result = results[0]?.result || null;
-            console.log('[AUTH] Token extraction result:', result ? 'success' : 'no token found');
-            return result;
-        } catch (error) {
-            console.log('[AUTH] Could not access tab (probably closed or different domain):', error.message);
-            return null;
-        }
-    }
 } 

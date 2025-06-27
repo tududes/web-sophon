@@ -153,8 +153,8 @@ class CleanPopupController {
             quotaManual: document.getElementById('quotaManual'),
             captchaContainer: document.getElementById('captchaContainer'),
             authenticateBtn: document.getElementById('authenticateBtn'),
-            checkTokenBtn: document.getElementById('checkTokenBtn'),
             captchaStatus: document.getElementById('captchaStatus'),
+            testCloudRunnerSection: document.getElementById('testCloudRunnerSection'),
             refreshTokenBtn: document.getElementById('refreshTokenBtn'),
             clearTokenBtn: document.getElementById('clearTokenBtn'),
 
@@ -310,10 +310,6 @@ class CleanPopupController {
         // CAPTCHA and token management
         this.elements.authenticateBtn?.addEventListener('click', () => {
             this.openAuthenticationTab();
-        });
-
-        this.elements.checkTokenBtn?.addEventListener('click', () => {
-            this.manualTokenCheck();
         });
 
         this.elements.refreshTokenBtn?.addEventListener('click', () => {
@@ -522,6 +518,9 @@ class CleanPopupController {
             if (this.elements.refreshTokenBtn) this.elements.refreshTokenBtn.style.display = 'inline-block';
             if (this.elements.clearTokenBtn) this.elements.clearTokenBtn.style.display = 'inline-block';
 
+            // Show test cloud runner section when authenticated
+            if (this.elements.testCloudRunnerSection) this.elements.testCloudRunnerSection.style.display = 'block';
+
             // Show token expiry warning if less than 1 hour remaining
             if (timeRemaining < 60 * 60 * 1000) {
                 this.showTokenExpiryWarning(timeRemaining);
@@ -533,6 +532,9 @@ class CleanPopupController {
             // Hide refresh and clear buttons
             if (this.elements.refreshTokenBtn) this.elements.refreshTokenBtn.style.display = 'none';
             if (this.elements.clearTokenBtn) this.elements.clearTokenBtn.style.display = 'none';
+
+            // Hide test cloud runner section when not authenticated
+            if (this.elements.testCloudRunnerSection) this.elements.testCloudRunnerSection.style.display = 'none';
         }
     }
 
@@ -589,9 +591,12 @@ class CleanPopupController {
         try {
             this.showCaptchaMessage('Opening authentication page...', 'info');
 
+            // Generate a unique job ID for this authentication request
+            const jobId = 'auth_' + Date.now() + '_' + Math.random().toString(36).substring(7);
+
             // Get the cloud runner URL for authentication
             const cloudRunnerUrl = this.elements.cloudRunnerUrl?.value || 'https://runner.websophon.tududes.com';
-            const authUrl = `${cloudRunnerUrl.replace(/\/$/, '')}/auth`;
+            const authUrl = `${cloudRunnerUrl.replace(/\/$/, '')}/auth?jobId=${jobId}`;
 
             // Open authentication tab
             const tab = await chrome.tabs.create({
@@ -599,8 +604,11 @@ class CleanPopupController {
                 active: true
             });
 
-            // Start background polling for token
-            await this.sendMessageToBackground({ action: 'startAuthPolling' });
+            // Start background polling for this specific job ID
+            await this.sendMessageToBackground({
+                action: 'startAuthPolling',
+                jobId: jobId
+            });
 
             this.showCaptchaMessage('Complete the CAPTCHA in the opened tab. Authentication will be detected automatically...', 'info');
 
@@ -610,33 +618,7 @@ class CleanPopupController {
         }
     }
 
-    // Note: Polling is now handled by the background script for better reliability
-
-    async manualTokenCheck() {
-        try {
-            this.showCaptchaMessage('Manually checking for tokens...', 'info');
-
-            // First check if there's already a token in storage
-            const tokenResult = await this.sendMessageToBackground({ action: 'getTokenStats' });
-            if (tokenResult && tokenResult.quotas && tokenResult.expiresAt) {
-                // Valid token stats received
-                this.showCaptchaMessage('✅ Token already in storage!', 'success');
-                this.updateTokenStatusDisplay(true, tokenResult);
-                this.updateQuotaDisplay(tokenResult.quotas);
-                this.hideCapcha();
-                return;
-            }
-
-            // No token in storage, trigger a one-time background check
-            console.log('[DEBUG] No token in storage, triggering background check...');
-            await this.sendMessageToBackground({ action: 'startAuthPolling' });
-            this.showCaptchaMessage('🔍 Checking for authentication in open tabs...', 'info');
-
-        } catch (error) {
-            console.error('[DEBUG] Manual token check error:', error);
-            this.showCaptchaError('Error checking for token: ' + error.message);
-        }
-    }
+    // Note: Authentication is now handled via job-based polling for better reliability and security
 
     hideCapcha() {
         if (this.elements.captchaContainer) {
