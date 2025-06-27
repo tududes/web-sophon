@@ -197,10 +197,10 @@ fi
 echo ""
 echo "🐳 Creating Docker Security Configuration..."
 
+rm -f docker-compose.override.yml
 cat > docker-compose.override.yml << EOF
-version: '3.8'
 services:
-  websophon-runner:
+  runner:
     environment:
       - WEBSOPHON_MASTER_KEY=${MASTER_KEY}
       - WEBSOPHON_SIGNING_SECRET=${SIGNING_SECRET}
