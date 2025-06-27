@@ -555,19 +555,79 @@ export class MessageService {
                     this.currentlyPolling.delete(jobId);
                     console.log(`[Cloud] Job ${jobId} finished with status: ${job.status}`);
 
-                    // The cloud runner now returns the LLM analysis directly
-                    const llmResponse = job.llmResponse || {};
-                    const finalResponseText = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
+                    if (job.status === 'failed') {
+                        // Handle failed job
+                        this.eventService.updateEvent(
+                            eventId,
+                            null,
+                            500,
+                            job.error || 'Job failed',
+                            job.error || 'Job failed'
+                        );
+                    } else {
+                        // Job completed successfully - fetch the results
+                        try {
+                            const resultsUrl = `${runnerEndpoint}/job/${jobId}/results`;
+                            const resultsResponse = await fetch(resultsUrl);
 
-                    this.eventService.updateEvent(
-                        eventId,
-                        llmResponse.evaluation || llmResponse, // The LLM response is the new "result"
-                        job.status === 'complete' ? 200 : 500,
-                        job.error,
-                        job.error || finalResponseText,
-                        job.screenshotData,
-                        job.llmRequestPayload // Pass the request payload for history
-                    );
+                            if (!resultsResponse.ok) {
+                                throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
+                            }
+
+                            const { results } = await resultsResponse.json();
+                            console.log(`[Cloud] Fetched ${results.length} results for completed job ${jobId}`);
+
+                            if (results && results.length > 0) {
+                                // Use the most recent result (should be the only one for a one-off job)
+                                const latestResult = results[results.length - 1];
+                                const llmResponse = latestResult.llmResponse || {};
+
+                                console.log(`[Cloud] Processing completed job result:`, {
+                                    hasScreenshot: !!latestResult.screenshotData,
+                                    screenshotSize: latestResult.screenshotData ? latestResult.screenshotData.length : 0,
+                                    hasLlmResponse: !!llmResponse,
+                                    hasEvaluation: !!(llmResponse.evaluation)
+                                });
+
+                                this.eventService.updateEvent(
+                                    eventId,
+                                    llmResponse.evaluation || llmResponse, // The LLM response
+                                    200,
+                                    null,
+                                    JSON.stringify(llmResponse),
+                                    latestResult.screenshotData, // Include screenshot
+                                    latestResult.llmRequestPayload // Include request payload
+                                );
+
+                                // Purge the result from server since we've processed it
+                                try {
+                                    const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
+                                    await fetch(purgeUrl, { method: 'POST' });
+                                    console.log(`[Cloud] Purged result for completed job ${jobId}`);
+                                } catch (purgeError) {
+                                    console.warn(`[Cloud] Failed to purge result for job ${jobId}:`, purgeError);
+                                }
+                            } else {
+                                // No results available
+                                this.eventService.updateEvent(
+                                    eventId,
+                                    null,
+                                    200,
+                                    null,
+                                    'Job completed but no results available'
+                                );
+                            }
+                        } catch (fetchError) {
+                            console.error(`[Cloud] Error fetching results for job ${jobId}:`, fetchError);
+                            this.eventService.updateEvent(
+                                eventId,
+                                null,
+                                500,
+                                'Failed to fetch job results',
+                                fetchError.message
+                            );
+                        }
+                    }
                 } else {
                     // Job is still pending or running
                     console.log(`[Cloud] Job ${jobId} status: ${job.status}`);
@@ -693,13 +753,15 @@ export class MessageService {
                         } else {
                             // Handle successful results
                             const llmResponse = result.llmResponse || {};
-                            const fields = this.extractFieldsFromLLMResponse(llmResponse);
 
-                            // Debug screenshot data
-                            console.log(`[Sync] Processing result ${eventId} with screenshot:`, {
+                            // Debug the data we're about to process
+                            console.log(`[Sync] Processing result ${eventId}:`, {
                                 hasScreenshot: !!result.screenshotData,
                                 screenshotSize: result.screenshotData ? result.screenshotData.length : 0,
-                                screenshotPrefix: result.screenshotData ? result.screenshotData.substring(0, 50) + '...' : 'null'
+                                hasLlmResponse: !!llmResponse,
+                                llmResponseKeys: Object.keys(llmResponse),
+                                hasEvaluation: !!(llmResponse.evaluation),
+                                evaluationKeys: llmResponse.evaluation ? Object.keys(llmResponse.evaluation) : []
                             });
 
                             this.eventService.trackEvent(
@@ -721,8 +783,7 @@ export class MessageService {
                                 eventId,
                                 'completed',
                                 'cloud',
-                                result.timestamp, // Use server timestamp
-                                fields // Include parsed fields for proper display
+                                result.timestamp // Use server timestamp
                             );
                         }
                         syncedCount++;
