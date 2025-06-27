@@ -5,7 +5,8 @@ services:
       dockerfile: cloud_runner/Dockerfile
     container_name: tv-eyes-runner
     restart: unless-stopped
-    network_mode: "host"
+    env_file:
+      - .env
 
   caddy:
     image: caddy:2-alpine
@@ -13,7 +14,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    network_mode: "host"
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data

@@ -3,5 +3,5 @@
 }
 
 runner.websophon.tududes.com {
-    reverse_proxy localhost:7113
+    reverse_proxy runner:7113
 } 
