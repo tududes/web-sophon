@@ -677,7 +677,7 @@ export class MessageService {
                                 false,
                                 500,
                                 result.error,
-                                null,
+                                null, // No screenshot for error results
                                 {
                                     jobId: jobId,
                                     captureSettings: result.captureSettings,
@@ -695,14 +695,21 @@ export class MessageService {
                             const llmResponse = result.llmResponse || {};
                             const fields = this.extractFieldsFromLLMResponse(llmResponse);
 
+                            // Debug screenshot data
+                            console.log(`[Sync] Processing result ${eventId} with screenshot:`, {
+                                hasScreenshot: !!result.screenshotData,
+                                screenshotSize: result.screenshotData ? result.screenshotData.length : 0,
+                                screenshotPrefix: result.screenshotData ? result.screenshotData.substring(0, 50) + '...' : 'null'
+                            });
+
                             this.eventService.trackEvent(
                                 llmResponse.evaluation || llmResponse, // The LLM response evaluation
                                 domain,
-                                '', // URL not available from cloud run
+                                `https://${domain}`, // Provide a reasonable URL for cloud runs
                                 true,
                                 200,
                                 null,
-                                result.screenshotData,
+                                result.screenshotData, // Pass screenshot data
                                 {
                                     jobId: jobId,
                                     captureSettings: result.captureSettings,

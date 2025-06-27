@@ -307,35 +307,32 @@ export class HistoryManager {
             return;
         }
 
-        // Group events by job ID for cloud jobs
+        // Group events for uniform display
         const groupedEvents = this.groupEventsByJob(filteredEvents);
 
         this.elements.historyContainer.innerHTML = groupedEvents.map((group, groupIndex) => {
-            if (group.isGroup) {
-                // Render cloud job group
-                return this.renderCloudJobGroup(group, groupIndex);
-            } else {
-                // Render individual event (local/manual)
-                return this.renderIndividualEvent(group.event, groupIndex);
-            }
+            // All events are now groups for consistent display
+            return this.renderJobGroup(group, groupIndex);
         }).join('');
 
         // Add click handlers after rendering
         this.attachEventHandlers();
     }
 
-    // Group events by job ID for cloud jobs
+    // Group events by job ID for cloud jobs, and by domain+time for local jobs
     groupEventsByJob(events) {
         const groups = [];
         const cloudGroups = new Map();
+        const localGroups = [];
 
         events.forEach(event => {
             if (event.source === 'cloud' && event.request && event.request.jobId) {
-                // This is a cloud job result
+                // This is a cloud job result - group by jobId
                 const jobId = event.request.jobId;
                 if (!cloudGroups.has(jobId)) {
                     cloudGroups.set(jobId, {
                         isGroup: true,
+                        groupType: 'cloud',
                         jobId: jobId,
                         domain: event.domain,
                         events: [],
@@ -370,11 +367,65 @@ export class HistoryManager {
                     group.lastTimestamp = event.timestamp;
                 }
             } else {
-                // Individual event (local/manual)
+                // This is a local/manual event - group by domain and time proximity
+                localGroups.push(event);
+            }
+        });
+
+        // Group local events by domain and time proximity (within 10 minutes)
+        const processedLocalEvents = new Set();
+        localGroups.forEach(event => {
+            if (processedLocalEvents.has(event.id)) return;
+
+            // Find all events from same domain within 10 minutes
+            const relatedEvents = localGroups.filter(otherEvent =>
+                !processedLocalEvents.has(otherEvent.id) &&
+                otherEvent.domain === event.domain &&
+                Math.abs(new Date(otherEvent.timestamp) - new Date(event.timestamp)) <= 10 * 60 * 1000 // 10 minutes
+            );
+
+            // Mark all related events as processed
+            relatedEvents.forEach(e => processedLocalEvents.add(e.id));
+
+            if (relatedEvents.length === 1) {
+                // Single event - still wrap in group for consistency
                 groups.push({
-                    isGroup: false,
-                    event: event
+                    isGroup: true,
+                    groupType: 'local',
+                    domain: event.domain,
+                    events: [event],
+                    firstTimestamp: event.timestamp,
+                    lastTimestamp: event.timestamp,
+                    totalEvents: 1,
+                    successfulEvents: event.success ? 1 : 0,
+                    errorEvents: event.success ? 0 : 1,
+                    hasTrueResult: event.hasTrueResult || false
                 });
+            } else {
+                // Multiple related events - create a proper group
+                const sortedEvents = relatedEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                const group = {
+                    isGroup: true,
+                    groupType: 'local',
+                    domain: event.domain,
+                    events: sortedEvents,
+                    firstTimestamp: sortedEvents[sortedEvents.length - 1].timestamp,
+                    lastTimestamp: sortedEvents[0].timestamp,
+                    totalEvents: sortedEvents.length,
+                    successfulEvents: 0,
+                    errorEvents: 0,
+                    hasTrueResult: false
+                };
+
+                // Calculate group statistics
+                sortedEvents.forEach(e => {
+                    if (e.success) group.successfulEvents++;
+                    if (!e.success || e.error) group.errorEvents++;
+                    if (e.hasTrueResult) group.hasTrueResult = true;
+                });
+
+                groups.push(group);
             }
         });
 
@@ -387,61 +438,93 @@ export class HistoryManager {
 
         // Sort groups by most recent activity
         groups.sort((a, b) => {
-            const aTime = a.isGroup ? a.lastTimestamp : a.event.timestamp;
-            const bTime = b.isGroup ? b.lastTimestamp : b.event.timestamp;
-            return new Date(bTime) - new Date(aTime);
+            const aTime = new Date(a.lastTimestamp);
+            const bTime = new Date(b.lastTimestamp);
+            return bTime - aTime;
         });
 
         return groups;
     }
 
-    // Render a cloud job group with collapsible entries
-    renderCloudJobGroup(group, groupIndex) {
+    // Render a job group (both cloud and local) with collapsible entries
+    renderJobGroup(group, groupIndex) {
         const timeAgo = getTimeAgo(new Date(group.lastTimestamp));
         const duration = this.getTimeDuration(group.firstTimestamp, group.lastTimestamp);
         const unreadClass = group.hasTrueResult ? 'unread' : '';
         const errorClass = group.errorEvents > 0 ? 'has-errors' : '';
 
-        // Create summary stats
-        const statsHtml = `
-            <div class="cloud-job-stats">
-                <span class="stat-item ${group.successfulEvents > 0 ? 'success' : ''}">${group.successfulEvents} ✓</span>
-                ${group.errorEvents > 0 ? `<span class="stat-item error">${group.errorEvents} ✗</span>` : ''}
-                <span class="stat-duration">${duration}</span>
-            </div>
-        `;
+        // Determine group icon and label based on type
+        const isCloudGroup = group.groupType === 'cloud';
+        const groupIcon = isCloudGroup ? '☁️' : '🖥️';
+        const groupLabel = isCloudGroup ? 'Cloud Job' : 'Local Capture';
+
+        // Create concise summary for the header
+        const summaryText = isCloudGroup
+            ? `${group.totalEvents} run${group.totalEvents !== 1 ? 's' : ''}`
+            : `${group.totalEvents} capture${group.totalEvents !== 1 ? 's' : ''}`;
+
+        // Build results summary with better formatting
+        const resultsHtml = group.successfulEvents > 0
+            ? `<span class="result-success">${group.successfulEvents} ✓</span>`
+            : '';
+        const errorsHtml = group.errorEvents > 0
+            ? `<span class="result-error">${group.errorEvents} ✗</span>`
+            : '';
+        const resultsDisplay = [resultsHtml, errorsHtml].filter(Boolean).join(' ');
+
+        // Create timing display - show duration for multi-run jobs, otherwise just time ago
+        const timingDisplay = group.totalEvents > 1 && duration !== 'instant'
+            ? `<span class="timing-duration">${duration}</span> • <span class="timing-ago">${timeAgo}</span>`
+            : `<span class="timing-ago">${timeAgo}</span>`;
 
         // Render individual events within the group
         const eventsHtml = group.events.map((event, eventIndex) =>
             this.renderIndividualEvent(event, `${groupIndex}_${eventIndex}`, true)
         ).join('');
 
+        // Build clean job identifier
+        const jobIdentifier = isCloudGroup
+            ? `<span class="job-id-short">Job ${group.jobId.substring(0, 8)}</span>`
+            : `<span class="job-type-label">${groupLabel}</span>`;
+
         return `
-            <div class="history-group cloud-job-group ${unreadClass} ${errorClass}" data-group-index="${groupIndex}" data-job-id="${group.jobId}">
+            <div class="history-group ${isCloudGroup ? 'cloud-job-group' : 'local-job-group'} ${unreadClass} ${errorClass}" data-group-index="${groupIndex}" ${isCloudGroup ? `data-job-id="${group.jobId}"` : ''}>
                 <div class="history-group-header">
-                    <div class="history-header-left">
-                        <span class="history-source-icon" title="Cloud Job">☁️</span>
-                        <div class="history-domain">${group.domain}</div>
-                        <div class="history-job-info">
-                            <span class="job-id" title="Job ID: ${group.jobId}">Job ${group.jobId.substring(0, 8)}...</span>
-                            <span class="event-count">${group.totalEvents} run${group.totalEvents !== 1 ? 's' : ''}</span>
+                    <div class="group-header-main">
+                        <div class="group-header-top">
+                            <div class="group-icon-domain">
+                                <span class="history-source-icon">${groupIcon}</span>
+                                <span class="history-domain-name">${group.domain}</span>
+                            </div>
+                            <div class="group-timing">
+                                ${timingDisplay}
+                            </div>
+                        </div>
+                        <div class="group-header-bottom">
+                            <div class="group-job-info">
+                                ${jobIdentifier}
+                                <span class="job-summary-text">${summaryText}</span>
+                            </div>
+                            <div class="group-results">
+                                ${resultsDisplay}
+                            </div>
                         </div>
                     </div>
-                    <div class="history-header-right">
-                        ${statsHtml}
-                        <div class="history-time">${timeAgo}</div>
-                        <div class="history-group-caret">▶</div>
+                    <div class="group-header-caret">
+                        <span class="history-group-caret">▶</span>
                     </div>
                 </div>
                 <div class="history-group-details" style="display: none;">
-                    <div class="cloud-job-summary">
-                        <div class="summary-item"><strong>Total Runs:</strong> ${group.totalEvents}</div>
-                        <div class="summary-item"><strong>Successful:</strong> ${group.successfulEvents}</div>
-                        ${group.errorEvents > 0 ? `<div class="summary-item error"><strong>Errors:</strong> ${group.errorEvents}</div>` : ''}
-                        <div class="summary-item"><strong>Duration:</strong> ${duration}</div>
-                        <div class="summary-item"><strong>Job ID:</strong> ${group.jobId}</div>
+                    <div class="job-summary">
+                        <div class="summary-grid">
+                            <div class="summary-item"><strong>Total ${isCloudGroup ? 'Runs' : 'Captures'}:</strong> ${group.totalEvents}</div>
+                            <div class="summary-item"><strong>Successful:</strong> ${group.successfulEvents}</div>
+                            ${group.errorEvents > 0 ? `<div class="summary-item error"><strong>Errors:</strong> ${group.errorEvents}</div>` : ''}
+                            ${group.totalEvents > 1 ? `<div class="summary-item"><strong>Duration:</strong> ${duration}</div>` : ''}
+                            ${isCloudGroup ? `<div class="summary-item full-width"><strong>Job ID:</strong> <code>${group.jobId}</code></div>` : ''}
+                        </div>
                     </div>
-                    <div class="cloud-job-events">
+                    <div class="job-events">
                         ${eventsHtml}
                     </div>
                 </div>
@@ -629,29 +712,28 @@ export class HistoryManager {
                     e.target.closest('.json-display') ||
                     e.target.closest('.copy-data-btn') ||
                     e.target.closest('.download-screenshot-btn') ||
-                    e.target.closest('details') ||
-                    e.target.closest('summary')) {
+                    e.target.closest('.cancel-request-btn')) {
                     return;
                 }
 
                 const details = this.querySelector('.history-details');
-                if (details.style.display === 'none') {
-                    details.style.display = 'block';
-                    this.classList.add('expanded');
-                } else {
-                    details.style.display = 'none';
-                    this.classList.remove('expanded');
+                if (details) {
+                    const isExpanded = details.style.display !== 'none';
+                    details.style.display = isExpanded ? 'none' : 'block';
+                    this.classList.toggle('expanded', !isExpanded);
                 }
             });
         });
 
-        // Add click handlers for expanding cloud job groups
+        // Add click handlers for expanding job groups
         document.querySelectorAll('.history-group-header').forEach(header => {
             header.addEventListener('click', function (e) {
                 // Don't collapse if clicking on interactive elements
                 if (e.target.closest('.copy-data-btn') ||
                     e.target.closest('button') ||
-                    e.target.closest('.cloud-job-stats')) {
+                    e.target.closest('.group-results') ||
+                    e.target.closest('.result-success') ||
+                    e.target.closest('.result-error')) {
                     return;
                 }
 
