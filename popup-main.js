@@ -152,7 +152,7 @@ class CleanPopupController {
             quotaRecurring: document.getElementById('quotaRecurring'),
             quotaManual: document.getElementById('quotaManual'),
             captchaContainer: document.getElementById('captchaContainer'),
-            hcaptchaWidget: document.getElementById('hcaptcha-widget'),
+            authenticateBtn: document.getElementById('authenticateBtn'),
             captchaStatus: document.getElementById('captchaStatus'),
             refreshTokenBtn: document.getElementById('refreshTokenBtn'),
             clearTokenBtn: document.getElementById('clearTokenBtn'),
@@ -307,6 +307,10 @@ class CleanPopupController {
         });
 
         // CAPTCHA and token management
+        this.elements.authenticateBtn?.addEventListener('click', () => {
+            this.openAuthenticationTab();
+        });
+
         this.elements.refreshTokenBtn?.addEventListener('click', () => {
             this.refreshTokenStats();
         });
@@ -554,43 +558,175 @@ class CleanPopupController {
         if (!this.elements.captchaContainer) return;
 
         try {
-            // Show the CAPTCHA container
+            // Show the authentication container
             this.elements.captchaContainer.style.display = 'block';
-
-            // Get CAPTCHA challenge info
-            const challenge = await this.sendMessageToBackground({ action: 'getCaptchaChallenge' });
-
-            if (challenge.success === false) {
-                this.showCaptchaError('Failed to load CAPTCHA challenge: ' + challenge.error);
-                return;
-            }
-
-            // Initialize hCaptcha widget
-            if (window.hcaptcha && this.elements.hcaptchaWidget) {
-                console.log('[CAPTCHA] Initializing hCaptcha widget...');
-
-                // Clear any existing widget
-                this.elements.hcaptchaWidget.innerHTML = '';
-
-                // Render hCaptcha
-                window.hcaptcha.render(this.elements.hcaptchaWidget, {
-                    sitekey: challenge.siteKey,
-                    theme: document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
-                    callback: (token) => this.onCaptchaSuccess(token),
-                    'error-callback': (error) => this.onCaptchaError(error),
-                    'expired-callback': () => this.onCaptchaExpired(),
-                    'chalexpired-callback': () => this.onCaptchaExpired()
-                });
-
-                this.showCaptchaMessage('Complete the CAPTCHA to get an authentication token');
-            } else {
-                this.showCaptchaError('CAPTCHA service not available');
-            }
+            this.showCaptchaMessage('Click the authentication button to get an access token');
 
         } catch (error) {
-            console.error('[CAPTCHA] Error showing CAPTCHA:', error);
-            this.showCaptchaError('Error loading CAPTCHA: ' + error.message);
+            console.error('[AUTH] Error showing authentication:', error);
+            this.showCaptchaError('Error loading authentication: ' + error.message);
         }
+    }
+
+    async openAuthenticationTab() {
+        try {
+            this.showCaptchaMessage('Opening authentication tab...', 'info');
+
+            // Get the cloud runner URL for authentication
+            const cloudRunnerUrl = this.elements.cloudRunnerUrl?.value || 'https://runner.websophon.tududes.com';
+            const authUrl = `${cloudRunnerUrl.replace(/\/$/, '')}/auth`;
+
+            // Open authentication tab
+            const tab = await chrome.tabs.create({
+                url: authUrl,
+                active: true
+            });
+
+            // Listen for the tab to be updated with the token
+            this.listenForAuthCompletion(tab.id);
+
+        } catch (error) {
+            console.error('[AUTH] Error opening authentication tab:', error);
+            this.showCaptchaError('Error opening authentication: ' + error.message);
+        }
+    }
+
+    listenForAuthCompletion(tabId) {
+        const handleTabUpdate = async (updatedTabId, changeInfo, tab) => {
+            if (updatedTabId !== tabId) return;
+
+            // Check if the tab URL indicates successful authentication
+            if (changeInfo.url && changeInfo.url.includes('auth-success')) {
+                try {
+                    // Get token from the auth tab's localStorage
+                    await this.retrieveTokenFromAuthTab(tabId);
+
+                    // Remove the listener
+                    chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+
+                    this.showCaptchaMessage('✅ Authentication completed successfully!', 'success');
+
+                } catch (error) {
+                    console.error('[AUTH] Error completing authentication:', error);
+                    this.showCaptchaError('Authentication completed, but failed to retrieve token');
+                }
+            }
+        };
+
+        chrome.tabs.onUpdated.addListener(handleTabUpdate);
+
+        // Also check periodically in case the URL-based detection fails
+        let checkCount = 0;
+        const checkInterval = setInterval(async () => {
+            checkCount++;
+
+            try {
+                // Check if we can get the token from the auth tab
+                const tokenFromTab = await this.getTokenFromAuthTab(tabId);
+                if (tokenFromTab) {
+                    // Token found - authentication successful
+                    clearInterval(checkInterval);
+                    chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+
+                    // Store token via background script
+                    await this.sendMessageToBackground({
+                        action: 'storeAuthToken',
+                        token: tokenFromTab.token,
+                        expiresAt: tokenFromTab.expiresAt
+                    });
+
+                    // Load token stats to update UI
+                    const tokenResult = await this.sendMessageToBackground({ action: 'getTokenStats' });
+                    if (tokenResult.success) {
+                        this.showCaptchaMessage('✅ Authentication token obtained successfully!', 'success');
+                        this.updateTokenStatusDisplay(true, tokenResult);
+                        this.updateQuotaDisplay(tokenResult.quotas);
+
+                        setTimeout(() => {
+                            this.hideCapcha();
+                        }, 2000);
+                    }
+
+                    // Close the auth tab
+                    try {
+                        chrome.tabs.remove(tabId);
+                    } catch (e) {
+                        // Tab might already be closed
+                    }
+                }
+            } catch (error) {
+                // Token not ready yet, continue checking
+            }
+
+            // Stop checking after 2 minutes
+            if (checkCount > 24) {
+                clearInterval(checkInterval);
+                chrome.tabs.onUpdated.removeListener(handleTabUpdate);
+                this.showCaptchaMessage('Authentication timed out. Please try again.', 'error');
+            }
+        }, 5000); // Check every 5 seconds
+    }
+
+    async getTokenFromAuthTab(tabId) {
+        try {
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                    const token = localStorage.getItem('websophon_auth_token');
+                    const expiresAt = localStorage.getItem('websophon_token_expires');
+                    if (token && expiresAt) {
+                        return { token, expiresAt: parseInt(expiresAt) };
+                    }
+                    return null;
+                }
+            });
+
+            return results[0]?.result || null;
+        } catch (error) {
+            // Tab might be closed or we don't have access
+            return null;
+        }
+    }
+
+    async retrieveTokenFromAuthTab(tabId) {
+        const tokenData = await this.getTokenFromAuthTab(tabId);
+        if (tokenData) {
+            // Store token via background script
+            await this.sendMessageToBackground({
+                action: 'storeAuthToken',
+                token: tokenData.token,
+                expiresAt: tokenData.expiresAt
+            });
+
+            // Load token stats to update UI
+            const tokenResult = await this.sendMessageToBackground({ action: 'getTokenStats' });
+            if (tokenResult.success) {
+                this.updateTokenStatusDisplay(true, tokenResult);
+                this.updateQuotaDisplay(tokenResult.quotas);
+
+                setTimeout(() => {
+                    this.hideCapcha();
+                }, 2000);
+            }
+
+            // Close the auth tab
+            try {
+                chrome.tabs.remove(tabId);
+            } catch (e) {
+                // Tab might already be closed
+            }
+        }
+    }
+
+    async checkForNewToken() {
+        const response = await this.sendMessageToBackground({ action: 'getTokenStats' });
+        if (response.success) {
+            this.updateTokenStatusDisplay(true, response);
+            this.updateQuotaDisplay(response.quotas);
+            this.hideCapcha();
+            return true;
+        }
+        return false;
     }
 
     hideCapcha() {
@@ -602,50 +738,7 @@ class CleanPopupController {
         }
     }
 
-    async onCaptchaSuccess(captchaResponse) {
-        try {
-            this.showCaptchaMessage('Verifying CAPTCHA...', 'info');
 
-            const response = await this.sendMessageToBackground({
-                action: 'verifyCaptcha',
-                captchaResponse: captchaResponse
-            });
-
-            if (response.success) {
-                this.showCaptchaMessage('✅ Authentication token obtained successfully!', 'success');
-
-                // Update displays
-                this.updateTokenStatusDisplay(true, response);
-                this.updateQuotaDisplay(response.quotas);
-
-                // Hide CAPTCHA and show quotas
-                setTimeout(() => {
-                    this.hideCapcha();
-                }, 2000);
-
-            } else {
-                this.showCaptchaError('CAPTCHA verification failed: ' + response.error);
-                // Reset CAPTCHA
-                if (window.hcaptcha) {
-                    window.hcaptcha.reset();
-                }
-            }
-
-        } catch (error) {
-            console.error('[CAPTCHA] Error verifying CAPTCHA:', error);
-            this.showCaptchaError('Error verifying CAPTCHA: ' + error.message);
-        }
-    }
-
-    onCaptchaError(error) {
-        console.error('[CAPTCHA] CAPTCHA error:', error);
-        this.showCaptchaError('CAPTCHA error occurred. Please try again.');
-    }
-
-    onCaptchaExpired() {
-        console.log('[CAPTCHA] CAPTCHA expired');
-        this.showCaptchaMessage('CAPTCHA expired. Please solve it again.');
-    }
 
     showCaptchaMessage(message, type = 'info') {
         if (this.elements.captchaStatus) {

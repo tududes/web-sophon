@@ -414,6 +414,8 @@ function requireSignature(req, res, next) {
 // Whitelist only specific endpoints we actually use
 const allowedEndpoints = [
     '/',
+    '/auth',
+    '/auth-success',
     '/captcha/challenge',
     '/captcha/verify',
     '/auth/token/stats',
@@ -518,6 +520,334 @@ app.post('/captcha/verify', requireMasterKey, async (req, res) => {
         console.error(`[CAPTCHA] Error during verification for ${req.clientId}:`, error);
         res.status(500).json({ error: 'CAPTCHA verification service error' });
     }
+});
+
+/**
+ * Endpoint to serve authentication page with CAPTCHA
+ * No authentication required - this is the entry point
+ */
+app.get('/auth', (req, res) => {
+    console.log(`[AUTH] Authentication page requested by ${req.clientId}`);
+
+    const authPageHTML = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>WebSophon Cloud Runner Authentication</title>
+        <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+            
+            .auth-container {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                padding: 40px;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+            }
+            
+            .logo {
+                font-size: 2.5rem;
+                font-weight: bold;
+                color: #667eea;
+                margin-bottom: 10px;
+            }
+            
+            .subtitle {
+                color: #666;
+                margin-bottom: 30px;
+                font-size: 1.1rem;
+            }
+            
+            .captcha-container {
+                margin: 30px 0;
+                display: flex;
+                justify-content: center;
+            }
+            
+            .status-message {
+                margin: 20px 0;
+                padding: 15px;
+                border-radius: 8px;
+                font-weight: 500;
+                display: none;
+            }
+            
+            .status-success {
+                background-color: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+            }
+            
+            .status-error {
+                background-color: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+            
+            .status-info {
+                background-color: #d1ecf1;
+                color: #0c5460;
+                border: 1px solid #bee5eb;
+            }
+            
+            .auth-button {
+                background: #667eea;
+                color: white;
+                border: none;
+                padding: 12px 30px;
+                border-radius: 8px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                margin: 10px 0;
+            }
+            
+            .auth-button:hover {
+                background: #5a6fd8;
+                transform: translateY(-2px);
+            }
+            
+            .auth-button:disabled {
+                background: #ccc;
+                cursor: not-allowed;
+                transform: none;
+            }
+            
+            .instructions {
+                background: #f8f9fa;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 20px 0;
+                color: #666;
+                font-size: 0.9rem;
+                line-height: 1.5;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="auth-container">
+            <div class="logo">🔐 WebSophon</div>
+            <div class="subtitle">Cloud Runner Authentication</div>
+            
+            <div class="instructions">
+                Complete the CAPTCHA below to obtain an authentication token for WebSophon Cloud Runner access.
+            </div>
+            
+            <div class="captcha-container">
+                <div id="hcaptcha-widget"></div>
+            </div>
+            
+            <div id="status-message" class="status-message"></div>
+            
+            <script>
+                let hcaptchaWidgetId = null;
+                
+                // Initialize hCaptcha when page loads
+                window.addEventListener('load', function() {
+                    if (window.hcaptcha) {
+                        initializeCaptcha();
+                    } else {
+                        // Wait for hCaptcha to load
+                        window.hcaptchaOnLoad = initializeCaptcha;
+                    }
+                });
+                
+                function initializeCaptcha() {
+                    hcaptchaWidgetId = hcaptcha.render('hcaptcha-widget', {
+                        sitekey: '${SECURITY_CONFIG.CAPTCHA_SITE_KEY}',
+                        theme: 'light',
+                        callback: onCaptchaSuccess,
+                        'error-callback': onCaptchaError,
+                        'expired-callback': onCaptchaExpired
+                    });
+                    
+                    showStatus('Complete the CAPTCHA to get your authentication token', 'info');
+                }
+                
+                async function onCaptchaSuccess(token) {
+                    showStatus('Verifying CAPTCHA...', 'info');
+                    
+                    try {
+                        const response = await fetch('/captcha/verify', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-API-Key': '${SECURITY_CONFIG.MASTER_API_KEY}'
+                            },
+                            body: JSON.stringify({
+                                captchaResponse: token
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            showStatus('✅ Authentication successful! Token has been saved to your browser.', 'success');
+                            
+                            // Save token to localStorage for the extension to access
+                            localStorage.setItem('websophon_auth_token', result.token);
+                            localStorage.setItem('websophon_token_expires', result.expiresAt.toString());
+                            
+                            // Redirect to success page after a short delay
+                            setTimeout(() => {
+                                window.location.href = '/auth-success';
+                            }, 2000);
+                            
+                        } else {
+                            showStatus('❌ Authentication failed: ' + result.error, 'error');
+                            if (hcaptchaWidgetId !== null) {
+                                hcaptcha.reset(hcaptchaWidgetId);
+                            }
+                        }
+                        
+                    } catch (error) {
+                        showStatus('❌ Error during authentication: ' + error.message, 'error');
+                        if (hcaptchaWidgetId !== null) {
+                            hcaptcha.reset(hcaptchaWidgetId);
+                        }
+                    }
+                }
+                
+                function onCaptchaError(error) {
+                    showStatus('❌ CAPTCHA error. Please try again.', 'error');
+                }
+                
+                function onCaptchaExpired() {
+                    showStatus('⏰ CAPTCHA expired. Please solve it again.', 'info');
+                }
+                
+                function showStatus(message, type) {
+                    const statusEl = document.getElementById('status-message');
+                    statusEl.textContent = message;
+                    statusEl.className = 'status-message status-' + type;
+                    statusEl.style.display = 'block';
+                }
+            </script>
+        </div>
+    </body>
+    </html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(authPageHTML);
+});
+
+/**
+ * Endpoint for successful authentication redirect
+ * No authentication required
+ */
+app.get('/auth-success', (req, res) => {
+    console.log(`[AUTH] Success page requested by ${req.clientId}`);
+
+    const successPageHTML = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Authentication Successful - WebSophon</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0;
+                padding: 20px;
+            }
+            
+            .success-container {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                padding: 40px;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+            }
+            
+            .success-icon {
+                font-size: 4rem;
+                margin-bottom: 20px;
+            }
+            
+            .success-title {
+                font-size: 2rem;
+                color: #28a745;
+                margin-bottom: 20px;
+                font-weight: bold;
+            }
+            
+            .success-message {
+                color: #666;
+                font-size: 1.1rem;
+                line-height: 1.6;
+                margin-bottom: 30px;
+            }
+            
+            .close-button {
+                background: #667eea;
+                color: white;
+                border: none;
+                padding: 12px 30px;
+                border-radius: 8px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+            
+            .close-button:hover {
+                background: #5a6fd8;
+                transform: translateY(-2px);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="success-container">
+            <div class="success-icon">✅</div>
+            <div class="success-title">Authentication Successful!</div>
+            <div class="success-message">
+                Your authentication token has been saved successfully.<br>
+                You can now close this tab and return to the WebSophon extension.
+            </div>
+            <button class="close-button" onclick="window.close()">Close Tab</button>
+        </div>
+        
+        <script>
+            // Auto-close after 3 seconds
+            setTimeout(() => {
+                window.close();
+            }, 3000);
+        </script>
+    </body>
+    </html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.status(200).send(successPageHTML);
 });
 
 /**

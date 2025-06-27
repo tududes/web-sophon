@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSophon</title>
     <link rel="stylesheet" href="assets/styles.css">
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <style>
         body.service-disconnected .main-content {
             display: none;
@@ -214,9 +213,10 @@
                     </div>
                     <div id="captchaContainer" class="captcha-container">
                         <div class="form-group">
-                            <p class="setting-description">Complete the CAPTCHA below to obtain an authentication token
-                                for cloud runner access:</p>
-                            <div id="hcaptcha-widget" class="hcaptcha-widget"></div>
+                            <p class="setting-description">Click the button below to open a new tab and complete
+                                authentication for cloud runner access:</p>
+                            <button id="authenticateBtn" class="test-config-button">🔐 Authenticate with Cloud
+                                Runner</button>
                             <div id="captchaStatus" class="status-message"></div>
                         </div>
                     </div>

@@ -31,7 +31,8 @@ export class MessageService {
                 const asyncActions = [
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
-                    'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner'
+                    'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
+                    'storeAuthToken'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
@@ -159,6 +160,14 @@ export class MessageService {
                 this.testCloudRunnerWithToken(req.url, req.payload)
                     .then(res)
                     .catch(err => res({ success: false, error: err.message }));
+            },
+            'storeAuthToken': async (req, sender, res) => {
+                try {
+                    await this.storeAuthToken(req.token, req.expiresAt);
+                    res({ success: true });
+                } catch (error) {
+                    res({ success: false, error: error.message });
+                }
             }
         };
         return handlers[action];
@@ -1082,14 +1091,20 @@ export class MessageService {
     async ensureValidToken() {
         // Check if we have a stored token
         if (!this.cloudSecurity.authToken) {
-            const { cloudAuthToken, cloudTokenExpiry, cloudQuotas } = await chrome.storage.local.get([
-                'cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas'
+            const storedData = await chrome.storage.local.get([
+                'cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas',
+                'websophon_auth_token', 'websophon_token_expires'
             ]);
 
-            if (cloudAuthToken && cloudTokenExpiry) {
-                this.cloudSecurity.authToken = cloudAuthToken;
-                this.cloudSecurity.tokenExpiry = cloudTokenExpiry;
-                this.cloudSecurity.quotas = cloudQuotas;
+            // Try new format first, then fall back to old format
+            let authToken = storedData.websophon_auth_token || storedData.cloudAuthToken;
+            let tokenExpiry = storedData.websophon_token_expires || storedData.cloudTokenExpiry;
+            let quotas = storedData.cloudQuotas;
+
+            if (authToken && tokenExpiry) {
+                this.cloudSecurity.authToken = authToken;
+                this.cloudSecurity.tokenExpiry = tokenExpiry;
+                this.cloudSecurity.quotas = quotas;
             }
         }
 
@@ -1106,12 +1121,34 @@ export class MessageService {
         return false;
     }
 
+    async storeAuthToken(token, expiresAt) {
+        try {
+            this.cloudSecurity.authToken = token;
+            this.cloudSecurity.tokenExpiry = expiresAt;
+
+            // Store with both key formats for compatibility
+            await chrome.storage.local.set({
+                'websophon_auth_token': token,
+                'websophon_token_expires': expiresAt,
+                'cloudAuthToken': token,
+                'cloudTokenExpiry': expiresAt
+            });
+            console.log('[TOKEN] Stored authentication token, expires at:', new Date(expiresAt).toLocaleString());
+        } catch (error) {
+            console.error('[TOKEN] Error storing token:', error);
+            throw error;
+        }
+    }
+
     async clearStoredToken() {
         this.cloudSecurity.authToken = null;
         this.cloudSecurity.tokenExpiry = null;
         this.cloudSecurity.quotas = null;
 
-        await chrome.storage.local.remove(['cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas']);
+        await chrome.storage.local.remove([
+            'websophon_auth_token', 'websophon_token_expires',
+            'cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas'
+        ]);
         console.log('[TOKEN] Cleared stored authentication token');
     }
 
