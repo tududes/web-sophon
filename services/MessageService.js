@@ -31,7 +31,7 @@ export class MessageService {
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
                     'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
-                    'storeAuthToken'
+                    'storeAuthToken', 'startAuthPolling', 'stopAuthPolling'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
@@ -50,6 +50,15 @@ export class MessageService {
     getMessageHandler(action) {
         const handlers = {
             'ping': (req, sender, res) => res({ pong: true }),
+            'startAuthPolling': (req, sender, res) => {
+                this.startAuthTokenPolling()
+                    .then(() => res({ success: true }))
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'stopAuthPolling': (req, sender, res) => {
+                this.stopAuthTokenPolling();
+                res({ success: true });
+            },
 
             'startCapture': async (req, sender, res) => {
                 try {
@@ -1233,6 +1242,126 @@ export class MessageService {
         } catch (error) {
             console.error('[CLOUD] Test failed:', error);
             throw error;
+        }
+    }
+
+    // === BACKGROUND AUTH TOKEN POLLING ===
+
+    async startAuthTokenPolling() {
+        try {
+            console.log('[AUTH] Starting background token polling...');
+
+            // Stop any existing polling first
+            this.stopAuthTokenPolling();
+
+            // Start polling every 3 seconds for up to 2 minutes
+            let pollCount = 0;
+            const maxPolls = 40; // 2 minutes (3 seconds * 40)
+
+            this.authPollingInterval = setInterval(async () => {
+                pollCount++;
+
+                try {
+                    // Get all tabs from the auth domain
+                    const tabs = await chrome.tabs.query({});
+                    const authTabs = tabs.filter(tab =>
+                        tab.url && (
+                            tab.url.includes('/auth-success') ||
+                            tab.url.includes('runner.websophon.tududes.com')
+                        )
+                    );
+
+                    // Try to extract token from any auth tab
+                    for (const tab of authTabs) {
+                        const tokenData = await this.getTokenFromAuthTab(tab.id);
+                        if (tokenData) {
+                            // Token found! Store it and notify popup
+                            console.log('[AUTH] Background polling found token, storing...');
+
+                            await this.storeAuthToken(tokenData.token, tokenData.expiresAt);
+
+                            // Verify storage worked
+                            const tokenResult = await this.getTokenStats();
+
+                            if (tokenResult && tokenResult.quotas && tokenResult.expiresAt) {
+                                // Notify popup of successful authentication
+                                this.sendToPopup({
+                                    action: 'authTokenDetected',
+                                    tokenStats: tokenResult
+                                });
+
+                                // Close the auth tab
+                                try {
+                                    chrome.tabs.remove(tab.id);
+                                    console.log('[AUTH] Closed auth tab after successful token extraction');
+                                } catch (e) {
+                                    console.log('[AUTH] Could not close auth tab:', e);
+                                }
+
+                                // Stop polling - we found it!
+                                this.stopAuthTokenPolling();
+                                return;
+                            }
+                        }
+                    }
+
+                    console.log(`[AUTH] Background polling attempt ${pollCount}/${maxPolls} - no token found yet`);
+
+                } catch (error) {
+                    console.log('[AUTH] Background polling error:', error);
+                }
+
+                // Stop polling after timeout
+                if (pollCount >= maxPolls) {
+                    console.log('[AUTH] Background polling timed out after 2 minutes');
+                    this.stopAuthTokenPolling();
+
+                    // Notify popup of timeout
+                    this.sendToPopup({
+                        action: 'authPollingTimeout'
+                    });
+                }
+            }, 3000); // Poll every 3 seconds
+
+            console.log('[AUTH] Background polling started');
+
+        } catch (error) {
+            console.error('[AUTH] Error starting background polling:', error);
+            throw error;
+        }
+    }
+
+    stopAuthTokenPolling() {
+        if (this.authPollingInterval) {
+            clearInterval(this.authPollingInterval);
+            this.authPollingInterval = null;
+            console.log('[AUTH] Background token polling stopped');
+        }
+    }
+
+    async getTokenFromAuthTab(tabId) {
+        try {
+            console.log('[AUTH] Attempting to get token from tab:', tabId);
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                    const token = localStorage.getItem('websophon_auth_token');
+                    const expiresAt = localStorage.getItem('websophon_token_expires');
+                    console.log('[AUTH TAB] Found token:', token ? `${token.substring(0, 16)}...` : 'none');
+
+                    if (token && expiresAt) {
+                        return { token, expiresAt: parseInt(expiresAt) };
+                    }
+                    return null;
+                }
+            });
+
+            const result = results[0]?.result || null;
+            console.log('[AUTH] Token extraction result:', result ? 'success' : 'no token found');
+            return result;
+        } catch (error) {
+            console.log('[AUTH] Could not access tab (probably closed or different domain):', error.message);
+            return null;
         }
     }
 } 

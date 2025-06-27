@@ -864,12 +864,12 @@ app.get('/auth-success', (req, res) => {
                 Your authentication token has been created and saved successfully.
             </div>
             <div class="instructions">
-                <strong>Next Steps:</strong><br>
-                1. You can now <strong>close this tab</strong> manually<br>
-                2. Return to the WebSophon extension<br>
-                3. Your authentication should be automatically detected
+                <strong>✅ Authentication Complete!</strong><br><br>
+                🔄 <strong>Automatic Detection:</strong> Your token is being detected automatically<br>
+                🏠 <strong>Return to Extension:</strong> Go back to the WebSophon popup<br>
+                🗂️ <strong>Close This Tab:</strong> You can close this tab manually when ready
                 <div class="auto-detect-note">
-                    💡 The extension automatically checks for your new authentication token every few seconds
+                    💡 The extension polls for your token every 3 seconds for 2 minutes. No manual action needed!
                 </div>
             </div>
         </div>

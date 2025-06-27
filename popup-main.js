@@ -599,8 +599,10 @@ class CleanPopupController {
                 active: true
             });
 
-            // Start polling for token
-            this.pollForAuthToken();
+            // Start background polling for token
+            await this.sendMessageToBackground({ action: 'startAuthPolling' });
+
+            this.showCaptchaMessage('Complete the CAPTCHA in the opened tab. Authentication will be detected automatically...', 'info');
 
         } catch (error) {
             console.error('[AUTH] Error opening authentication tab:', error);
@@ -608,145 +610,13 @@ class CleanPopupController {
         }
     }
 
-    async pollForAuthToken() {
-        this.showCaptchaMessage('Complete the CAPTCHA in the opened tab. Checking for token...', 'info');
-
-        let pollCount = 0;
-        const maxPolls = 24; // 2 minutes (5 seconds * 24)
-
-        const pollInterval = setInterval(async () => {
-            pollCount++;
-
-            try {
-                // Get all tabs from the auth domain
-                const tabs = await chrome.tabs.query({});
-                const authTabs = tabs.filter(tab =>
-                    tab.url && (
-                        tab.url.includes('/auth-success') ||
-                        tab.url.includes('runner.websophon.tududes.com')
-                    )
-                );
-
-                // Try to extract token from any auth tab
-                for (const tab of authTabs) {
-                    const tokenData = await this.getTokenFromAuthTab(tab.id);
-                    if (tokenData) {
-                        // Token found! Store it and update UI
-                        clearInterval(pollInterval);
-
-                        await this.sendMessageToBackground({
-                            action: 'storeAuthToken',
-                            token: tokenData.token,
-                            expiresAt: tokenData.expiresAt
-                        });
-
-                        // Verify storage worked by getting token stats
-                        const tokenResult = await this.sendMessageToBackground({ action: 'getTokenStats' });
-
-                        if (tokenResult && tokenResult.quotas && tokenResult.expiresAt) {
-                            this.showCaptchaMessage('✅ Authentication token obtained successfully!', 'success');
-                            this.updateTokenStatusDisplay(true, tokenResult);
-                            this.updateQuotaDisplay(tokenResult.quotas);
-
-                            setTimeout(() => {
-                                this.hideCapcha();
-                            }, 2000);
-
-                            // Close the auth tab
-                            try {
-                                chrome.tabs.remove(tab.id);
-                            } catch (e) {
-                                console.log('Could not close auth tab:', e);
-                            }
-
-                            return;
-                        }
-                    }
-                }
-
-                // Update polling message
-                const remainingTime = Math.ceil((maxPolls - pollCount) * 5 / 60);
-                this.showCaptchaMessage(`Waiting for authentication... (${remainingTime}m remaining)`, 'info');
-
-            } catch (error) {
-                console.log('[AUTH] Polling error:', error);
-            }
-
-            // Stop polling after 2 minutes
-            if (pollCount >= maxPolls) {
-                clearInterval(pollInterval);
-                this.showCaptchaMessage('Authentication timed out. Please try again if you completed the CAPTCHA.', 'error');
-            }
-        }, 3000); // Poll every 3 seconds
-    }
-
-    async getTokenFromAuthTab(tabId) {
-        try {
-            console.log('[AUTH] Attempting to get token from tab:', tabId);
-            const results = await chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                func: () => {
-                    const token = localStorage.getItem('websophon_auth_token');
-                    const expiresAt = localStorage.getItem('websophon_token_expires');
-                    console.log('[AUTH TAB] Found token:', token ? `${token.substring(0, 16)}...` : 'none');
-
-                    if (token && expiresAt) {
-                        return { token, expiresAt: parseInt(expiresAt) };
-                    }
-                    return null;
-                }
-            });
-
-            const result = results[0]?.result || null;
-            console.log('[AUTH] Token extraction result:', result ? 'success' : 'no token found');
-            return result;
-        } catch (error) {
-            console.log('[AUTH] Could not access tab (probably closed or different domain):', error.message);
-            return null;
-        }
-    }
+    // Note: Polling is now handled by the background script for better reliability
 
     async manualTokenCheck() {
         try {
             this.showCaptchaMessage('Manually checking for tokens...', 'info');
 
-            // Get all tabs and look for auth tabs
-            const tabs = await chrome.tabs.query({});
-            console.log('[DEBUG] All tabs:', tabs.map(t => ({ id: t.id, url: t.url })));
-
-            const authTabs = tabs.filter(tab =>
-                tab.url && tab.url.includes('runner.websophon.tududes.com')
-            );
-
-            console.log('[DEBUG] Auth tabs found:', authTabs.length);
-
-            for (const tab of authTabs) {
-                console.log('[DEBUG] Checking tab:', tab.id, tab.url);
-                const tokenData = await this.getTokenFromAuthTab(tab.id);
-
-                if (tokenData) {
-                    console.log('[DEBUG] Token found! Storing...');
-
-                    await this.sendMessageToBackground({
-                        action: 'storeAuthToken',
-                        token: tokenData.token,
-                        expiresAt: tokenData.expiresAt
-                    });
-
-                    // Verify it worked
-                    const tokenResult = await this.sendMessageToBackground({ action: 'getTokenStats' });
-
-                    if (tokenResult && tokenResult.quotas && tokenResult.expiresAt) {
-                        this.showCaptchaMessage('✅ Token found and stored successfully!', 'success');
-                        this.updateTokenStatusDisplay(true, tokenResult);
-                        this.updateQuotaDisplay(tokenResult.quotas);
-                        this.hideCapcha();
-                        return;
-                    }
-                }
-            }
-
-            // If no token found, check if it's already in storage
+            // First check if there's already a token in storage
             const tokenResult = await this.sendMessageToBackground({ action: 'getTokenStats' });
             if (tokenResult && tokenResult.quotas && tokenResult.expiresAt) {
                 // Valid token stats received
@@ -754,13 +624,13 @@ class CleanPopupController {
                 this.updateTokenStatusDisplay(true, tokenResult);
                 this.updateQuotaDisplay(tokenResult.quotas);
                 this.hideCapcha();
-            } else if (tokenResult && tokenResult.success === false) {
-                // Error response from background script
-                this.showCaptchaMessage('❌ No token found. Please complete authentication first.', 'error');
-            } else {
-                // Unexpected response format
-                this.showCaptchaMessage('❌ Unexpected response format. Please try again.', 'error');
+                return;
             }
+
+            // No token in storage, trigger a one-time background check
+            console.log('[DEBUG] No token in storage, triggering background check...');
+            await this.sendMessageToBackground({ action: 'startAuthPolling' });
+            this.showCaptchaMessage('🔍 Checking for authentication in open tabs...', 'info');
 
         } catch (error) {
             console.error('[DEBUG] Manual token check error:', error);
@@ -1256,6 +1126,24 @@ class CleanPopupController {
                     }
                     // Show toast notification about new results
                     this.showStatus(`${request.resultCount} new cloud results synced for ${request.domain}`, 'success');
+                    break;
+
+                case 'authTokenDetected':
+                    console.log('Authentication token detected by background script:', request);
+                    if (request.tokenStats) {
+                        this.showCaptchaMessage('✅ Authentication successful! Token detected automatically.', 'success');
+                        this.updateTokenStatusDisplay(true, request.tokenStats);
+                        this.updateQuotaDisplay(request.tokenStats.quotas);
+
+                        setTimeout(() => {
+                            this.hideCapcha();
+                        }, 2000);
+                    }
+                    break;
+
+                case 'authPollingTimeout':
+                    console.log('Background authentication polling timed out');
+                    this.showCaptchaMessage('⏰ Authentication timeout. If you completed the CAPTCHA, try clicking "Check for Token".', 'warning');
                     break;
             }
         });
