@@ -110,6 +110,10 @@ class CleanPopupController {
 
     getDOMElements() {
         this.elements = {
+            // Main structure
+            tabNavigation: document.querySelector('.tab-navigation'),
+            tabContent: document.querySelector('.tab-content'),
+
             // Fields section
             fieldsContainer: document.getElementById('fieldsContainer'),
             addFieldBtn: document.getElementById('addFieldBtn'),
@@ -120,6 +124,7 @@ class CleanPopupController {
             // Capture section
             captureBtn: document.getElementById('captureBtn'),
             captureStatus: document.getElementById('captureStatus'),
+            currentDomain: document.getElementById('currentDomain'),
 
             // Settings section
             consentToggle: document.getElementById('consentToggle'),
@@ -162,12 +167,12 @@ class CleanPopupController {
     }
 
     setupEventListeners() {
-        // Tab switching
-        document.querySelectorAll('[data-tab]').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                const tabName = e.target.dataset.tab;
-                this.switchTab(tabName);
-            });
+        // Tab switching - use delegation for efficiency
+        this.elements.tabNavigation?.addEventListener('click', (e) => {
+            const button = e.target.closest('.tab-button');
+            if (button && button.dataset.tab) {
+                this.switchTab(button.dataset.tab);
+            }
         });
 
         // Field management
@@ -301,20 +306,18 @@ class CleanPopupController {
         this.currentTab = tabName;
 
         // Hide all tab panels
-        document.querySelectorAll('.tab-panel').forEach(panel => {
-            panel.style.display = 'none';
+        this.elements.tabContent?.querySelectorAll('.tab-panel').forEach(panel => {
             panel.classList.remove('active');
         });
 
         // Remove active class from all tab buttons
-        document.querySelectorAll('[data-tab]').forEach(tab => {
-            tab.classList.remove('active');
+        this.elements.tabNavigation?.querySelectorAll('.tab-button').forEach(button => {
+            button.classList.remove('active');
         });
 
         // Show selected tab panel
-        const tabPanel = document.getElementById(`${tabName}Content`);
+        const tabPanel = this.elements.tabContent?.querySelector(`#${tabName}Content`);
         if (tabPanel) {
-            tabPanel.style.display = 'block';
             tabPanel.classList.add('active');
             console.log('Showed tab panel:', `${tabName}Content`);
         } else {
@@ -322,7 +325,7 @@ class CleanPopupController {
         }
 
         // Add active class to selected tab button
-        const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
+        const selectedTab = this.elements.tabNavigation?.querySelector(`[data-tab="${tabName}"]`);
         if (selectedTab) {
             selectedTab.classList.add('active');
         }
@@ -374,7 +377,7 @@ class CleanPopupController {
 
     async testCloudRunner() {
         const url = this.elements.cloudRunnerUrl?.value;
-        const statusEl = this.elements.captureStatus;
+        const statusEl = this.elements.testCloudRunnerStatus;
 
         if (!url) {
             this.showToast('✗ Please enter a Cloud Runner URL.', 'error', statusEl);
@@ -1149,11 +1152,12 @@ class CleanPopupController {
     async initializeHistoryManager() {
         try {
             console.log('Initializing history manager...');
-            console.log('window.HistoryManager available:', !!window.HistoryManager);
+            const { HistoryManager } = await import('./components/HistoryManager.js');
+            console.log('HistoryManager available:', !!HistoryManager);
             console.log('historyContainer element:', !!this.elements.historyContainer);
 
-            if (window.HistoryManager) {
-                this.historyManager = new window.HistoryManager();
+            if (HistoryManager) {
+                this.historyManager = new HistoryManager();
                 this.historyManager.setElements(this.elements);
 
                 // Load initial history data

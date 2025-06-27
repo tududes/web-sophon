@@ -11,13 +11,16 @@
 
     --text-primary: #212529;
     --text-secondary: #6c757d;
+    --text-tertiary: #adb5bd;
     --text-muted: #adb5bd;
 
     --border-primary: #dee2e6;
     --border-secondary: #ced4da;
+    --border-hover: #adb5bd;
     --border-focus: #80bdff;
 
     --accent-primary: #007bff;
+    --accent-secondary: #6c757d;
     --accent-hover: #0056b3;
     --accent-active: #004085;
     --accent-light: rgba(0, 123, 255, 0.1);
@@ -84,13 +87,16 @@
 
     --text-primary: #f7fafc;
     --text-secondary: #e2e8f0;
+    --text-tertiary: #a0aec0;
     --text-muted: #a0aec0;
 
     --border-primary: #4a5568;
     --border-secondary: #2d3748;
+    --border-hover: #718096;
     --border-focus: #63b3ed;
 
     --accent-primary: #4299e1;
+    --accent-secondary: #a0aec0;
     --accent-hover: #3182ce;
     --accent-active: #2b77cb;
     --accent-light: rgba(66, 153, 225, 0.1);
@@ -122,15 +128,126 @@
 }
 
 body {
-    margin: 0;
-    padding: var(--space-sm);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: var(--text-sm);
-    line-height: 1.5;
-    color: var(--text-primary);
     background-color: var(--bg-primary);
-    transition: background-color 0.2s ease, color 0.2s ease;
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    font-size: 14px;
+    margin: 0;
+    width: 400px;
+    display: flex;
+    flex-direction: column;
 }
+
+#connectionError {
+    display: none;
+    padding: 20px;
+    text-align: center;
+    background-color: var(--danger-light);
+    color: var(--danger);
+    border-radius: 8px;
+}
+
+body.service-disconnected .main-content {
+    display: none;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.logo-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.logo-title img {
+    width: 24px;
+    height: 24px;
+}
+
+.logo-title h1 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.theme-toggle,
+.theme-toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    padding: var(--space-sm);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.theme-toggle:hover,
+.theme-toggle-btn:hover {
+    background-color: var(--bg-hover);
+}
+
+.tab-navigation {
+    display: flex;
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+    padding: 0 var(--space-md);
+}
+
+.tab-button {
+    flex: 1;
+    padding: var(--space-md) 0;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+}
+
+.tab-button:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.tab-button.active {
+    color: var(--accent-primary);
+    border-bottom-color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.tab-content {
+    padding: var(--space-lg);
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* === Global Form Elements === */
+/* ... existing code ... */
 
 .container {
     width: 400px;
@@ -1459,93 +1576,7 @@ input:checked+.slider:hover {
     margin-top: var(--space-md);
 }
 
-/* Tab Navigation - Reduced margins */
-.tab-navigation {
-    display: flex;
-    background-color: var(--bg-secondary);
-    border-radius: var(--radius-lg);
-    padding: var(--space-xs);
-    margin-bottom: var(--space-md);
-    gap: var(--space-xs);
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-primary);
-}
 
-.tab-button {
-    flex: 1;
-    padding: var(--space-sm) var(--space-md);
-    background-color: transparent;
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-xs);
-    white-space: nowrap;
-    min-height: 36px;
-}
-
-.tab-button:hover {
-    background-color: var(--bg-hover);
-    color: var(--text-primary);
-    transform: translateY(-1px);
-}
-
-.tab-button.active {
-    background-color: var(--accent-primary);
-    color: white;
-    box-shadow: var(--shadow-sm);
-}
-
-.tab-button.active:hover {
-    background-color: var(--accent-secondary);
-    transform: translateY(-1px);
-}
-
-/* Tab Content - Better scrollbar positioning */
-.tab-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: var(--space-sm) var(--space-xs) var(--space-sm) 0;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-primary) var(--bg-secondary);
-    position: relative;
-    min-height: 350px;
-    margin-right: 2px;
-    /* Prevent scrollbar overlap */
-}
-
-.tab-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.tab-content::-webkit-scrollbar-track {
-    background: transparent;
-    border-radius: var(--radius-sm);
-}
-
-.tab-content::-webkit-scrollbar-thumb {
-    background: var(--border-primary);
-    border-radius: var(--radius-sm);
-}
-
-.tab-content::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
-}
-
-.tab-panel {
-    display: none;
-    animation: fadeIn 0.3s ease-in-out;
-}
-
-.tab-panel.active {
-    display: block;
-}
 
 @keyframes fadeIn {
     from {
