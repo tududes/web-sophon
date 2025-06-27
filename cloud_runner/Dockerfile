@@ -9,11 +9,14 @@ USER root
 
 # Copy package files and install dependencies as root
 # This avoids all permission issues during the build process
-COPY package*.json ./
+COPY cloud_runner/package*.json ./
 RUN npm install
 
+# Copy the shared utils directory
+COPY utils/ ./utils/
+
 # Copy the rest of the application source code
-COPY . .
+COPY cloud_runner/. .
 
 # Change ownership of the entire application directory to the non-root user
 RUN chown -R pptruser:pptruser /usr/src/app

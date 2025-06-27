@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import { v4 as uuidv4 } from 'uuid';
 import puppeteer from 'puppeteer';
 import cors from 'cors';
-import { getSystemPrompt } from '../utils/prompt-formatters.js';
+import { getSystemPrompt } from './utils/prompt-formatters.js';
 
 const app = express();
 const port = process.env.PORT || 7113;

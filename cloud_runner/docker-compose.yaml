@@ -1,6 +1,8 @@
 services:
   runner:
-    build: .
+    build:
+      context: ..
+      dockerfile: cloud_runner/Dockerfile
     container_name: tv-eyes-runner
     restart: unless-stopped
     network_mode: "host"
