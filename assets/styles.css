@@ -3085,14 +3085,19 @@ input:checked+.slider:hover {
 .token-info {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    gap: var(--space-sm);
     margin-bottom: var(--space-sm);
 }
 
 #tokenStatusText {
     font-weight: 500;
     color: var(--text-primary);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    flex: 1;
+    min-width: 0;
+    word-wrap: break-word;
 }
 
 #tokenStatusText.valid {
@@ -3249,6 +3254,11 @@ input:checked+.slider:hover {
         flex-direction: column;
         align-items: flex-start;
         gap: var(--space-sm);
+    }
+
+    #tokenStatusText {
+        font-size: 11px;
+        word-break: break-all;
     }
 
     .quota-item {

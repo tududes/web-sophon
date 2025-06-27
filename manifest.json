@@ -13,7 +13,8 @@
     ],
     "host_permissions": [
         "http://*/*",
-        "https://*/*"
+        "https://*/*",
+        "https://runner.websophon.tududes.com/*"
     ],
     "background": {
         "service_worker": "background-main.js",

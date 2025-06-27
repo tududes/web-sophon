@@ -194,6 +194,10 @@
             <div class="tab-panel" id="settingsContent">
                 <div class="settings-section">
                     <h3>Cloud Runner Authentication</h3>
+                    <div class="form-group">
+                        <label for="cloudRunnerUrl">Cloud Runner URL:</label>
+                        <input type="url" id="cloudRunnerUrl" placeholder="https://runner.websophon.tududes.com" />
+                    </div>
                     <div id="tokenStatus" class="token-status">
                         <div class="token-info">
                             <span id="tokenStatusText">No authentication token</span>
@@ -217,26 +221,20 @@
                                 complete CAPTCHA verification:</p>
                             <button id="authenticateBtn" class="test-config-button">🔐 Authenticate with Cloud
                                 Runner</button>
+                            <button id="checkTokenBtn" class="small-button secondary" style="margin-top: 8px;">🔍 Check
+                                for Token</button>
                             <div id="captchaStatus" class="status-message"></div>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <button id="clearTokenBtn" class="small-button danger" style="display: none;">🗑️ Clear
-                            Token</button>
-                    </div>
-                </div>
-
-                <div class="settings-section">
-                    <h3>Service Endpoints</h3>
-                    <div class="form-group">
-                        <label for="cloudRunnerUrl">Cloud Runner URL:</label>
-                        <input type="url" id="cloudRunnerUrl" placeholder="https://runner.websophon.tududes.com" />
                     </div>
                     <div class="form-group">
                         <button id="testCloudRunnerBtn" class="test-config-button">
                             ☁️ Test Cloud Runner
                         </button>
                         <div id="testCloudRunnerStatus" class="status-message"></div>
+                    </div>
+                    <div class="form-group">
+                        <button id="clearTokenBtn" class="small-button danger" style="display: none;">🗑️ Clear
+                            Token</button>
                     </div>
                 </div>
 

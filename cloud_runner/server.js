@@ -832,21 +832,27 @@ app.get('/auth-success', (req, res) => {
                 margin-bottom: 30px;
             }
             
-            .close-button {
-                background: #667eea;
-                color: white;
-                border: none;
-                padding: 12px 30px;
+            .instructions {
+                background: #f8f9fa;
+                border: 2px solid #e9ecef;
                 border-radius: 8px;
+                padding: 20px;
+                margin: 20px 0;
                 font-size: 1rem;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.3s ease;
+                color: #495057;
+                line-height: 1.5;
             }
             
-            .close-button:hover {
-                background: #5a6fd8;
-                transform: translateY(-2px);
+            .instructions strong {
+                color: #212529;
+                font-weight: 600;
+            }
+            
+            .auto-detect-note {
+                font-size: 0.9rem;
+                color: #6c757d;
+                margin-top: 15px;
+                font-style: italic;
             }
         </style>
     </head>
@@ -855,18 +861,18 @@ app.get('/auth-success', (req, res) => {
             <div class="success-icon">✅</div>
             <div class="success-title">Authentication Successful!</div>
             <div class="success-message">
-                Your authentication token has been saved successfully.<br>
-                You can now close this tab and return to the WebSophon extension.
+                Your authentication token has been created and saved successfully.
             </div>
-            <button class="close-button" onclick="window.close()">Close Tab</button>
+            <div class="instructions">
+                <strong>Next Steps:</strong><br>
+                1. You can now <strong>close this tab</strong> manually<br>
+                2. Return to the WebSophon extension<br>
+                3. Your authentication should be automatically detected
+                <div class="auto-detect-note">
+                    💡 The extension automatically checks for your new authentication token every few seconds
+                </div>
+            </div>
         </div>
-        
-        <script>
-            // Auto-close after 3 seconds
-            setTimeout(() => {
-                window.close();
-            }, 3000);
-        </script>
     </body>
     </html>
     `;
