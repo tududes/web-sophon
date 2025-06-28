@@ -541,7 +541,7 @@ export class HistoryManager {
 
         // Handle different types of events with debug info
         let statusHtml = '';
-        console.log(`Rendering event ${event.id}: status=${event.status}, success=${event.success}, httpStatus=${event.httpStatus}, fields=${event.fields?.length || 0}, reason="${event.reason}"`);
+        console.log(`Rendering event ${event.id}: status=${event.status}, success=${event.success}, httpStatus=${event.httpStatus}, fields=${event.fields?.length || 0}, summary="${event.summary}"`);
 
         if (event.status === 'pending') {
             statusHtml = `<span class="history-status pending">⏳ Waiting for response...</span>`;
@@ -564,12 +564,12 @@ export class HistoryManager {
           </div>
         `).join('') : '<div class="history-no-fields">No field evaluations</div>';
 
-        // Format the reason/summary with proper styling
-        console.log(`Event ${event.id} reason check: hasReason=${!!event.reason}, reasonText="${event.reason}"`);
-        const reasonHtml = event.reason ? `
+        // Format the summary with proper styling
+        console.log(`Event ${event.id} summary check: hasSummary=${!!event.summary}, summaryText="${event.summary}"`);
+        const summaryHtml = event.summary ? `
           <div class="history-reason-section">
             <div class="history-reason-label">📝 Evaluation Summary:</div>
-            <div class="history-reason-text">${event.reason}</div>
+            <div class="history-reason-text">${event.summary}</div>
           </div>
         ` : '';
 
@@ -588,7 +588,7 @@ export class HistoryManager {
             </div>
             ${statusHtml}
             <div class="history-fields">${fieldsHtml}</div>
-            ${reasonHtml}
+            ${summaryHtml}
             <div class="history-details" style="display: none;">
               <div class="detail-item"><strong>URL:</strong> ${event.url}</div>
               <div class="detail-item"><strong>Time:</strong> ${new Date(event.timestamp).toLocaleString()}</div>

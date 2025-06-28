@@ -104,7 +104,7 @@ export class EventService {
             httpStatus: httpStatus,
             error: error,
             fields: fieldResults,
-            reason: results ? (results.reason || results.summary || '') : '',
+            summary: results ? (results.summary || '') : '',
             hasTrueResult: hasTrueResult,
             read: false,
             screenshot: screenshot, // Store the base64 screenshot
@@ -237,12 +237,11 @@ export class EventService {
             }
 
             event.hasTrueResult = hasTrueResult;
-            event.reason = results.reason || results.summary || '';
+            event.summary = results.summary || '';
 
-            console.log('EventService: Setting reason from results:', {
-                hasReason: !!results.reason,
+            console.log('EventService: Setting summary from results:', {
                 hasSummary: !!results.summary,
-                reasonText: results.reason || results.summary,
+                summaryText: results.summary,
                 resultsStructure: Object.keys(results)
             });
 
@@ -253,7 +252,7 @@ export class EventService {
             }
         }
 
-        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}, source: ${originalSource} (preserved), reason: "${event.reason}"`);
+        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}, source: ${originalSource} (preserved), summary: "${event.summary}"`);
 
         // Save updated events
         this.saveEventsToStorage();

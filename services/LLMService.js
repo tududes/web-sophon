@@ -252,21 +252,24 @@ export class LLMService {
                 console.log(`LLM API response status: ${llmResponse.status}`);
 
                 // Get response text
+                let apiResponseText = '';
                 try {
-                    responseText = await llmResponse.text();
-                    console.log('Raw LLM response:', responseText);
+                    apiResponseText = await llmResponse.text();
+                    console.log('Raw API response:', apiResponseText);
                 } catch (textError) {
                     console.log('Failed to read LLM response text:', textError);
-                    responseText = `Failed to read response: ${textError.message}`;
+                    apiResponseText = `Failed to read response: ${textError.message}`;
+                    responseText = apiResponseText;
                 }
 
                 if (!llmResponse.ok) {
                     console.log(`LLM API error: ${llmResponse.status}: ${llmResponse.statusText}`);
                     finalError = `LLM API Error ${llmResponse.status}: ${llmResponse.statusText}`;
+                    responseText = apiResponseText; // Store the error response
                 } else {
                     // Parse the LLM response
                     try {
-                        const llmData = JSON.parse(responseText);
+                        const llmData = JSON.parse(apiResponseText);
 
                         // Extract content from OpenAI-style response
                         let content = '';
@@ -277,6 +280,10 @@ export class LLMService {
                         } else {
                             throw new Error('Unexpected LLM response format');
                         }
+
+                        // Store the actual LLM content (SAPIENT or JSON) as the response text
+                        responseText = content;
+                        console.log('LLM message content:', content);
 
                         // Parse the JSON content from the LLM
                         // First, check if it's SAPIENT format
@@ -320,8 +327,10 @@ export class LLMService {
                         console.log('Failed to parse LLM response:', e);
                         responseData = {
                             error: 'Failed to parse LLM response',
-                            raw_response: responseText
+                            raw_response: apiResponseText
                         };
+                        // Keep the original content as responseText for history
+                        responseText = content || apiResponseText;
                     }
                 }
 
@@ -383,12 +392,12 @@ export class LLMService {
                 for (const [key, value] of Object.entries(responseData)) {
                     console.log(`Processing field: "${key}" with value:`, value, 'type:', typeof value, 'isArray:', Array.isArray(value));
 
-                    if (key !== 'reason' && Array.isArray(value) && value.length >= 1) {
+                    if (key !== 'summary' && Array.isArray(value) && value.length >= 1) {
                         fieldResults[key] = value;
                         hasActualFields = true;
                         console.log(`✓ Added field "${key}" to results:`, value);
                     } else {
-                        console.log(`✗ Skipped field "${key}" - reason: ${key === 'reason' ? 'is reason field' : !Array.isArray(value) ? 'not array' : 'array too short'}`);
+                        console.log(`✗ Skipped field "${key}" - reason: ${key === 'summary' ? 'is summary field' : !Array.isArray(value) ? 'not array' : 'array too short'}`);
                     }
                 }
             } else {
@@ -508,7 +517,7 @@ export class LLMService {
 
         // Process field results from the LLM response
         for (const [fieldName, fieldResult] of Object.entries(mainResponseData)) {
-            if (fieldName !== 'reason' && Array.isArray(fieldResult) && fieldResult.length >= 1) {
+            if (fieldName !== 'summary' && Array.isArray(fieldResult) && fieldResult.length >= 1) {
                 fieldResultsFound = true;
                 const result = fieldResult[0]; // boolean result
                 const probability = fieldResult.length > 1 ? fieldResult[1] : null;
@@ -766,11 +775,11 @@ export class LLMService {
             }
         }
 
-        // Preserve reason/summary field if it exists
-        if (rawResponseData.reason) {
-            normalized.reason = rawResponseData.reason;
-        } else if (rawResponseData.summary) {
-            normalized.reason = rawResponseData.summary;
+        // Preserve summary field if it exists (from reason or summary)
+        if (rawResponseData.summary) {
+            normalized.summary = rawResponseData.summary;
+        } else if (rawResponseData.reason) {
+            normalized.summary = rawResponseData.reason;
         }
 
         console.log('Final normalized response:', normalized);

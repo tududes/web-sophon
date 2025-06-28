@@ -1577,11 +1577,11 @@ function normalizeCloudLLMResponse(rawResponse, fields) {
         }
     }
 
-    // Preserve summary/reason
+    // Preserve summary field (from summary or reason)
     if (rawResponse.summary) {
-        normalized.reason = rawResponse.summary;
+        normalized.summary = rawResponse.summary;
     } else if (rawResponse.reason) {
-        normalized.reason = rawResponse.reason;
+        normalized.summary = rawResponse.reason;
     }
 
     console.log('Cloud runner final normalized response:', normalized);

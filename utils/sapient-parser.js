@@ -132,7 +132,6 @@ export class SAPIENTParser {
     extractEvaluationData(sapientMessage) {
         const normalized = {
             evaluation: {},
-            reason: '',
             summary: ''
         };
 
@@ -157,18 +156,26 @@ export class SAPIENTParser {
                 }
             } else if (block.type === 'DATA' && blockName === 'reasoning') {
                 // Some LLMs might put reasoning in a data block
-                normalized.reason = block.content.trim();
                 normalized.summary = block.content.trim();
             }
         }
 
         // The body often contains the reasoning/summary
-        if (!normalized.reason && sapientMessage.body) {
-            normalized.reason = sapientMessage.body;
+        if (!normalized.summary && sapientMessage.body) {
             normalized.summary = sapientMessage.body;
         }
 
-        return normalized;
+        // Convert evaluation object to our array format
+        const arrayFormat = {};
+        for (const [fieldName, value] of Object.entries(normalized.evaluation)) {
+            arrayFormat[fieldName] = value;
+        }
+
+        // Return in the expected format with summary
+        return {
+            ...arrayFormat,
+            summary: normalized.summary
+        };
     }
 }
 
