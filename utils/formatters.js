@@ -116,30 +116,37 @@ export const handleImageZoom = throttle(function (e) {
     const rect = img.getBoundingClientRect();
     const container = img.closest('.screenshot-container');
 
-    // Calculate mouse position relative to the IMAGE bounds
-    // This gives us precise mapping of mouse position to image content
+    // Calculate mouse position relative to the thumbnail image bounds
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // Convert to percentage coordinates (can go beyond 0-100% for edge panning)
+    // Map mouse position to percentage coordinates on the original image
+    // This creates a 1:1 mapping between mouse position on thumbnail and zoom area
+    // Mouse at 0% across thumbnail = show 0% area of original image
+    // Mouse at 100% across thumbnail = show 100% area of original image
     const x = (mouseX / rect.width) * 100;
     const y = (mouseY / rect.height) * 100;
 
     // Debug logging to see what's happening
     console.log('Zoom debug:', {
+        clientX: e.clientX.toFixed(1),
+        clientY: e.clientY.toFixed(1),
+        rectLeft: rect.left.toFixed(1),
+        rectTop: rect.top.toFixed(1),
         mouseX: mouseX.toFixed(1),
         mouseY: mouseY.toFixed(1),
         rectWidth: rect.width.toFixed(1),
         rectHeight: rect.height.toFixed(1),
         x: x.toFixed(1),
-        y: y.toFixed(1)
+        y: y.toFixed(1),
+        transformOrigin: `${x.toFixed(1)}% ${y.toFixed(1)}%`
     });
 
-    // Moderate zoom factor for good detail while maintaining usability
-    const zoomFactor = 2.8;
+    // Higher zoom factor to make panning effect more noticeable
+    const zoomFactor = 3.5;
 
     // Set transform origin to exact mouse position on the image
-    // This makes the zoom follow the mouse cursor precisely
+    // This creates a "magnifying glass" effect that follows the mouse
     img.style.transformOrigin = `${x}% ${y}%`;
     img.style.transform = `scale(${zoomFactor})`;
     img.style.zIndex = '9999';
@@ -178,6 +185,7 @@ export function resetImageZoom(e) {
     img.style.boxShadow = '';
     img.style.imageRendering = '';
     img.style.backfaceVisibility = '';
+    img.style.filter = ''; // Clear any filter effects
 
     // Reset container overflow
     const container = img.closest('.screenshot-container');
