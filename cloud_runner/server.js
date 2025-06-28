@@ -1488,30 +1488,72 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
             }
         }
 
-        try {
-            const parsedContent = JSON.parse(content);
-            // Normalize the response to ensure consistent format
-            finalResponse = normalizeCloudLLMResponse(parsedContent, fields);
-            console.log('Successfully parsed LLM response');
-        } catch (e) {
-            console.error('JSON parsing failed:', e.message);
-            console.error('Raw content length:', content.length);
-            console.error('Raw content preview:', content.substring(0, 200) + '...');
+        // Check if this is a SAPIENT response
+        if (content.includes('<<DATA:evaluation>>') && content.includes('<<END:evaluation>>')) {
+            console.log('Detected SAPIENT protocol response');
+            const sapientData = parseSAPIENTResponse(content);
 
-            // Return both the error and the raw content for debugging
+            // Convert SAPIENT response to our normalized format
             finalResponse = {
-                raw_content: content,
-                parse_error: e.message,
-                finish_reason: finishReason,
-                content_length: content.length,
-                truncated: finishReason === 'length'
+                evaluation: sapientData.evaluation,
+                reason: sapientData.reason,
+                summary: sapientData.reason // Include as summary too for compatibility
             };
+            console.log('Successfully parsed SAPIENT response');
+        } else {
+            // Try to parse as JSON (legacy format)
+            try {
+                const parsedContent = JSON.parse(content);
+                // Normalize the response to ensure consistent format
+                finalResponse = normalizeCloudLLMResponse(parsedContent, fields);
+                console.log('Successfully parsed JSON LLM response');
+            } catch (e) {
+                console.error('JSON parsing failed:', e.message);
+                console.error('Raw content length:', content.length);
+                console.error('Raw content preview:', content.substring(0, 200) + '...');
+
+                // Return both the error and the raw content for debugging
+                finalResponse = {
+                    raw_content: content,
+                    parse_error: e.message,
+                    finish_reason: finishReason,
+                    content_length: content.length,
+                    truncated: finishReason === 'length'
+                };
+            }
         }
     } else {
         finalResponse = responseData;
     }
 
     return { response: finalResponse, requestPayload: requestPayload };
+}
+
+// Parse SAPIENT protocol responses
+function parseSAPIENTResponse(content) {
+    const evaluation = {};
+    let reason = '';
+
+    // Extract evaluation data
+    const evalMatch = content.match(/<<DATA:evaluation>>([\s\S]*?)<<END:evaluation>>/);
+    if (evalMatch) {
+        const evalContent = evalMatch[1].trim();
+        // Parse JSON from the evaluation block
+        try {
+            const evalData = JSON.parse(evalContent);
+            Object.assign(evaluation, evalData);
+        } catch (e) {
+            console.error('Failed to parse evaluation data from SAPIENT response:', e);
+        }
+    }
+
+    // Extract reasoning
+    const reasonMatch = content.match(/<<DATA:reasoning>>([\s\S]*?)<<END:reasoning>>/);
+    if (reasonMatch) {
+        reason = reasonMatch[1].trim();
+    }
+
+    return { evaluation, reason };
 }
 
 // Normalize cloud LLM response to match local parsing logic

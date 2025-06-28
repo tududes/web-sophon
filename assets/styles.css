@@ -1239,6 +1239,32 @@ input:checked+.slider:hover {
     border-left: 3px solid var(--border-focus);
 }
 
+.history-reason-section {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin: var(--space-md) 0;
+    margin-bottom: var(--space-sm);
+}
+
+.history-reason-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-xs);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.history-reason-text {
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    font-style: italic;
+}
+
 .history-details {
     border-top: 1px solid var(--border-primary);
     padding-top: var(--space-md);

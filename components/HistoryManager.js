@@ -541,7 +541,7 @@ export class HistoryManager {
 
         // Handle different types of events with debug info
         let statusHtml = '';
-        console.log(`Rendering event ${event.id}: status=${event.status}, success=${event.success}, httpStatus=${event.httpStatus}, fields=${event.fields?.length || 0}`);
+        console.log(`Rendering event ${event.id}: status=${event.status}, success=${event.success}, httpStatus=${event.httpStatus}, fields=${event.fields?.length || 0}, reason="${event.reason}"`);
 
         if (event.status === 'pending') {
             statusHtml = `<span class="history-status pending">⏳ Waiting for response...</span>`;
@@ -564,6 +564,15 @@ export class HistoryManager {
           </div>
         `).join('') : '<div class="history-no-fields">No field evaluations</div>';
 
+        // Format the reason/summary with proper styling
+        console.log(`Event ${event.id} reason check: hasReason=${!!event.reason}, reasonText="${event.reason}"`);
+        const reasonHtml = event.reason ? `
+          <div class="history-reason-section">
+            <div class="history-reason-label">📝 Evaluation Summary:</div>
+            <div class="history-reason-text">${event.reason}</div>
+          </div>
+        ` : '';
+
         return `
           <div class="history-item ${unreadClass} ${errorClass} ${groupClass}" data-event-index="${index}" data-event-id="${event.id}">
             <div class="history-header">
@@ -579,7 +588,7 @@ export class HistoryManager {
             </div>
             ${statusHtml}
             <div class="history-fields">${fieldsHtml}</div>
-            ${event.reason ? `<div class="history-reason">${event.reason}</div>` : ''}
+            ${reasonHtml}
             <div class="history-details" style="display: none;">
               <div class="detail-item"><strong>URL:</strong> ${event.url}</div>
               <div class="detail-item"><strong>Time:</strong> ${new Date(event.timestamp).toLocaleString()}</div>

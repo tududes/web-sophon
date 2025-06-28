@@ -9,44 +9,7 @@ export class LLMService {
         this.userCancelledRequests = new Set(); // Track user-initiated cancellations
     }
 
-    // System prompt template for field evaluation
-    getSystemPrompt(fields, previousEvaluation = null) {
-        const fieldsJson = JSON.stringify(fields, null, 2);
 
-        let previousContext = '';
-        if (previousEvaluation && Object.keys(previousEvaluation).length > 0) {
-            const previousSummary = Object.entries(previousEvaluation)
-                .map(([fieldName, data]) => {
-                    const timestamp = new Date(data.timestamp).toLocaleString();
-                    return `  ${fieldName}: ${data.result ? 'TRUE' : 'FALSE'} (${Math.round(data.confidence * 100)}%) at ${timestamp}`;
-                })
-                .join('\n');
-
-            previousContext = `\nPREVIOUS EVALUATION CONTEXT:
-The following are results from the previous screenshot analysis:
-${previousSummary}
-
-Use this context to understand changes and patterns, but evaluate the current screenshot independently. Note any significant changes from previous results in your reasoning.`;
-        } else {
-            previousContext = '\nNO PREVIOUS EVALUATION - This is the first analysis for these fields.';
-        }
-
-        return `Analyze this screenshot and return JSON with your evaluation for each field.
-
-For each field, return: "field_name": [boolean_result, confidence_0_to_1]
-
-Fields to evaluate:
-${fieldsJson}${previousContext}
-
-Response format:
-{
-  "field_name": [true, 0.95],
-  "another_field": [false, 0.80],
-  "reason": "Brief explanation including any notable changes from previous evaluation"
-}
-
-Return only JSON.`;
-    }
 
     // Capture screenshot and send to LLM API
     async captureAndSend(tabId, domain, llmConfig, isManual = false, fields = null, refreshPage = false, captureDelay = 0, previousEvaluation = null) {
@@ -215,7 +178,7 @@ Return only JSON.`;
                             content: [
                                 {
                                     type: 'text',
-                                    text: 'Please analyze this screenshot according to the field criteria provided in the system prompt.'
+                                    text: 'Please analyze this screenshot according to the field criteria provided. Respond using the SAPIENT protocol format shown in the system prompt.'
                                 },
                                 {
                                     type: 'image_url',
@@ -315,31 +278,41 @@ Return only JSON.`;
                         }
 
                         // Parse the JSON content from the LLM
-                        // Remove markdown code blocks using simple string replacement
-                        let jsonContent = content
-                            .replaceAll("```json", "")
-                            .replaceAll("```", "")
-                            .trim();
+                        // First, check if it's SAPIENT format
+                        let parsedContent = this.parseSAPIENTResponse(content);
 
-                        console.log('Cleaned JSON content after removing markdown:', jsonContent);
+                        if (parsedContent) {
+                            console.log('Parsed SAPIENT response:', parsedContent);
+                            responseData = parsedContent;
+                        } else {
+                            // Fallback to legacy JSON parsing
+                            // Remove markdown code blocks using simple string replacement
+                            let jsonContent = content
+                                .replaceAll("```json", "")
+                                .replaceAll("```", "")
+                                .trim();
 
-                        try {
-                            const rawResponseData = JSON.parse(jsonContent);
-                            console.log('Raw parsed LLM response:', rawResponseData);
+                            console.log('Falling back to legacy JSON parsing');
+                            console.log('Cleaned JSON content after removing markdown:', jsonContent);
 
-                            // Normalize the response to handle various LLM formats
-                            responseData = this.normalizeFieldResults(rawResponseData, fields);
-                            console.log('Normalized LLM field results:', responseData);
-                        } catch (contentParseError) {
-                            console.log('Failed to parse LLM content as JSON:', contentParseError);
-                            console.log('Original content:', content);
-                            console.log('Attempted to parse:', jsonContent);
-                            responseData = {
-                                error: 'Failed to parse LLM response as JSON',
-                                raw_content: content,
-                                attempted_json: jsonContent,
-                                parse_error: contentParseError.message
-                            };
+                            try {
+                                const rawResponseData = JSON.parse(jsonContent);
+                                console.log('Raw parsed LLM response:', rawResponseData);
+
+                                // Normalize the response to handle various LLM formats
+                                responseData = this.normalizeFieldResults(rawResponseData, fields);
+                                console.log('Normalized LLM field results:', responseData);
+                            } catch (contentParseError) {
+                                console.log('Failed to parse LLM content as JSON:', contentParseError);
+                                console.log('Original content:', content);
+                                console.log('Attempted to parse:', jsonContent);
+                                responseData = {
+                                    error: 'Failed to parse LLM response',
+                                    raw_content: content,
+                                    attempted_json: jsonContent,
+                                    parse_error: contentParseError.message
+                                };
+                            }
                         }
                     } catch (e) {
                         parseError = e.message;
@@ -896,6 +869,79 @@ Return only JSON.`;
                 success: false,
                 error: errorMessage
             };
+        }
+    }
+
+    // Parse SAPIENT response
+    parseSAPIENTResponse(content) {
+        try {
+            // Check if content contains SAPIENT markers
+            if (!content.includes('=== SAPIENT/1.0 BEGIN ===') || !content.includes('=== SAPIENT/1.0 END ===')) {
+                return null;
+            }
+
+            console.log('Detected SAPIENT format response');
+
+            // Extract content between SAPIENT markers
+            const sapientMatch = content.match(/=== SAPIENT\/1\.0 BEGIN ===([\s\S]*?)=== SAPIENT\/1\.0 END ===/);
+            if (!sapientMatch) {
+                console.log('Failed to extract SAPIENT content');
+                return null;
+            }
+
+            const sapientContent = sapientMatch[1];
+
+            // Extract evaluation data
+            const evaluationMatch = sapientContent.match(/<<DATA:evaluation>>([\s\S]*?)<<END:evaluation>>/);
+            if (!evaluationMatch) {
+                console.log('No evaluation data block found in SAPIENT response');
+                return null;
+            }
+
+            const evaluationJson = evaluationMatch[1].trim();
+            let evaluationData;
+
+            try {
+                evaluationData = JSON.parse(evaluationJson);
+            } catch (e) {
+                console.error('Failed to parse evaluation data from SAPIENT response:', e);
+                return null;
+            }
+
+            // Extract natural language reasoning (everything after the data block)
+            const reasoningMatch = sapientContent.match(/<<END:evaluation>>([\s\S]*?)$/);
+            const reasoning = reasoningMatch ? reasoningMatch[1].trim() : '';
+
+            // Convert SAPIENT format to our expected format
+            const normalized = {};
+
+            // Process each field evaluation
+            for (const [fieldName, fieldData] of Object.entries(evaluationData)) {
+                if (fieldData && typeof fieldData === 'object' &&
+                    'result' in fieldData && 'confidence' in fieldData) {
+                    // Convert to our array format [boolean, probability]
+                    normalized[fieldName] = [
+                        fieldData.result,
+                        fieldData.confidence
+                    ];
+                    console.log(`SAPIENT field "${fieldName}": result=${fieldData.result}, confidence=${fieldData.confidence}`);
+                } else {
+                    console.warn(`SAPIENT field "${fieldName}" has invalid format:`, fieldData);
+                }
+            }
+
+            // Add the reasoning as the summary
+            if (reasoning) {
+                normalized.summary = reasoning;
+                console.log('SAPIENT reasoning extracted:', reasoning.substring(0, 100) + '...');
+            }
+
+            console.log('Successfully parsed SAPIENT response with', Object.keys(normalized).length - 1, 'fields');
+            return normalized;
+
+        } catch (error) {
+            console.error('Error parsing SAPIENT response:', error);
+            return null;
         }
     }
 } 

@@ -237,7 +237,14 @@ export class EventService {
             }
 
             event.hasTrueResult = hasTrueResult;
-            event.reason = results.reason || '';
+            event.reason = results.reason || results.summary || '';
+
+            console.log('EventService: Setting reason from results:', {
+                hasReason: !!results.reason,
+                hasSummary: !!results.summary,
+                reasonText: results.reason || results.summary,
+                resultsStructure: Object.keys(results)
+            });
 
             // Update unread count if has true result
             if (hasTrueResult && !event.read) {
@@ -246,7 +253,7 @@ export class EventService {
             }
         }
 
-        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}, source: ${originalSource} (preserved)`);
+        console.log(`Event ${eventId} updated with status: ${event.status}, httpStatus: ${httpStatus}, success: ${event.success}, source: ${originalSource} (preserved), reason: "${event.reason}"`);
 
         // Save updated events
         this.saveEventsToStorage();
