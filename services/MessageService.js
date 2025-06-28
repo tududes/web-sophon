@@ -582,8 +582,8 @@ export class MessageService {
         // Stop the sync process for this specific job to prevent conflicts
         console.log(`[Cloud] Stopping sync process for job ${jobId} to prevent polling conflicts`);
 
-        const pollInterval = 5000; // 5 seconds
-        const maxPolls = 60; // 5 minutes timeout
+        const pollInterval = 2000; // 2 seconds (faster polling for better UX)
+        const maxPolls = 150; // 5 minutes timeout (adjusted for faster polling)
         let pollCount = 0;
 
         const intervalId = setInterval(async () => {
@@ -719,10 +719,6 @@ export class MessageService {
                                 // Get the current event to preserve existing data
                                 const currentEvent = this.eventService.getEventById(eventId);
                                 console.log(`[Cloud] DEBUG 6: Got current event`);
-                                const mergedRequestData = currentEvent && currentEvent.request
-                                    ? { ...currentEvent.request, llmRequestPayload: latestResult.llmRequestPayload }
-                                    : { jobId: jobId, llmRequestPayload: latestResult.llmRequestPayload };
-                                console.log(`[Cloud] DEBUG 7: Merged request data`);
 
                                 // Use raw response if available, otherwise stringify the parsed response
                                 const responseText = latestResult.llmRawResponse || JSON.stringify(llmResponse);
@@ -744,30 +740,25 @@ export class MessageService {
 
                                 console.log(`[Cloud] Successfully determined domain: ${domain}`);
 
-                                // Track the event with all data including field webhooks
-                                console.log(`[Cloud] DEBUG 11: About to call trackEvent`);
-                                const eventData = this.eventService.trackEvent(
-                                    llmResponse.evaluation || llmResponse, // The LLM response evaluation
-                                    domain,
-                                    currentEvent ? currentEvent.url : `https://${domain}`, // Use original URL if available
-                                    true,
-                                    200,
-                                    null,
-                                    latestResult.screenshotData, // Pass screenshot data
-                                    {
-                                        jobId: jobId,
-                                        captureSettings: latestResult.captureSettings,
-                                        timestamp: latestResult.timestamp,
-                                        llmRequestPayload: latestResult.llmRequestPayload,
-                                        source: 'cloud_sync'
-                                    },
-                                    responseText,
+                                // Update the existing pending event instead of creating a new one
+                                console.log(`[Cloud] DEBUG 11: About to update existing event ${eventId}`);
+
+                                // Prepare the merged request data for the update
+                                const updatedRequestData = currentEvent && currentEvent.request
+                                    ? { ...currentEvent.request, llmRequestPayload: latestResult.llmRequestPayload }
+                                    : { jobId: jobId, llmRequestPayload: latestResult.llmRequestPayload };
+
+                                // Update the existing event with results
+                                this.eventService.updateEvent(
                                     eventId,
-                                    'completed',
-                                    'cloud',
-                                    latestResult.timestamp // Use server timestamp
+                                    llmResponse.evaluation || llmResponse, // The LLM response evaluation
+                                    200,
+                                    null, // No error
+                                    responseText,
+                                    latestResult.screenshotData, // Pass screenshot data
+                                    updatedRequestData
                                 );
-                                console.log(`[Cloud] DEBUG 12: trackEvent completed`);
+                                console.log(`[Cloud] DEBUG 12: updateEvent completed - updated existing event instead of creating new one`);
 
                                 // If the result includes field webhooks fired by cloud runner, add them to the event
                                 if (latestResult.fieldWebhooks && latestResult.fieldWebhooks.length > 0) {
@@ -798,7 +789,8 @@ export class MessageService {
                                     console.warn(`[Cloud] Failed to purge result for job ${jobId}:`, purgeError);
                                 }
                             } else {
-                                // No results available - preserve jobId in request
+                                // No results available - update existing event instead of creating new one
+                                console.log(`[Cloud] Job completed but no results available - updating existing event ${eventId}`);
                                 const currentEvent = this.eventService.getEventById(eventId);
                                 const preservedRequestData = currentEvent && currentEvent.request
                                     ? currentEvent.request
@@ -1492,8 +1484,8 @@ export class MessageService {
         this.currentlyPollingAuthJobId = jobId;
         console.log(`[AUTH] Starting background polling for auth job: ${jobId}`);
 
-        const pollInterval = 5000;
-        const maxPolls = 360; // 30 minutes timeout (increased from 5 minutes)
+        const pollInterval = 3000; // 3 seconds (faster auth polling)
+        const maxPolls = 600; // 30 minutes timeout (adjusted for faster polling)
         let pollCount = 0;
 
         this.authPollIntervalId = setInterval(async () => {
