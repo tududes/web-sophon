@@ -609,7 +609,7 @@ export class HistoryManager {
                     </div>
                   </div>
                   <div class="screenshot-container">
-                    <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (4x magnification with full quality)">
+                                            <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (2.5x magnification) - move mouse to pan">
                   </div>
                 </div>
               ` : ''}

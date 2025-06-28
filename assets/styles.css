@@ -2315,7 +2315,8 @@ input:checked+.slider:hover {
 }
 
 .history-screenshot-thumbnail:hover {
-    cursor: zoom-in;
+    cursor: move;
+    /* Change to move cursor to indicate panning capability */
     /* When zoomed, allow the image to overflow its container */
     max-width: none;
 }

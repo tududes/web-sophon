@@ -110,18 +110,26 @@ export const handleImageZoom = throttle(function (e) {
     // Add will-change for performance if not already set
     if (!img.style.willChange) {
         img.style.willChange = 'transform';
-        img.style.transition = 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
+        img.style.transition = 'transform 0.1s cubic-bezier(0.4, 0, 0.2, 1)';
     }
 
     const rect = img.getBoundingClientRect();
+    const container = img.closest('.screenshot-container');
 
-    // Calculate mouse position relative to image (more precise)
-    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    // Calculate mouse position relative to the container (not just the image)
+    // This allows for smoother panning across the entire viewport
+    const containerRect = container ? container.getBoundingClientRect() : rect;
 
-    // Set transform origin to mouse position and apply high zoom for fine print reading
+    // Use container coordinates for better panning experience
+    const x = Math.max(0, Math.min(100, ((e.clientX - containerRect.left) / containerRect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - containerRect.top) / containerRect.height) * 100));
+
+    // Reduced zoom factor for better usability (2.5x instead of 4x)
+    const zoomFactor = 2.5;
+
+    // Set transform origin to mouse position and apply moderate zoom
     img.style.transformOrigin = `${x}% ${y}%`;
-    img.style.transform = 'scale(4)'; // 4x zoom is sufficient with full quality images
+    img.style.transform = `scale(${zoomFactor})`;
     img.style.zIndex = '9999';
     img.style.position = 'relative';
     img.style.borderRadius = '4px';
@@ -132,7 +140,6 @@ export const handleImageZoom = throttle(function (e) {
     img.style.backfaceVisibility = 'hidden';
 
     // Ensure container doesn't clip the zoomed image
-    const container = img.closest('.screenshot-container');
     if (container) {
         container.style.overflow = 'visible';
         container.style.zIndex = '9998';
@@ -140,7 +147,7 @@ export const handleImageZoom = throttle(function (e) {
         container.dataset.originalMaxHeight = container.style.maxHeight;
         container.style.maxHeight = 'none';
     }
-}, 12); // ~80fps for smoother tracking
+}, 16); // ~60fps for smoother tracking
 
 // Reset image zoom
 export function resetImageZoom(e) {
