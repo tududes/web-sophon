@@ -1378,7 +1378,7 @@ async function processJob(jobId, jobData) {
                 };
             }
         }
-        const { response, requestPayload } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);
+        const { response, requestPayload, rawContent } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);
 
         // Add the new result to the job's history
         job.results.push({
@@ -1387,6 +1387,7 @@ async function processJob(jobId, jobData) {
             screenshotData: screenshotData,
             llmRequestPayload: { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) },
             llmResponse: response,
+            llmRawResponse: rawContent, // Store the raw SAPIENT response
             error: null,
             captureSettings: captureSettings // Store settings used for this capture
         });
@@ -1467,8 +1468,13 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
 
     const responseData = await response.json();
     let finalResponse;
+    let rawContent = ''; // Store the raw LLM response content
 
     if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
+        // Store the raw content BEFORE any processing
+        rawContent = responseData.choices[0].message.content;
+        console.log('[Cloud Runner] Raw LLM content:', rawContent);
+
         let content = responseData.choices[0].message.content.replace(/^```json\s*|```\s*$/g, '');
 
         // Check if response was truncated
@@ -1524,7 +1530,7 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
         finalResponse = responseData;
     }
 
-    return { response: finalResponse, requestPayload: requestPayload };
+    return { response: finalResponse, requestPayload: requestPayload, rawContent: rawContent };
 }
 
 
