@@ -688,6 +688,23 @@ export class MessageService {
                                 // Use the most recent result (should be the only one for a one-off job)
                                 const latestResult = results[results.length - 1];
                                 console.log(`[Cloud] DEBUG 3: Got latest result`);
+
+                                // Validate result structure before processing
+                                if (!latestResult) {
+                                    throw new Error('Latest result is null or undefined');
+                                }
+
+                                // Log detailed structure for debugging
+                                console.log(`[Cloud] Result structure validation:`, {
+                                    hasResultId: !!latestResult.resultId,
+                                    hasTimestamp: !!latestResult.timestamp,
+                                    hasScreenshotData: !!latestResult.screenshotData,
+                                    hasLlmResponse: !!latestResult.llmResponse,
+                                    hasLlmRawResponse: !!latestResult.llmRawResponse,
+                                    llmResponseType: typeof latestResult.llmResponse,
+                                    llmResponseKeys: latestResult.llmResponse ? Object.keys(latestResult.llmResponse) : []
+                                });
+
                                 const llmResponse = latestResult.llmResponse || {};
                                 console.log(`[Cloud] DEBUG 4: Got LLM response`);
 
