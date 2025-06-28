@@ -1384,7 +1384,7 @@ async function processJob(jobId, jobData) {
         // Fire field-level webhooks if response contains evaluation data
         let fieldWebhooks = [];
         if (response && response.evaluation) {
-            fieldWebhooks = await fireFieldWebhooks(jobId, domain, response, fields);
+            fieldWebhooks = await fireFieldWebhooks(jobId, job.domain, response, fields);
         }
 
         // Add the new result to the job's history
