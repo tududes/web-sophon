@@ -31,73 +31,72 @@ export function getSystemPrompt(fields, previousEvaluation) {
   }, {});
   const fieldsJson = JSON.stringify(fieldsObject, null, 2);
 
-  // Safely stringify previous evaluation context, if available.
+  // Generate unique trace ID
+  const traceId = `eval-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Build previous evaluation context if available
   let previousContext = '';
   if (previousEvaluation && previousEvaluation.results && Object.keys(previousEvaluation.results).length > 0) {
-    try {
-      const contextJson = JSON.stringify(previousEvaluation.results, null, 2);
-      previousContext = `
+    previousContext = `\n\n### Previous Evaluation Context\nThe following shows results from a previous evaluation. Use this to detect changes:\n`;
 
-You have been provided with the results of a previous evaluation for this same page.
-Use this as context to determine if the state has changed.
-
-<<DATA:previous_evaluation>>
-${contextJson}
-<<END:previous_evaluation>>
-
-Focus on detecting changes from this previous state. For example, if a field was 'false' and is now 'true', that is a significant change.
-`;
-    } catch (error) {
-      console.error('Could not stringify previous evaluation:', error);
+    for (const [fieldName, result] of Object.entries(previousEvaluation.results)) {
+      if (Array.isArray(result) && result.length >= 2) {
+        const [value, confidence] = result;
+        previousContext += `- "${fieldName}": ${value} (confidence: ${confidence})\n`;
+      }
     }
   }
 
-  return `You are a web page analysis expert using the SAPIENT protocol for structured communication. Your task is to evaluate a screenshot of a web page based on specific field criteria.
+  return `You are an AI assistant that communicates exclusively using the SAPIENT protocol. Your task is to analyze web page screenshots and evaluate specific boolean conditions.
 
-=== SAPIENT/1.0 BEGIN ===
-From: websophon-analyzer
-To: websophon-extension
-Type: field_evaluation
-Priority: normal
+## SAPIENT Communication Rules:
 
-Analyze the provided screenshot and evaluate each field according to its criteria.
+1. **Every message starts with**: \`::SAPIENT v:1.0 [headers]::\`
+   - Required headers: \`from:assistant to:user trace:[unique-id]\`
+   - Optional headers: \`ref:[previous-trace]\`, \`priority:normal|high|urgent\`, \`tags:tag1,tag2\`, \`type:response|notification|error\`
+   - Headers are space-separated on the same line
 
-Fields to evaluate:
-<<DATA:field_criteria>>
-${fieldsJson}
-<<END:field_criteria>>
-${previousContext}
-For each field, determine:
-1. Boolean result (true/false) - does the screenshot meet the criteria?
-2. Confidence level (0.0 to 1.0) - how certain are you?
+2. **Natural language body**:
+   - Write conversationally after the header line
+   - NO special formatting needed - just write naturally
+   - Line breaks, quotes, colons - all are safe to use
+   - Only rule: don't start a line with \`::\`
 
-Provide your evaluation in a DATA block, followed by a natural language explanation of your findings.
+3. **Structured data blocks** (when needed):
+   
+   ::DATA:block_name format:json::
+   {"your": "structured", "data": "here"}
+   ::END:block_name::
+   
+   - Supported formats: \`json\`, \`yaml\`, \`text\`, \`csv\`, \`xml\`
+   - Block names must be unique within the message
+   - Use descriptive names like \`evaluation\`, \`field_results\`, \`error_details\`
 
-Example response format:
-=== SAPIENT/1.0 BEGIN ===
-From: websophon-analyzer
-To: websophon-extension
-Type: field_evaluation_response
+4. **Every message ends with**: \`::END:SAPIENT::\`
 
-I've analyzed the screenshot for the requested fields. Here's what I found:
+## Your Task:
 
-<<DATA:evaluation>>
+Analyze the screenshot and evaluate these boolean conditions:
+
+${fieldsJson}${previousContext}
+
+## Required Response Format:
+
+::SAPIENT v:1.0 from:assistant to:user trace:${traceId} type:response tags:evaluation,screenshot::
+I've analyzed the screenshot for the requested fields. Let me provide a detailed evaluation.
+
+::DATA:evaluation format:json::
 {
-  "field_name_1": {
-    "result": true,
-    "confidence": 0.95
-  },
-  "field_name_2": {
-    "result": false,
-    "confidence": 0.90
-  }
+${fields.map(field => `  "${field.name}": {
+    "result": boolean_true_or_false,
+    "confidence": number_between_0_and_1
+  }`).join(',\n')}
 }
-<<END:evaluation>>
+::END:evaluation::
 
-The screenshot shows a trading chart with clear buy signals visible. The green TF indicator on the rightmost candle confirms the long entry condition is met, while the price position above the MATRIX trend line supports this evaluation. No short entry signals are present as the momentum indicators remain bullish.
+[Continue here with detailed natural language explanation of your analysis. Describe what you see in the screenshot and explain how each visual element led to your evaluation decisions. Be specific about UI elements, text, colors, positions, and any other relevant details that influenced your assessment.]
 
-=== SAPIENT/1.0 END ===
+::END:SAPIENT::
 
-Now analyze the provided screenshot:
-=== SAPIENT/1.0 END ===`;
+Remember: The body should contain natural, conversational explanation of your reasoning. The data block contains the structured results.`;
 } 

@@ -5,6 +5,7 @@ import puppeteer from 'puppeteer';
 import cors from 'cors';
 import crypto from 'crypto';
 import { getSystemPrompt } from './utils/prompt-formatters.js';
+import { parseSAPIENTResponse } from './utils/sapient-parser.js';
 
 const app = express();
 const port = process.env.PORT || 7113;
@@ -1489,16 +1490,12 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
         }
 
         // Check if this is a SAPIENT response
-        if (content.includes('<<DATA:evaluation>>') && content.includes('<<END:evaluation>>')) {
+        const sapientData = parseSAPIENTResponse(content);
+        if (sapientData) {
             console.log('Detected SAPIENT protocol response');
-            const sapientData = parseSAPIENTResponse(content);
 
-            // Convert SAPIENT response to our normalized format
-            finalResponse = {
-                evaluation: sapientData.evaluation,
-                reason: sapientData.reason,
-                summary: sapientData.reason // Include as summary too for compatibility
-            };
+            // The shared parser already returns normalized format
+            finalResponse = sapientData;
             console.log('Successfully parsed SAPIENT response');
         } else {
             // Try to parse as JSON (legacy format)
@@ -1529,32 +1526,7 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
     return { response: finalResponse, requestPayload: requestPayload };
 }
 
-// Parse SAPIENT protocol responses
-function parseSAPIENTResponse(content) {
-    const evaluation = {};
-    let reason = '';
 
-    // Extract evaluation data
-    const evalMatch = content.match(/<<DATA:evaluation>>([\s\S]*?)<<END:evaluation>>/);
-    if (evalMatch) {
-        const evalContent = evalMatch[1].trim();
-        // Parse JSON from the evaluation block
-        try {
-            const evalData = JSON.parse(evalContent);
-            Object.assign(evaluation, evalData);
-        } catch (e) {
-            console.error('Failed to parse evaluation data from SAPIENT response:', e);
-        }
-    }
-
-    // Extract reasoning
-    const reasonMatch = content.match(/<<DATA:reasoning>>([\s\S]*?)<<END:reasoning>>/);
-    if (reasonMatch) {
-        reason = reasonMatch[1].trim();
-    }
-
-    return { evaluation, reason };
-}
 
 // Normalize cloud LLM response to match local parsing logic
 function normalizeCloudLLMResponse(rawResponse, fields) {

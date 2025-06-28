@@ -1,5 +1,6 @@
 // LLM API service for field evaluation using multimodal models
 import { getSystemPrompt } from "../utils/prompt-formatters.js";
+import { parseSAPIENTResponse } from "../utils/sapient-parser.js";
 
 export class LLMService {
     constructor(captureService, eventService) {
@@ -279,7 +280,7 @@ export class LLMService {
 
                         // Parse the JSON content from the LLM
                         // First, check if it's SAPIENT format
-                        let parsedContent = this.parseSAPIENTResponse(content);
+                        let parsedContent = parseSAPIENTResponse(content);
 
                         if (parsedContent) {
                             console.log('Parsed SAPIENT response:', parsedContent);
@@ -872,76 +873,5 @@ export class LLMService {
         }
     }
 
-    // Parse SAPIENT response
-    parseSAPIENTResponse(content) {
-        try {
-            // Check if content contains SAPIENT markers
-            if (!content.includes('=== SAPIENT/1.0 BEGIN ===') || !content.includes('=== SAPIENT/1.0 END ===')) {
-                return null;
-            }
 
-            console.log('Detected SAPIENT format response');
-
-            // Extract content between SAPIENT markers
-            const sapientMatch = content.match(/=== SAPIENT\/1\.0 BEGIN ===([\s\S]*?)=== SAPIENT\/1\.0 END ===/);
-            if (!sapientMatch) {
-                console.log('Failed to extract SAPIENT content');
-                return null;
-            }
-
-            const sapientContent = sapientMatch[1];
-
-            // Extract evaluation data
-            const evaluationMatch = sapientContent.match(/<<DATA:evaluation>>([\s\S]*?)<<END:evaluation>>/);
-            if (!evaluationMatch) {
-                console.log('No evaluation data block found in SAPIENT response');
-                return null;
-            }
-
-            const evaluationJson = evaluationMatch[1].trim();
-            let evaluationData;
-
-            try {
-                evaluationData = JSON.parse(evaluationJson);
-            } catch (e) {
-                console.error('Failed to parse evaluation data from SAPIENT response:', e);
-                return null;
-            }
-
-            // Extract natural language reasoning (everything after the data block)
-            const reasoningMatch = sapientContent.match(/<<END:evaluation>>([\s\S]*?)$/);
-            const reasoning = reasoningMatch ? reasoningMatch[1].trim() : '';
-
-            // Convert SAPIENT format to our expected format
-            const normalized = {};
-
-            // Process each field evaluation
-            for (const [fieldName, fieldData] of Object.entries(evaluationData)) {
-                if (fieldData && typeof fieldData === 'object' &&
-                    'result' in fieldData && 'confidence' in fieldData) {
-                    // Convert to our array format [boolean, probability]
-                    normalized[fieldName] = [
-                        fieldData.result,
-                        fieldData.confidence
-                    ];
-                    console.log(`SAPIENT field "${fieldName}": result=${fieldData.result}, confidence=${fieldData.confidence}`);
-                } else {
-                    console.warn(`SAPIENT field "${fieldName}" has invalid format:`, fieldData);
-                }
-            }
-
-            // Add the reasoning as the summary
-            if (reasoning) {
-                normalized.summary = reasoning;
-                console.log('SAPIENT reasoning extracted:', reasoning.substring(0, 100) + '...');
-            }
-
-            console.log('Successfully parsed SAPIENT response with', Object.keys(normalized).length - 1, 'fields');
-            return normalized;
-
-        } catch (error) {
-            console.error('Error parsing SAPIENT response:', error);
-            return null;
-        }
-    }
 } 
