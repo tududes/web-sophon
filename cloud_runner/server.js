@@ -1536,7 +1536,7 @@ async function processJob(jobId, jobData) {
                     delete jobs[jobId];
                     jobDeletionTimeouts.delete(jobId);
                 }
-            }, 60000 * 5); // 5 minutes
+            }, 60000 * 15); // 15 minutes (increased from 5 to prevent race condition)
 
             // Store the timeout ID so we can cancel it if needed
             jobDeletionTimeouts.set(jobId, timeoutId);

@@ -579,6 +579,9 @@ export class MessageService {
         }
         this.currentlyPolling.add(jobId);
 
+        // Stop the sync process for this specific job to prevent conflicts
+        console.log(`[Cloud] Stopping sync process for job ${jobId} to prevent polling conflicts`);
+
         const pollInterval = 5000; // 5 seconds
         const maxPolls = 60; // 5 minutes timeout
         let pollCount = 0;
@@ -637,7 +640,7 @@ export class MessageService {
                 if (job.status === 'complete' || job.status === 'failed') {
                     clearInterval(intervalId);
                     this.currentlyPolling.delete(jobId);
-                    console.log(`[Cloud] Job ${jobId} finished with status: ${job.status}`);
+                    console.log(`[Cloud] Job ${jobId} finished with status: ${job.status}. Polling stopped.`);
 
                     if (job.status === 'failed') {
                         // Handle failed job - preserve jobId in request
@@ -892,6 +895,13 @@ export class MessageService {
         for (const key of jobKeys) {
             const jobId = allData[key];
             const domain = key.replace('cloud_job_', '');
+
+            // Skip jobs that are currently being polled by pollCloudJob to prevent conflicts
+            if (this.currentlyPolling.has(jobId)) {
+                console.log(`[Sync] Skipping job ${jobId} for domain ${domain} - currently being polled`);
+                continue;
+            }
+
             console.log(`[Sync] Syncing job ${jobId} for domain ${domain}...`);
 
             try {
