@@ -566,9 +566,9 @@ export class HistoryManager {
         `).join('') : '<div class="history-no-fields">No field evaluations</div>';
 
         // Format the summary with proper styling and make it collapsible
-        // Start expanded for unread events, collapsed for read events
+        // Always start collapsed by default to reduce visual clutter
         console.log(`Event ${event.id} summary check: hasSummary=${!!event.summary}, summaryText="${event.summary}"`);
-        const isInitiallyExpanded = event.hasTrueResult && !event.read;
+        const isInitiallyExpanded = false; // Always collapsed by default
         const summaryHtml = event.summary ? `
           <div class="history-reason-section collapsible ${isInitiallyExpanded ? 'expanded' : ''}">
             <div class="history-reason-header">
