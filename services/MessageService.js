@@ -6,8 +6,9 @@ export class MessageService {
         this.eventService = eventService;
         this.llmService = llmService;
         this.currentlyPolling = new Set(); // Track jobs being polled
-        this.currentlyPollingAuth = null; // Track auth job being polled
         this.syncIntervalId = null;
+        this.authPollIntervalId = null; // Use a dedicated interval ID for auth polling
+        this.currentlyPollingAuthJobId = null;
 
         // Cloud runner security configuration
         this.cloudSecurity = {
@@ -18,6 +19,7 @@ export class MessageService {
 
         this.setupMessageListener();
         this.resumePendingCloudJobs();
+        this.resumePendingAuthJob(); // Resume auth polling on startup
         this.startCloudSync(); // Start the new sync process
     }
 
@@ -32,7 +34,7 @@ export class MessageService {
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
                     'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
-                    'storeAuthToken'
+                    'storeAuthToken', 'startAuthPolling'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
@@ -53,7 +55,7 @@ export class MessageService {
             'ping': (req, sender, res) => res({ pong: true }),
             'startAuthPolling': (req, sender, res) => {
                 this.startAuthTokenPolling(req.jobId);
-                res({ success: true, jobId: req.jobId });
+                res({ success: true });
             },
             'stopAuthPolling': (req, sender, res) => {
                 this.stopAuthTokenPolling();
@@ -1034,26 +1036,7 @@ export class MessageService {
         }
     }
 
-
-
     // CAPTCHA and token management
-    async getCaptchaChallenge() {
-        try {
-            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
-
-            const response = await fetch(`${runnerEndpoint}/captcha/challenge`);
-            if (!response.ok) {
-                throw new Error(`Failed to get CAPTCHA challenge: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('[CAPTCHA] Error getting challenge:', error);
-            throw error;
-        }
-    }
-
     async verifyCaptchaAndGetToken(captchaResponse) {
         try {
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
@@ -1245,25 +1228,71 @@ export class MessageService {
         }
     }
 
-    // === AUTH TOKEN POLLING (Same pattern as cloud job polling) ===
+    // === AUTH TOKEN POLLING (Robust Implementation) ===
 
-    pollAuthToken(jobId) {
-        if (this.currentlyPollingAuth && this.currentlyPollingAuth === jobId) {
-            console.log(`[AUTH] Polling for job ${jobId} is already in progress.`);
+    async resumePendingAuthJob() {
+        try {
+            const { auth_job_id, auth_job_timestamp } = await chrome.storage.local.get(['auth_job_id', 'auth_job_timestamp']);
+
+            if (auth_job_id) {
+                const age = Date.now() - (auth_job_timestamp || 0);
+                // Only resume if the job is less than 30 minutes old
+                if (age < 30 * 60 * 1000) {
+                    console.log(`[AUTH] Resuming auth polling for job ${auth_job_id} (age: ${Math.round(age / 1000)}s)`);
+                    this.startAuthTokenPolling(auth_job_id);
+                } else {
+                    console.log(`[AUTH] Auth job ${auth_job_id} is too old, clearing`);
+                    await chrome.storage.local.remove(['auth_job_id', 'auth_job_timestamp']);
+                }
+            }
+        } catch (error) {
+            console.error('[AUTH] Error resuming auth job:', error);
+        }
+    }
+
+    stopAuthTokenPolling() {
+        if (this.authPollIntervalId) {
+            clearInterval(this.authPollIntervalId);
+            this.authPollIntervalId = null;
+            console.log(`[AUTH] Polling stopped for job ${this.currentlyPollingAuthJobId}.`);
+            this.currentlyPollingAuthJobId = null;
+        }
+    }
+
+    startAuthTokenPolling(jobId) {
+        // Prevent duplicate polling
+        if (this.currentlyPollingAuthJobId === jobId) {
+            console.log(`[AUTH] Already polling for job ${jobId}`);
             return;
         }
-        this.currentlyPollingAuth = jobId;
 
-        const pollInterval = 5000; // 5 seconds (same as cloud jobs)
-        const maxPolls = 60; // 5 minutes timeout (same as cloud jobs)
+        this.stopAuthTokenPolling(); // Stop any previous polling
+
+        if (!jobId) {
+            console.error('[AUTH] startAuthTokenPolling called with no jobId.');
+            return;
+        }
+
+        this.currentlyPollingAuthJobId = jobId;
+        console.log(`[AUTH] Starting background polling for auth job: ${jobId}`);
+
+        const pollInterval = 5000;
+        const maxPolls = 360; // 30 minutes timeout (increased from 5 minutes)
         let pollCount = 0;
 
-        const intervalId = setInterval(async () => {
-            if (pollCount >= maxPolls) {
-                clearInterval(intervalId);
-                this.currentlyPollingAuth = null;
-                console.log(`[AUTH] Job ${jobId} timed out after ${maxPolls * pollInterval / 1000} seconds.`);
+        this.authPollIntervalId = setInterval(async () => {
+            if (this.currentlyPollingAuthJobId !== jobId) {
+                clearInterval(this.authPollIntervalId);
+                return;
+            }
+
+            pollCount++;
+            if (pollCount > maxPolls) {
+                console.log(`[AUTH] Polling timed out for job ${jobId}.`);
+                // Clean up stored job ID
+                await chrome.storage.local.remove(['auth_job_id', 'auth_job_timestamp']);
                 this.sendToPopup({ action: 'authPollingTimeout' });
+                this.stopAuthTokenPolling();
                 return;
             }
 
@@ -1272,80 +1301,111 @@ export class MessageService {
                 const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
                 const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
 
+                console.log(`[AUTH] Polling attempt ${pollCount} for job ${jobId}`);
                 const response = await fetch(jobUrl);
 
                 if (response.ok) {
                     const result = await response.json();
-
                     if (result.success && result.token) {
-                        // Token found! Store it and notify popup
-                        clearInterval(intervalId);
-                        this.currentlyPollingAuth = null;
-                        console.log(`[AUTH] Job ${jobId} completed successfully`);
+                        console.log(`[AUTH] Token found for job ${jobId}!`);
+                        this.stopAuthTokenPolling();
 
+                        // Store the token
                         await this.storeAuthToken(result.token, result.expiresAt);
 
-                        // Get token stats to verify storage worked
-                        const tokenStats = await this.getTokenStats();
+                        // Clean up the auth job ID
+                        await chrome.storage.local.remove(['auth_job_id', 'auth_job_timestamp']);
 
-                        // Notify popup of successful authentication
-                        this.sendToPopup({
-                            action: 'authTokenDetected',
-                            tokenStats: tokenStats
-                        });
-
-                        // Close any auth tabs
+                        // Get token stats and notify popup if open
                         try {
-                            const tabs = await chrome.tabs.query({});
-                            const authTabs = tabs.filter(tab =>
-                                tab.url && tab.url.includes('runner.websophon.tududes.com/auth')
-                            );
-                            for (const tab of authTabs) {
-                                chrome.tabs.remove(tab.id);
-                            }
-                            console.log('[AUTH] Closed auth tabs after successful token retrieval');
-                        } catch (e) {
-                            console.log('[AUTH] Could not close auth tabs:', e);
+                            const tokenStats = await this.getTokenStats();
+                            this.sendToPopup({ action: 'authTokenDetected', tokenStats });
+                        } catch (statsError) {
+                            console.warn('[AUTH] Error getting token stats after auth:', statsError);
+                            this.sendToPopup({ action: 'authTokenDetected' });
                         }
+
+                        // Close the auth success tab if it's still open
+                        const tabs = await chrome.tabs.query({ url: `${runnerEndpoint}/auth-success*` });
+                        if (tabs.length > 0) {
+                            chrome.tabs.remove(tabs.map(t => t.id));
+                        }
+                    } else {
+                        console.log(`[AUTH] Job ${jobId} status: pending`);
                     }
-                } else if (response.status === 410) {
-                    // Job expired
-                    clearInterval(intervalId);
-                    this.currentlyPollingAuth = null;
-                    console.log(`[AUTH] Job ${jobId} expired`);
+                } else if (response.status === 404) {
+                    console.log(`[AUTH] Job ${jobId} not found, may have expired`);
+                    // Clean up and stop polling
+                    await chrome.storage.local.remove(['auth_job_id', 'auth_job_timestamp']);
                     this.sendToPopup({ action: 'authPollingTimeout' });
-                    return;
-                } else if (response.status !== 404) {
-                    // Some other error (not just "not found yet")
-                    clearInterval(intervalId);
-                    this.currentlyPollingAuth = null;
-                    console.error(`[AUTH] Job status check failed: ${response.status}`);
-                    this.sendToPopup({ action: 'authPollingTimeout' });
-                    return;
+                    this.stopAuthTokenPolling();
                 } else {
-                    // 404 means job not ready yet, keep polling
-                    console.log(`[AUTH] Job ${jobId} not ready yet, continuing to poll...`);
-                    pollCount++;
+                    console.error(`[AUTH] Server error ${response.status} polling job ${jobId}`);
                 }
             } catch (error) {
-                // Network error, keep polling for a while
-                console.warn(`[AUTH] Error polling job ${jobId}:`, error.message);
-                pollCount++;
+                console.warn(`[AUTH] Network error during poll ${pollCount} for job ${jobId}:`, error.message);
+                // Continue polling on network errors
             }
         }, pollInterval);
     }
 
-    startAuthTokenPolling(jobId = null) {
-        if (!jobId) {
-            console.warn('[AUTH] No job ID provided for polling');
-            return;
+    // CAPTCHA challenge method
+    async getCaptchaChallenge() {
+        try {
+            const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const challengeUrl = `${runnerEndpoint}/captcha/challenge`;
+
+            console.log('[CAPTCHA] Requesting challenge from:', challengeUrl);
+
+            const response = await fetch(challengeUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            console.log('[CAPTCHA] Response status:', response.status);
+            console.log('[CAPTCHA] Response headers:', [...response.headers.entries()]);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[CAPTCHA] Server error:', response.status, errorText);
+                throw new Error(`Server error (${response.status}): ${errorText}`);
+            }
+
+            // Get response as text first to debug
+            const responseText = await response.text();
+            console.log('[CAPTCHA] Raw response text:', responseText);
+
+            // Simple approach: just open the auth page with a generated job ID
+            // The cloud runner will handle the association when the CAPTCHA is completed
+            const jobId = `auth_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+            const captchaUrl = `${runnerEndpoint}/auth?jobId=${jobId}`;
+
+            console.log('[CAPTCHA] Using job ID:', jobId);
+            console.log('[CAPTCHA] Auth URL:', captchaUrl);
+
+            // Store the auth job ID for background polling
+            await chrome.storage.local.set({
+                'auth_job_id': jobId,
+                'auth_job_timestamp': Date.now()
+            });
+
+            // Start polling immediately
+            this.startAuthTokenPolling(jobId);
+
+            return {
+                success: true,
+                jobId: jobId,
+                captchaUrl: captchaUrl
+            };
+        } catch (error) {
+            console.error('[CAPTCHA] Error in getCaptchaChallenge:', error);
+            return {
+                success: false,
+                error: error.message || 'Failed to get CAPTCHA challenge'
+            };
         }
-        this.pollAuthToken(jobId);
     }
-
-    stopAuthTokenPolling() {
-        this.currentlyPollingAuth = null;
-    }
-
-
-} 
+}

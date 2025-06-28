@@ -589,32 +589,128 @@ class CleanPopupController {
 
     async openAuthenticationTab() {
         try {
-            this.showCaptchaMessage('Opening authentication page...', 'info');
+            this.showCaptchaMessage('Testing connection to cloud runner...', 'info');
 
-            // Generate a unique job ID for this authentication request
-            const jobId = 'auth_' + Date.now() + '_' + Math.random().toString(36).substring(7);
-
-            // Get the cloud runner URL for authentication
+            // First, test if we can reach the cloud runner at all
             const cloudRunnerUrl = this.elements.cloudRunnerUrl?.value || 'https://runner.websophon.tududes.com';
-            const authUrl = `${cloudRunnerUrl.replace(/\/$/, '')}/auth?jobId=${jobId}`;
+            const testUrl = `${cloudRunnerUrl.replace(/\/$/, '')}/health`;
 
-            // Open authentication tab
-            const tab = await chrome.tabs.create({
-                url: authUrl,
-                active: true
-            });
+            try {
+                // Try a simple health check first
+                const healthResponse = await fetch(testUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                console.log('[AUTH] Health check response:', healthResponse.status);
+            } catch (testError) {
+                console.error('[AUTH] Cannot reach cloud runner:', testError);
 
-            // Start background polling for this specific job ID
-            await this.sendMessageToBackground({
-                action: 'startAuthPolling',
-                jobId: jobId
-            });
+                // Provide helpful error messages
+                if (testError.message.includes('Failed to fetch')) {
+                    // Show manual authentication option
+                    this.showCaptchaError(`Cannot connect to cloud runner at ${cloudRunnerUrl}. Please check:`);
 
-            this.showCaptchaMessage(`Complete the CAPTCHA in the opened tab. Automatic detection in progress...`, 'info');
+                    // Add manual token input UI
+                    const captchaContainer = this.elements.captchaContainer;
+                    if (captchaContainer) {
+                        const manualAuthHtml = `
+                            <div class="manual-auth-section" style="margin-top: 15px; padding: 10px; border: 1px solid #444; border-radius: 5px;">
+                                <p style="margin-bottom: 10px; font-size: 12px;">
+                                    <strong>Troubleshooting:</strong><br>
+                                    1. Check your internet connection<br>
+                                    2. Verify the cloud runner URL is correct<br>
+                                    3. Try the default URL: https://runner.websophon.tududes.com<br>
+                                    4. If using a custom server, ensure CORS is properly configured
+                                </p>
+                                <p style="margin-top: 10px; font-size: 12px;">
+                                    <strong>Manual Authentication:</strong><br>
+                                    If automatic authentication fails, you can manually visit:<br>
+                                    <code style="background: #333; padding: 2px 5px; border-radius: 3px;">${cloudRunnerUrl}/auth</code><br>
+                                    Complete the CAPTCHA there and paste the token below:
+                                </p>
+                                <input type="text" id="manualTokenInput" placeholder="Paste authentication token here" style="width: 100%; margin-top: 10px; padding: 5px;">
+                                <button id="submitManualToken" style="margin-top: 5px;">Submit Token</button>
+                            </div>
+                        `;
+
+                        // Check if manual auth section already exists
+                        let manualSection = captchaContainer.querySelector('.manual-auth-section');
+                        if (!manualSection) {
+                            captchaContainer.insertAdjacentHTML('beforeend', manualAuthHtml);
+
+                            // Add event listener for manual token submission
+                            const submitBtn = captchaContainer.querySelector('#submitManualToken');
+                            const tokenInput = captchaContainer.querySelector('#manualTokenInput');
+
+                            submitBtn?.addEventListener('click', async () => {
+                                const token = tokenInput?.value.trim();
+                                if (token) {
+                                    try {
+                                        // Parse the token to get expiry
+                                        const tokenParts = token.split('.');
+                                        if (tokenParts.length === 3) {
+                                            const payload = JSON.parse(atob(tokenParts[1]));
+                                            const expiresAt = payload.exp * 1000; // Convert to milliseconds
+
+                                            await this.sendMessageToBackground({
+                                                action: 'storeAuthToken',
+                                                token: token,
+                                                expiresAt: expiresAt
+                                            });
+
+                                            this.showCaptchaMessage('✅ Token stored successfully!', 'success');
+                                            await this.loadTokenStatus();
+                                        } else {
+                                            throw new Error('Invalid token format');
+                                        }
+                                    } catch (error) {
+                                        this.showCaptchaError('Invalid token: ' + error.message);
+                                    }
+                                } else {
+                                    this.showCaptchaError('Please enter a token');
+                                }
+                            });
+                        }
+                    }
+
+                    return; // Don't continue with automatic flow
+                }
+            }
+
+            this.showCaptchaMessage('Getting authentication challenge...', 'info');
+
+            // Get CAPTCHA challenge from server (this will also start background polling)
+            const challengeResponse = await this.sendMessageToBackground({ action: 'getCaptchaChallenge' });
+
+            if (challengeResponse.success) {
+                const { captchaUrl, jobId } = challengeResponse;
+                console.log('[CAPTCHA] Opening authentication tab with job ID:', jobId);
+
+                // Open new tab with CAPTCHA page
+                const tab = await chrome.tabs.create({
+                    url: captchaUrl,
+                    active: true
+                });
+
+                // Polling is now started automatically in the background when getCaptchaChallenge is called
+                this.showCaptchaMessage('Complete the CAPTCHA in the opened tab. Automatic detection in progress...', 'info');
+            } else {
+                // If getCaptchaChallenge fails, show detailed error
+                console.error('[AUTH] getCaptchaChallenge failed:', challengeResponse.error);
+
+                if (challengeResponse.error.includes('Network error')) {
+                    this.showCaptchaError('Network error: Cannot reach cloud runner. Check your connection and try again.');
+                } else if (challengeResponse.error.includes('Server error')) {
+                    this.showCaptchaError(challengeResponse.error);
+                } else {
+                    this.showCaptchaError('Failed to get authentication challenge: ' + challengeResponse.error);
+                }
+            }
 
         } catch (error) {
             console.error('[AUTH] Error opening authentication tab:', error);
-            this.showCaptchaError('Error opening authentication: ' + error.message);
+            this.showCaptchaError(error.message);
         }
     }
 
