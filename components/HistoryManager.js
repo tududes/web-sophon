@@ -280,7 +280,7 @@ export class HistoryManager {
         }
     }
 
-    // Render history items with cloud job grouping
+    // Render history items as individual entries with cloud/local icons
     renderHistory() {
         const filteredEvents = this.showTrueOnly
             ? this.recentEvents.filter(e => e.hasTrueResult)
@@ -307,12 +307,9 @@ export class HistoryManager {
             return;
         }
 
-        // Group events for uniform display
-        const groupedEvents = this.groupEventsByJob(filteredEvents);
-
-        this.elements.historyContainer.innerHTML = groupedEvents.map((group, groupIndex) => {
-            // All events are now groups for consistent display
-            return this.renderJobGroup(group, groupIndex);
+        // Render each event as an individual item (no grouping)
+        this.elements.historyContainer.innerHTML = filteredEvents.map((event, index) => {
+            return this.renderIndividualEvent(event, index, false); // Not within a group
         }).join('');
 
         // Add click handlers after rendering
@@ -585,12 +582,12 @@ export class HistoryManager {
           <div class="history-item ${unreadClass} ${errorClass} ${groupClass}" data-event-index="${index}" data-event-id="${event.id}">
             <div class="history-header">
               <div class="history-header-left">
-                ${!isWithinGroup && event.source === 'cloud' ? '<span class="history-source-icon" title="Cloud Job">☁️</span>' : ''}
-                ${!isWithinGroup ? `<div class="history-domain">${event.domain}</div>` : ''}
+                <span class="history-source-icon" title="${event.source === 'cloud' ? 'Cloud Job' : 'Local Capture'}">${event.source === 'cloud' ? '☁️' : '🖥️'}</span>
+                <div class="history-domain">${event.domain}</div>
                 ${isWithinGroup ? `<div class="event-time-detail">${new Date(event.timestamp).toLocaleTimeString()}</div>` : ''}
               </div>
               <div class="history-header-right">
-                <div class="history-time">${isWithinGroup ? timeAgo : timeAgo}</div>
+                <div class="history-time">${timeAgo}</div>
                 <div class="history-header-caret">▶</div>
               </div>
             </div>
