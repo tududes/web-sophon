@@ -565,12 +565,19 @@ export class HistoryManager {
           </div>
         `).join('') : '<div class="history-no-fields">No field evaluations</div>';
 
-        // Format the summary with proper styling
+        // Format the summary with proper styling and make it collapsible
+        // Start expanded for unread events, collapsed for read events
         console.log(`Event ${event.id} summary check: hasSummary=${!!event.summary}, summaryText="${event.summary}"`);
+        const isInitiallyExpanded = event.hasTrueResult && !event.read;
         const summaryHtml = event.summary ? `
-          <div class="history-reason-section">
-            <div class="history-reason-label">📝 Evaluation Summary:</div>
-            <div class="history-reason-text">${event.summary}</div>
+          <div class="history-reason-section collapsible ${isInitiallyExpanded ? 'expanded' : ''}">
+            <div class="history-reason-header">
+              <span class="history-reason-label">📝 Evaluation Summary</span>
+              <span class="history-reason-caret">${isInitiallyExpanded ? '▼' : '▶'}</span>
+            </div>
+            <div class="history-reason-content" style="display: ${isInitiallyExpanded ? 'block' : 'none'};">
+              <div class="history-reason-text">${event.summary}</div>
+            </div>
           </div>
         ` : '';
 
@@ -722,7 +729,8 @@ export class HistoryManager {
                     e.target.closest('.json-display') ||
                     e.target.closest('.copy-data-btn') ||
                     e.target.closest('.download-screenshot-btn') ||
-                    e.target.closest('.cancel-request-btn')) {
+                    e.target.closest('.cancel-request-btn') ||
+                    e.target.closest('.history-reason-section')) {
                     return;
                 }
 
@@ -731,6 +739,28 @@ export class HistoryManager {
                     const isExpanded = details.style.display !== 'none';
                     details.style.display = isExpanded ? 'none' : 'block';
                     this.classList.toggle('expanded', !isExpanded);
+                }
+            });
+        });
+
+        // Add click handlers for collapsible evaluation summaries
+        document.querySelectorAll('.history-reason-header').forEach(header => {
+            header.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const section = this.closest('.history-reason-section');
+                const content = section.querySelector('.history-reason-content');
+                const caret = this.querySelector('.history-reason-caret');
+
+                const isExpanded = section.classList.contains('expanded');
+
+                if (!isExpanded) {
+                    content.style.display = 'block';
+                    section.classList.add('expanded');
+                    if (caret) caret.textContent = '▼';
+                } else {
+                    content.style.display = 'none';
+                    section.classList.remove('expanded');
+                    if (caret) caret.textContent = '▶';
                 }
             });
         });

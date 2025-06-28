@@ -1243,19 +1243,47 @@ input:checked+.slider:hover {
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-md);
-    padding: var(--space-md);
     margin: var(--space-md) 0;
     margin-bottom: var(--space-sm);
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.history-reason-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.history-reason-header:hover {
+    background-color: var(--hover-light);
 }
 
 .history-reason-label {
     font-weight: 600;
     color: var(--text-primary);
     font-size: var(--text-sm);
-    margin-bottom: var(--space-xs);
     display: flex;
     align-items: center;
     gap: var(--space-xs);
+}
+
+.history-reason-caret {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    transition: transform 0.2s ease;
+}
+
+.history-reason-section.expanded .history-reason-caret {
+    transform: rotate(90deg);
+}
+
+.history-reason-content {
+    padding: 0 var(--space-md) var(--space-md) var(--space-md);
+    transition: all 0.2s ease;
 }
 
 .history-reason-text {
@@ -1263,6 +1291,18 @@ input:checked+.slider:hover {
     font-size: var(--text-sm);
     line-height: 1.5;
     font-style: italic;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .history-details {
