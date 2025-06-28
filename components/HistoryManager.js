@@ -599,8 +599,6 @@ export class HistoryManager {
             ${summaryHtml}
             <div class="history-details" style="display: none;">
               <div class="detail-item"><strong>URL:</strong> ${event.url}</div>
-              <div class="detail-item"><strong>Time:</strong> ${new Date(event.timestamp).toLocaleString()}</div>
-              ${event.httpStatus ? `<div class="detail-item"><strong>HTTP Status:</strong> ${event.httpStatus}</div>` : ''}
               ${event.error ? `<div class="detail-item"><strong>Error:</strong> ${event.error}</div>` : ''}
               
               ${this.renderPreviousEvaluation(event)}
@@ -614,7 +612,7 @@ export class HistoryManager {
                     </div>
                   </div>
                   <div class="screenshot-container">
-                    <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (400% magnification for fine print reading)">
+                    <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (4x magnification with full quality)">
                   </div>
                 </div>
               ` : ''}

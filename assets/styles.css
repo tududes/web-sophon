@@ -2286,19 +2286,29 @@ input:checked+.slider:hover {
     background: #222;
     border: 1px solid #444;
     width: 100%;
+    max-height: 300px;
+    /* Limit initial display height */
 }
 
 .history-screenshot-thumbnail {
-    width: 100%;
+    /* Don't force width to 100% - let image load at natural size */
+    max-width: 100%;
     height: auto;
     display: block;
     cursor: zoom-in;
     transition: transform 0.1s ease-out;
     transform-origin: center;
+    /* Use object-fit to ensure proper scaling without quality loss */
+    object-fit: contain;
+    /* Ensure high-quality rendering */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
 }
 
 .history-screenshot-thumbnail:hover {
     cursor: zoom-in;
+    /* When zoomed, allow the image to overflow its container */
+    max-width: none;
 }
 
 /* Enhanced Data Section Headers */

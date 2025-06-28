@@ -674,12 +674,25 @@ export class MessageService {
                                     ? { ...currentEvent.request, llmRequestPayload: latestResult.llmRequestPayload }
                                     : { jobId: jobId, llmRequestPayload: latestResult.llmRequestPayload };
 
+                                // For cloud jobs, reconstruct a SAPIENT-like response if we have evaluation data
+                                let responseText = JSON.stringify(llmResponse);
+                                if (llmResponse.evaluation && llmResponse.summary) {
+                                    // Reconstruct SAPIENT format from parsed data
+                                    responseText = `::SAPIENT v:1.0 from:cloud-llm to:websophon::
+${llmResponse.summary}
+
+::DATA:response format:json::
+${JSON.stringify(llmResponse.evaluation, null, 2)}
+::END:response::
+::END:SAPIENT::`;
+                                }
+
                                 this.eventService.updateEvent(
                                     eventId,
                                     llmResponse.evaluation || llmResponse, // The LLM response
                                     200,
                                     null,
-                                    JSON.stringify(llmResponse),
+                                    responseText,
                                     latestResult.screenshotData, // Include screenshot
                                     mergedRequestData // Preserve jobId while adding LLM request payload
                                 );
@@ -866,6 +879,19 @@ export class MessageService {
                                 evaluationKeys: llmResponse.evaluation ? Object.keys(llmResponse.evaluation) : []
                             });
 
+                            // For cloud jobs, reconstruct a SAPIENT-like response if we have evaluation data
+                            let responseText = JSON.stringify(llmResponse);
+                            if (llmResponse.evaluation && llmResponse.summary) {
+                                // Reconstruct SAPIENT format from parsed data
+                                responseText = `::SAPIENT v:1.0 from:cloud-llm to:websophon::
+${llmResponse.summary}
+
+::DATA:response format:json::
+${JSON.stringify(llmResponse.evaluation, null, 2)}
+::END:response::
+::END:SAPIENT::`;
+                            }
+
                             this.eventService.trackEvent(
                                 llmResponse.evaluation || llmResponse, // The LLM response evaluation
                                 domain,
@@ -881,7 +907,7 @@ export class MessageService {
                                     llmRequestPayload: result.llmRequestPayload,
                                     source: 'cloud_sync'
                                 },
-                                JSON.stringify(llmResponse),
+                                responseText,
                                 eventId,
                                 'completed',
                                 'cloud',

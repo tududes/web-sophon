@@ -27,12 +27,23 @@ export function getTimeAgo(date) {
 export function formatResponseData(responseText) {
     if (!responseText) return '<div class="no-response">No response data</div>';
 
+    // Check if this is a SAPIENT protocol response
+    if (responseText.includes('::SAPIENT v:') && responseText.includes('::END:SAPIENT::')) {
+        // Display SAPIENT response as-is without warning
+        return `
+            <div class="raw-response-container">
+                <div class="raw-response-note">📝 SAPIENT Protocol Response</div>
+                <pre class="raw-response">${responseText}</pre>
+            </div>
+        `;
+    }
+
     try {
         // Try to parse as JSON
         const jsonData = JSON.parse(responseText);
         return `<pre class="json-display formatted">${JSON.stringify(jsonData, null, 2)}</pre>`;
     } catch (e) {
-        // Not valid JSON, show as raw text with better formatting
+        // Not valid JSON, show as raw text with warning
         return `
             <div class="raw-response-container">
                 <div class="raw-response-note">⚠️ Raw response (not valid JSON)</div>
@@ -91,7 +102,7 @@ export const handleImageZoom = throttle(function (e) {
     // Add will-change for performance if not already set
     if (!img.style.willChange) {
         img.style.willChange = 'transform';
-        img.style.transition = 'transform 0.1s ease-out';
+        img.style.transition = 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
     }
 
     const rect = img.getBoundingClientRect();
@@ -102,17 +113,24 @@ export const handleImageZoom = throttle(function (e) {
 
     // Set transform origin to mouse position and apply high zoom for fine print reading
     img.style.transformOrigin = `${x}% ${y}%`;
-    img.style.transform = 'scale(6)'; // 6x zoom for reading fine print
+    img.style.transform = 'scale(4)'; // 4x zoom is sufficient with full quality images
     img.style.zIndex = '9999';
     img.style.position = 'relative';
     img.style.borderRadius = '4px';
-    img.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
+    img.style.boxShadow = '0 12px 48px rgba(0,0,0,0.4)';
+
+    // Ensure crisp rendering during zoom
+    img.style.imageRendering = 'crisp-edges';
+    img.style.backfaceVisibility = 'hidden';
 
     // Ensure container doesn't clip the zoomed image
     const container = img.closest('.screenshot-container');
     if (container) {
         container.style.overflow = 'visible';
         container.style.zIndex = '9998';
+        // Temporarily remove max-height constraint during zoom
+        container.dataset.originalMaxHeight = container.style.maxHeight;
+        container.style.maxHeight = 'none';
     }
 }, 12); // ~80fps for smoother tracking
 
@@ -128,11 +146,18 @@ export function resetImageZoom(e) {
     img.style.transition = '';
     img.style.borderRadius = '';
     img.style.boxShadow = '';
+    img.style.imageRendering = '';
+    img.style.backfaceVisibility = '';
 
     // Reset container overflow
     const container = img.closest('.screenshot-container');
     if (container) {
         container.style.overflow = '';
         container.style.zIndex = '';
+        // Restore original max-height
+        if (container.dataset.originalMaxHeight) {
+            container.style.maxHeight = container.dataset.originalMaxHeight;
+            delete container.dataset.originalMaxHeight;
+        }
     }
 } 
