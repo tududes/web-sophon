@@ -110,24 +110,36 @@ export const handleImageZoom = throttle(function (e) {
     // Add will-change for performance if not already set
     if (!img.style.willChange) {
         img.style.willChange = 'transform';
-        img.style.transition = 'transform 0.1s cubic-bezier(0.4, 0, 0.2, 1)';
+        img.style.transition = 'none'; // Remove transition for instant following
     }
 
     const rect = img.getBoundingClientRect();
     const container = img.closest('.screenshot-container');
 
-    // Calculate mouse position relative to the container (not just the image)
-    // This allows for smoother panning across the entire viewport
-    const containerRect = container ? container.getBoundingClientRect() : rect;
+    // Calculate mouse position relative to the IMAGE bounds
+    // This gives us precise mapping of mouse position to image content
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
-    // Use container coordinates for better panning experience
-    const x = Math.max(0, Math.min(100, ((e.clientX - containerRect.left) / containerRect.width) * 100));
-    const y = Math.max(0, Math.min(100, ((e.clientY - containerRect.top) / containerRect.height) * 100));
+    // Convert to percentage coordinates (can go beyond 0-100% for edge panning)
+    const x = (mouseX / rect.width) * 100;
+    const y = (mouseY / rect.height) * 100;
 
-    // Reduced zoom factor for better usability (2.5x instead of 4x)
-    const zoomFactor = 2.5;
+    // Debug logging to see what's happening
+    console.log('Zoom debug:', {
+        mouseX: mouseX.toFixed(1),
+        mouseY: mouseY.toFixed(1),
+        rectWidth: rect.width.toFixed(1),
+        rectHeight: rect.height.toFixed(1),
+        x: x.toFixed(1),
+        y: y.toFixed(1)
+    });
 
-    // Set transform origin to mouse position and apply moderate zoom
+    // Moderate zoom factor for good detail while maintaining usability
+    const zoomFactor = 2.8;
+
+    // Set transform origin to exact mouse position on the image
+    // This makes the zoom follow the mouse cursor precisely
     img.style.transformOrigin = `${x}% ${y}%`;
     img.style.transform = `scale(${zoomFactor})`;
     img.style.zIndex = '9999';
@@ -143,15 +155,18 @@ export const handleImageZoom = throttle(function (e) {
     if (container) {
         container.style.overflow = 'visible';
         container.style.zIndex = '9998';
+        container.style.position = 'relative';
         // Temporarily remove max-height constraint during zoom
-        container.dataset.originalMaxHeight = container.style.maxHeight;
+        container.dataset.originalMaxHeight = container.style.maxHeight || '';
         container.style.maxHeight = 'none';
     }
-}, 16); // ~60fps for smoother tracking
+}, 8); // Higher frequency for real-time panning feel
 
 // Reset image zoom
 export function resetImageZoom(e) {
     const img = e.target;
+
+    console.log('Resetting zoom for image');
 
     img.style.transform = 'scale(1)';
     img.style.zIndex = '';
@@ -169,8 +184,9 @@ export function resetImageZoom(e) {
     if (container) {
         container.style.overflow = '';
         container.style.zIndex = '';
+        container.style.position = '';
         // Restore original max-height
-        if (container.dataset.originalMaxHeight) {
+        if (container.dataset.originalMaxHeight !== undefined) {
             container.style.maxHeight = container.dataset.originalMaxHeight;
             delete container.dataset.originalMaxHeight;
         }

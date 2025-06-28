@@ -2297,6 +2297,8 @@ input:checked+.slider:hover {
     width: 100%;
     max-height: 300px;
     /* Limit initial display height */
+    /* Ensure container supports zoomed content */
+    contain: layout;
 }
 
 .history-screenshot-thumbnail {
@@ -2305,13 +2307,16 @@ input:checked+.slider:hover {
     height: auto;
     display: block;
     cursor: zoom-in;
-    transition: transform 0.1s ease-out;
+    transition: none;
+    /* Removed for instant zoom following */
     transform-origin: center;
     /* Use object-fit to ensure proper scaling without quality loss */
     object-fit: contain;
     /* Ensure high-quality rendering */
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
+    /* Enable smooth panning during zoom */
+    backface-visibility: hidden;
 }
 
 .history-screenshot-thumbnail:hover {
