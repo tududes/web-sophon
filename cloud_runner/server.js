@@ -42,6 +42,7 @@ const authTokens = new Map(); // token -> { clientId, expiresAt, quotas, created
 const clientMetrics = new Map(); // clientId -> { requests: [], lastSeen: timestamp }
 const blockedIPs = new Set();
 const blockedClients = new Set();
+const jobDeletionTimeouts = new Map(); // Track deletion timeouts for jobs
 
 // Token and quota management
 class TokenManager {
@@ -85,14 +86,18 @@ class TokenManager {
     validateToken(token) {
         const tokenData = this.tokens.get(token);
         if (!tokenData) {
+            console.log(`[TOKEN] Validation failed - token not found: ${token.substring(0, 16)}...`);
+            console.log(`[TOKEN] Available tokens: ${Array.from(this.tokens.keys()).map(t => t.substring(0, 16) + '...').join(', ')}`);
             return { valid: false, reason: 'Token not found' };
         }
 
         if (Date.now() > tokenData.expiresAt) {
+            console.log(`[TOKEN] Token expired: ${token.substring(0, 16)}... (expired ${new Date(tokenData.expiresAt).toISOString()})`);
             this.tokens.delete(token);
             return { valid: false, reason: 'Token expired' };
         }
 
+        console.log(`[TOKEN] Token validated successfully: ${token.substring(0, 16)}... (expires ${new Date(tokenData.expiresAt).toISOString()})`);
         return { valid: true, data: tokenData };
     }
 
@@ -1115,6 +1120,13 @@ app.post('/job', requireValidToken, (req, res) => {
             return res.status(403).json({ error: 'Unauthorized to modify this job' });
         }
 
+        // Cancel any pending deletion timeout for this job
+        if (jobDeletionTimeouts.has(jobId)) {
+            clearTimeout(jobDeletionTimeouts.get(jobId));
+            jobDeletionTimeouts.delete(jobId);
+            console.log(`[${jobId}] Cancelled pending deletion due to job update`);
+        }
+
         // Update existing job
         const job = jobs[jobId];
         const wasRecurring = !!job.interval;
@@ -1169,7 +1181,7 @@ app.get('/job/:id', requireValidToken, (req, res) => {
         return res.status(404).json({ error: 'Job not found' });
     }
 
-    // Security: Only allow the token owner to view their job
+    // Security: Only allow the token owner to access their job
     if (job.authToken !== req.authToken) {
         console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to access job ${jobId} owned by different token`);
         return res.status(403).json({ error: 'Unauthorized to access this job' });
@@ -1218,6 +1230,12 @@ app.delete('/job/:id', requireValidToken, (req, res) => {
         tokenManager.updateQuotas(req.authToken, { type: 'finish_manual' });
     }
 
+    // Cancel any pending deletion timeout
+    if (jobDeletionTimeouts.has(jobId)) {
+        clearTimeout(jobDeletionTimeouts.get(jobId));
+        jobDeletionTimeouts.delete(jobId);
+    }
+
     delete jobs[jobId];
     console.log(`[${jobId}] Job deleted by ${req.clientId}, quotas updated.`);
     res.status(200).json({ message: 'Job deleted successfully.' });
@@ -1229,21 +1247,71 @@ app.delete('/job/:id', requireValidToken, (req, res) => {
  */
 app.get('/job/:id/results', requireValidToken, (req, res) => {
     const jobId = req.params.id;
-    const job = jobs[jobId];
-    if (!job) {
-        return res.status(404).json({ error: 'Job not found' });
-    }
 
-    // Security: Only allow the token owner to access their job results
-    if (job.authToken !== req.authToken) {
-        console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to access results for job ${jobId} owned by different token`);
-        return res.status(403).json({ error: 'Unauthorized to access this job' });
-    }
+    try {
+        console.log(`[RESULTS] Starting results fetch for job ${jobId} by client ${req.clientId}`);
 
-    // Limit results returned to prevent memory issues
-    const results = job.results.slice(-SECURITY_CONFIG.MAX_RESULTS_PER_JOB);
-    console.log(`[${jobId}] Fetching ${results.length} results for ${req.clientId}.`);
-    res.status(200).json({ results: results });
+        const job = jobs[jobId];
+        console.log(`[RESULTS] Job exists: ${!!job}`);
+
+        if (!job) {
+            console.log(`[RESULTS] Job ${jobId} not found. Available jobs: ${Object.keys(jobs)}`);
+            return res.status(404).json({ error: 'Job not found' });
+        }
+
+        console.log(`[RESULTS] Job security check...`);
+        // Security: Only allow the token owner to access their job results
+        if (job.authToken !== req.authToken) {
+            console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to access job ${jobId} owned by different token`);
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        console.log(`[RESULTS] Job ${jobId} has ${job.results.length} total results`);
+
+        console.log(`[RESULTS] Filtering results...`);
+        // Filter results to only include those not yet retrieved by this client
+        const resultsToReturn = job.results.filter(r => !r.retrievedBy.includes(req.clientId));
+
+        console.log(`[RESULTS] ${resultsToReturn.length} new results for client ${req.clientId}`);
+
+        if (resultsToReturn.length > 0) {
+            console.log(`[${jobId}] Fetching ${resultsToReturn.length} new results for ${req.clientId}.`);
+
+            console.log(`[RESULTS] Marking results as retrieved...`);
+            // Mark these results as retrieved for this client
+            resultsToReturn.forEach(r => {
+                const resultInJob = job.results.find(br => br.resultId === r.resultId);
+                if (resultInJob) {
+                    resultInJob.retrievedBy.push(req.clientId);
+                }
+            });
+
+            console.log(`[RESULTS] Preparing response payload...`);
+            const responsePayload = { results: resultsToReturn };
+
+            console.log(`[${jobId}] Sending results payload to ${req.clientId}:`);
+            try {
+                console.log(JSON.stringify(responsePayload, null, 2));
+            } catch (jsonError) {
+                console.error(`[RESULTS] JSON stringify error:`, jsonError);
+                console.log(`[RESULTS] Payload structure:`, typeof responsePayload, Object.keys(responsePayload));
+                console.log(`[RESULTS] Results array length:`, resultsToReturn.length);
+            }
+
+            console.log(`[RESULTS] Sending response...`);
+            res.status(200).json(responsePayload);
+        } else {
+            // No new results for this client
+            console.log(`[RESULTS] No new results for client ${req.clientId}, sending empty array`);
+            res.status(200).json({ results: [] });
+        }
+
+        console.log(`[RESULTS] Results endpoint completed successfully for job ${jobId}`);
+    } catch (error) {
+        console.error(`[RESULTS] ERROR in results endpoint for job ${jobId}:`, error);
+        console.error(`[RESULTS] Error stack:`, error.stack);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 /**
@@ -1384,7 +1452,32 @@ async function processJob(jobId, jobData) {
         // Fire field-level webhooks if response contains evaluation data
         let fieldWebhooks = [];
         if (response && response.evaluation) {
-            fieldWebhooks = await fireFieldWebhooks(jobId, job.domain, response, fields);
+            try {
+                console.log(`[${jobId}] About to fire webhooks with domain: ${job.domain}`);
+                fieldWebhooks = await fireFieldWebhooks(jobId, job.domain, response, fields);
+                console.log(`[${jobId}] Webhooks fired successfully, results: ${fieldWebhooks.length} webhooks`);
+            } catch (webhookError) {
+                console.error(`[${jobId}] Error firing webhooks:`, webhookError);
+                console.error(`[${jobId}] Webhook error stack:`, webhookError.stack);
+                // Don't fail the job for webhook errors, just log them and continue
+                fieldWebhooks = [{
+                    fieldName: 'webhook_error',
+                    error: `Webhook firing failed: ${webhookError.message}`,
+                    success: false,
+                    request: null,
+                    response: null,
+                    httpStatus: null
+                }];
+            }
+        } else {
+            console.log(`[${jobId}] No evaluation data found, skipping webhook firing`);
+        }
+
+        // Add webhook results to the SAPIENT response if present
+        if (fieldWebhooks.length > 0) {
+            if (!response.webhooks) {
+                response.webhooks = fieldWebhooks;
+            }
         }
 
         // Add the new result to the job's history
@@ -1393,11 +1486,11 @@ async function processJob(jobId, jobData) {
             timestamp: new Date().toISOString(),
             screenshotData: screenshotData,
             llmRequestPayload: { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) },
-            llmResponse: response,
+            llmResponse: response, // This now includes webhook results
             llmRawResponse: rawContent, // Store the raw SAPIENT response
             error: null,
             captureSettings: captureSettings, // Store settings used for this capture
-            fieldWebhooks: fieldWebhooks // Store webhook results
+            retrievedBy: [] // Initialize retrievedBy array
         });
 
         job.status = job.interval ? 'idle' : 'complete'; // Reset to idle for next interval
@@ -1437,12 +1530,16 @@ async function processJob(jobId, jobData) {
         }
         // If it was a one-off job that's done, clean it up after a while
         if (job && !job.interval) {
-            setTimeout(() => {
+            const timeoutId = setTimeout(() => {
                 if (jobs[jobId]) {
                     console.log(`[${jobId}] Deleting completed one-off job.`);
                     delete jobs[jobId];
+                    jobDeletionTimeouts.delete(jobId);
                 }
             }, 60000 * 5); // 5 minutes
+
+            // Store the timeout ID so we can cancel it if needed
+            jobDeletionTimeouts.set(jobId, timeoutId);
         }
     }
 }
@@ -1639,6 +1736,17 @@ function cleanup() {
 
 // Run cleanup every 10 minutes
 setInterval(cleanup, 10 * 60 * 1000);
+
+// Global error handlers
+process.on('uncaughtException', (error) => {
+    console.error('[UNCAUGHT EXCEPTION]', error);
+    console.error('[UNCAUGHT EXCEPTION] Stack:', error.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[UNHANDLED REJECTION] At:', promise, 'reason:', reason);
+    console.error('[UNHANDLED REJECTION] Stack:', reason?.stack);
+});
 
 app.listen(port, () => {
     console.log(`Cloud runner listening on port ${port}`);

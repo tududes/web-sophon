@@ -614,6 +614,14 @@ export class MessageService {
                     this.currentlyPolling.delete(jobId);
                     const errorText = await response.text();
 
+                    console.error(`[Cloud] Job status check failed for ${jobId}: ${response.status} - ${errorText}`);
+
+                    // Check if it's an authentication error
+                    if (response.status === 401 || response.status === 403 || errorText.includes('Token not found')) {
+                        console.error(`[Cloud] Authentication error during polling - clearing token`);
+                        await this.clearStoredToken();
+                    }
+
                     // Preserve jobId in request
                     const currentEvent = this.eventService.getEventById(eventId);
                     const preservedRequestData = currentEvent && currentEvent.request
@@ -656,16 +664,29 @@ export class MessageService {
                             });
 
                             if (!resultsResponse.ok) {
-                                throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
+                                const errorText = await resultsResponse.text();
+                                console.error(`[Cloud] Failed to fetch results for job ${jobId}: ${resultsResponse.status} - ${errorText}`);
+
+                                // Check if it's an authentication error
+                                if (resultsResponse.status === 401 || resultsResponse.status === 403 || errorText.includes('Token not found')) {
+                                    console.error(`[Cloud] Authentication error fetching results - clearing token`);
+                                    await this.clearStoredToken();
+                                }
+
+                                throw new Error(`Failed to fetch results: ${resultsResponse.status} - ${errorText}`);
                             }
 
                             const { results } = await resultsResponse.json();
                             console.log(`[Cloud] Fetched ${results.length} results for completed job ${jobId}`);
+                            console.log(`[Cloud] DEBUG 1: About to check results length`);
 
                             if (results && results.length > 0) {
+                                console.log(`[Cloud] DEBUG 2: Results exist, processing latest result`);
                                 // Use the most recent result (should be the only one for a one-off job)
                                 const latestResult = results[results.length - 1];
+                                console.log(`[Cloud] DEBUG 3: Got latest result`);
                                 const llmResponse = latestResult.llmResponse || {};
+                                console.log(`[Cloud] DEBUG 4: Got LLM response`);
 
                                 console.log(`[Cloud] Processing completed job result:`, {
                                     hasScreenshot: !!latestResult.screenshotData,
@@ -673,21 +694,42 @@ export class MessageService {
                                     hasLlmResponse: !!llmResponse,
                                     hasEvaluation: !!(llmResponse.evaluation)
                                 });
+                                console.log(`[Cloud] DEBUG 5: Logged processing info`);
 
-                                // Get the current event to preserve jobId
+                                // Get the current event to preserve existing data
                                 const currentEvent = this.eventService.getEventById(eventId);
+                                console.log(`[Cloud] DEBUG 6: Got current event`);
                                 const mergedRequestData = currentEvent && currentEvent.request
                                     ? { ...currentEvent.request, llmRequestPayload: latestResult.llmRequestPayload }
                                     : { jobId: jobId, llmRequestPayload: latestResult.llmRequestPayload };
+                                console.log(`[Cloud] DEBUG 7: Merged request data`);
 
                                 // Use raw response if available, otherwise stringify the parsed response
                                 const responseText = latestResult.llmRawResponse || JSON.stringify(llmResponse);
+                                console.log(`[Cloud] DEBUG 8: Got response text`);
+
+                                // Safely determine domain for the event
+                                let domain;
+                                if (job && job.domain) {
+                                    domain = job.domain;
+                                } else if (currentEvent && currentEvent.domain) {
+                                    domain = currentEvent.domain;
+                                }
+
+                                // If we still don't have a domain, we cannot proceed with event creation.
+                                if (!domain) {
+                                    console.error(`[Cloud] Critical error: Could not determine domain for job ${jobId}.`, { job, currentEvent });
+                                    throw new Error('Could not determine domain for cloud job result.');
+                                }
+
+                                console.log(`[Cloud] Successfully determined domain: ${domain}`);
 
                                 // Track the event with all data including field webhooks
+                                console.log(`[Cloud] DEBUG 11: About to call trackEvent`);
                                 const eventData = this.eventService.trackEvent(
                                     llmResponse.evaluation || llmResponse, // The LLM response evaluation
                                     domain,
-                                    `https://${domain}`, // Provide a reasonable URL for cloud runs
+                                    currentEvent ? currentEvent.url : `https://${domain}`, // Use original URL if available
                                     true,
                                     200,
                                     null,
@@ -705,11 +747,26 @@ export class MessageService {
                                     'cloud',
                                     latestResult.timestamp // Use server timestamp
                                 );
+                                console.log(`[Cloud] DEBUG 12: trackEvent completed`);
 
                                 // If the result includes field webhooks fired by cloud runner, add them to the event
                                 if (latestResult.fieldWebhooks && latestResult.fieldWebhooks.length > 0) {
                                     console.log(`[Sync] Adding ${latestResult.fieldWebhooks.length} field webhooks to event ${eventId}`);
                                     this.eventService.addFieldWebhooksToEvent(eventId, latestResult.fieldWebhooks);
+                                }
+
+                                // Send captureResults message to popup (like local captures do)
+                                if (llmResponse.evaluation && Object.keys(llmResponse.evaluation).length > 0) {
+                                    console.log(`[Cloud] Sending captureResults message to popup for job ${jobId}`);
+                                    chrome.runtime.sendMessage({
+                                        action: 'captureResults',
+                                        results: llmResponse.evaluation,
+                                        eventId: eventId,
+                                        domain: domain,
+                                        isManual: true // Cloud jobs are manual captures
+                                    }).catch(e => {
+                                        console.log('[Cloud] Could not send captureResults to popup (popup might not be open)');
+                                    });
                                 }
 
                                 // Purge the result from server since we've processed it
@@ -731,14 +788,14 @@ export class MessageService {
                                     eventId,
                                     null,
                                     200,
-                                    null,
+                                    'Job completed but no results available',
                                     'Job completed but no results available',
                                     null, // No screenshot
                                     preservedRequestData // Preserve jobId
                                 );
                             }
                         } catch (fetchError) {
-                            console.error(`[Cloud] Error fetching results for job ${jobId}:`, fetchError);
+                            console.error(`[Cloud] Error processing results for job ${jobId}:`, fetchError);
 
                             // Preserve jobId in request
                             const currentEvent = this.eventService.getEventById(eventId);
@@ -763,9 +820,25 @@ export class MessageService {
                     pollCount++;
                 }
             } catch (error) {
-                // Network error, keep polling for a while
-                console.warn(`[Cloud] Error polling job ${jobId}:`, error.message);
-                pollCount++;
+                // Handle different types of errors
+                if (error.message.includes('No valid authentication token available')) {
+                    console.error(`[Cloud] Authentication token lost during polling for job ${jobId}`);
+                    clearInterval(intervalId);
+                    this.currentlyPolling.delete(jobId);
+
+                    // Preserve jobId in request
+                    const currentEvent = this.eventService.getEventById(eventId);
+                    const preservedRequestData = currentEvent && currentEvent.request
+                        ? currentEvent.request
+                        : { jobId: jobId };
+
+                    this.eventService.updateEvent(eventId, null, 401, 'Authentication token expired during polling', error.message, null, preservedRequestData);
+                    return;
+                } else {
+                    // Network error, keep polling for a while
+                    console.warn(`[Cloud] Error polling job ${jobId}:`, error.message);
+                    pollCount++;
+                }
             }
         }, pollInterval);
     }
@@ -838,7 +911,13 @@ export class MessageService {
                         console.log(`[Sync] Job ${jobId} not found on server. Removing local reference.`);
                         await chrome.storage.local.remove(key);
                         continue;
-                    } else {
+                    } else if (response.status >= 400 && response.status < 500) {
+                        // For 4xx errors, assume it's a permanent issue with this job (e.g., auth)
+                        console.warn(`[Sync] Client error ${response.status} for job ${jobId}. Removing local reference.`);
+                        await chrome.storage.local.remove(key);
+                        continue;
+                    }
+                    else {
                         const errorText = await response.text();
                         throw new Error(`Failed to fetch results: ${response.status} - ${errorText}`);
                     }
@@ -1162,35 +1241,42 @@ export class MessageService {
     }
 
     async ensureValidToken() {
-        // Check if we have a stored token
-        if (!this.cloudSecurity.authToken) {
-            const storedData = await chrome.storage.local.get([
-                'cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas',
-                'websophon_auth_token', 'websophon_token_expires'
-            ]);
+        // Always check storage for the latest token (don't rely on memory cache)
+        const storedData = await chrome.storage.local.get([
+            'cloudAuthToken', 'cloudTokenExpiry', 'cloudQuotas',
+            'websophon_auth_token', 'websophon_token_expires'
+        ]);
 
-            // Try new format first, then fall back to old format
-            let authToken = storedData.websophon_auth_token || storedData.cloudAuthToken;
-            let tokenExpiry = storedData.websophon_token_expires || storedData.cloudTokenExpiry;
-            let quotas = storedData.cloudQuotas;
+        // Try new format first, then fall back to old format
+        let authToken = storedData.websophon_auth_token || storedData.cloudAuthToken;
+        let tokenExpiry = storedData.websophon_token_expires || storedData.cloudTokenExpiry;
+        let quotas = storedData.cloudQuotas;
 
-            if (authToken && tokenExpiry) {
-                this.cloudSecurity.authToken = authToken;
-                this.cloudSecurity.tokenExpiry = tokenExpiry;
-                this.cloudSecurity.quotas = quotas;
-            }
-        }
+        console.log('[TOKEN] Token check:', {
+            hasToken: !!authToken,
+            tokenPrefix: authToken ? authToken.substring(0, 12) + '...' : 'none',
+            expiresAt: tokenExpiry ? new Date(tokenExpiry).toISOString() : 'none',
+            isExpired: tokenExpiry ? Date.now() >= tokenExpiry : 'unknown'
+        });
 
-        // Check if token is expired
-        if (this.cloudSecurity.authToken && this.cloudSecurity.tokenExpiry) {
-            if (Date.now() >= this.cloudSecurity.tokenExpiry) {
+        if (authToken && tokenExpiry) {
+            // Check if token is expired
+            if (Date.now() >= tokenExpiry) {
                 console.log('[TOKEN] Token expired, clearing stored token');
                 await this.clearStoredToken();
                 return false;
             }
+
+            // Update memory cache with fresh token from storage
+            this.cloudSecurity.authToken = authToken;
+            this.cloudSecurity.tokenExpiry = tokenExpiry;
+            this.cloudSecurity.quotas = quotas;
+
+            console.log('[TOKEN] Valid token found and loaded');
             return true;
         }
 
+        console.log('[TOKEN] No valid token available');
         return false;
     }
 
@@ -1258,7 +1344,10 @@ export class MessageService {
     }
 
     async makeAuthenticatedRequest(url, options = {}) {
+        console.log(`[AUTH] Making authenticated request to: ${url}`);
+
         if (!(await this.ensureValidToken())) {
+            console.error('[AUTH] No valid token available for request');
             throw new Error('No valid authentication token available');
         }
 
@@ -1271,7 +1360,26 @@ export class MessageService {
             }
         };
 
-        return fetch(url, authOptions);
+        console.log(`[AUTH] Request headers:`, {
+            'Content-Type': authOptions.headers['Content-Type'],
+            'Authorization': `Bearer ${this.cloudSecurity.authToken.substring(0, 12)}...`,
+            hasBody: !!options.body
+        });
+
+        try {
+            const response = await fetch(url, authOptions);
+            console.log(`[AUTH] Response status: ${response.status}`);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[AUTH] Request failed: ${response.status} - ${errorText}`);
+            }
+
+            return response;
+        } catch (error) {
+            console.error(`[AUTH] Network error:`, error);
+            throw error;
+        }
     }
 
     async testCloudRunnerWithToken(testUrl, payload) {
