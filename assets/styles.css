@@ -3071,17 +3071,50 @@ input:checked+.slider:hover {
 .job-events {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
+    /* Remove gap since we're handling spacing with margins */
+    padding: 4px;
+    /* Add subtle inner padding */
 }
 
 /* Styles for events within groups */
 .history-item.group-event {
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
+    border-left: 3px solid var(--border-secondary);
+    /* Left accent border */
     border-radius: 6px;
-    margin: 0;
-    padding: 8px 12px;
+    margin: 0 0 12px 0;
+    /* Add bottom margin for separation */
+    padding: 12px 16px;
+    /* Increase padding for better visual space */
+    position: relative;
+    transition: all 0.2s ease;
 }
+
+/* Add a subtle separator line at the bottom of each group event */
+.history-item.group-event:not(:last-child) {
+    border-bottom: 2px solid var(--border-secondary);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Last item in group gets special styling */
+.history-item.group-event:last-child {
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Enhanced hover and interaction for grouped events */
+.history-item.group-event:hover {
+    background: var(--background-hover);
+    border-color: var(--accent-color);
+    border-left-color: var(--accent-color);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1;
+}
+
+/* Consolidated: Left border accent already handled in main rule above */
 
 .history-item.group-event .history-header {
     padding: 0;
