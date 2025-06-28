@@ -135,15 +135,20 @@ export class SAPIENTParser {
             summary: ''
         };
 
-        // Look for evaluation data block
+        // Look for evaluation/response data block
         for (const [blockName, block] of Object.entries(sapientMessage.blocks)) {
-            if (block.type === 'DATA' && (blockName === 'evaluation' || blockName === 'field_results')) {
+            if (block.type === 'DATA' && (blockName === 'evaluation' || blockName === 'response' || blockName === 'field_results')) {
                 try {
                     const evalData = JSON.parse(block.content);
 
-                    // Convert to our standard format [boolean, confidence]
+                    // Process each field
                     for (const [fieldName, fieldData] of Object.entries(evalData)) {
-                        if (fieldData && typeof fieldData === 'object' &&
+                        // Handle array format [boolean, confidence]
+                        if (Array.isArray(fieldData) && fieldData.length >= 2) {
+                            normalized.evaluation[fieldName] = fieldData;
+                        }
+                        // Handle object format {result: boolean, confidence: number}
+                        else if (fieldData && typeof fieldData === 'object' &&
                             'result' in fieldData && 'confidence' in fieldData) {
                             normalized.evaluation[fieldName] = [
                                 fieldData.result,

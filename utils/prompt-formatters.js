@@ -20,9 +20,10 @@ export function sanitizeFieldName(name) {
  * Generates the system prompt for the LLM based on the fields to evaluate.
  * @param {Array<Object>} fields - The fields to be evaluated by the LLM.
  * @param {Object} previousEvaluation - The results from the previous evaluation, for context.
+ * @param {string} modelName - The name of the LLM model being used.
  * @returns {string} The formatted system prompt.
  */
-export function getSystemPrompt(fields, previousEvaluation) {
+export function getSystemPrompt(fields, previousEvaluation, modelName = 'assistant') {
   // Generate a clean JSON structure for the fields.
   const fieldsObject = fields.reduce((obj, field) => {
     // Use the sanitized name for the key in the JSON object.
@@ -82,21 +83,30 @@ ${fieldsJson}${previousContext}
 
 ## Required Response Format:
 
-::SAPIENT v:1.0 from:assistant to:user trace:${traceId} type:response tags:evaluation,screenshot::
-I've analyzed the screenshot for the requested fields. Let me provide a detailed evaluation.
+::SAPIENT v:1.0 from:${modelName} to:websophon::
+I've analyzed the screenshot for the requested fields. [Your natural language explanation of what you see in the screenshot and your evaluation reasoning goes here. Be specific about UI elements, text, colors, positions, and any other relevant details that influenced your assessment.]
 
-::DATA:evaluation format:json::
+::DATA:response format:json::
 {
-${fields.map(field => `  "${field.name}": {
-    "result": boolean_true_or_false,
-    "confidence": number_between_0_and_1
-  }`).join(',\n')}
+${fields.map(field => `  "${field.name}": [boolean_true_or_false, confidence_0_to_1]`).join(',\n')}
 }
-::END:evaluation::
-
-[Continue here with detailed natural language explanation of your analysis. Describe what you see in the screenshot and explain how each visual element led to your evaluation decisions. Be specific about UI elements, text, colors, positions, and any other relevant details that influenced your assessment.]
-
+::END:response::
 ::END:SAPIENT::
 
-Remember: The body should contain natural, conversational explanation of your reasoning. The data block contains the structured results.`;
+Example (DO NOT copy values, evaluate based on actual screenshot):
+
+::SAPIENT v:1.0 from:${modelName} to:websophon::
+I've analyzed the trading chart screenshot. The chart shows XAUTUS (Gold) with multiple technical indicators. I can see the price is at 3,278.60 with a cyan moving average line. The HEXGO POWER indicator at the bottom shows mixed signals with both red and green dots. However, I cannot clearly identify any TF buy/sell signals on the chart, which are required for entry conditions.
+
+::DATA:response format:json::
+{
+  "long_entries": [false, 0.85],
+  "short_entries": [false, 0.80],
+  "long_exits": [false, 0.75],
+  "short_exits": [false, 0.75]
+}
+::END:response::
+::END:SAPIENT::
+
+Remember: Write your analysis naturally in the body. The array format is [boolean_result, confidence_level].`;
 } 

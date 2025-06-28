@@ -164,7 +164,8 @@ export class LLMService {
 
             try {
                 // Build the system prompt with fields
-                const systemPrompt = getSystemPrompt(fields, previousEvaluation);
+                const modelName = llmConfig.model || 'gpt-4-vision-preview';
+                const systemPrompt = getSystemPrompt(fields, previousEvaluation, modelName);
 
                 // Prepare the request payload for OpenAI-compatible API
                 const requestPayload = {
@@ -283,16 +284,27 @@ export class LLMService {
 
                         // Store the actual LLM content (SAPIENT or JSON) as the response text
                         responseText = content;
-                        console.log('LLM message content:', content);
+                        console.log('=== RAW LLM RESPONSE CONTENT ===');
+                        console.log('Content type:', typeof content);
+                        console.log('Content length:', content.length);
+                        console.log('First 500 chars:', content.substring(0, 500));
+                        console.log('Full content:', content);
+                        console.log('=================================');
 
                         // Parse the JSON content from the LLM
                         // First, check if it's SAPIENT format
                         let parsedContent = parseSAPIENTResponse(content);
 
                         if (parsedContent) {
-                            console.log('Parsed SAPIENT response:', parsedContent);
+                            console.log('=== PARSED SAPIENT RESPONSE ===');
+                            console.log('SAPIENT format detected and parsed');
+                            console.log('Parsed content:', parsedContent);
+                            console.log('===============================');
                             responseData = parsedContent;
                         } else {
+                            console.log('=== NOT SAPIENT FORMAT ===');
+                            console.log('Content does not match SAPIENT format');
+                            console.log('==========================');
                             // Fallback to legacy JSON parsing
                             // Remove markdown code blocks using simple string replacement
                             let jsonContent = content

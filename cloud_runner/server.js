@@ -1436,9 +1436,10 @@ async function processJob(jobId, jobData) {
 }
 
 async function callLlmService(base64Image, llmConfig, fields, previousEvaluation) {
-    const systemPrompt = getSystemPrompt(fields, previousEvaluation);
+    const modelName = llmConfig.model || 'gpt-4-vision-preview';
+    const systemPrompt = getSystemPrompt(fields, previousEvaluation, modelName);
     const requestPayload = {
-        model: llmConfig.model || 'gpt-4-vision-preview',
+        model: modelName,
         messages: [
             { role: 'system', content: systemPrompt },
             {
