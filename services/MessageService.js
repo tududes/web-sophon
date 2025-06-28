@@ -582,7 +582,14 @@ export class MessageService {
                 clearInterval(intervalId);
                 this.currentlyPolling.delete(jobId);
                 console.error(`[Cloud] Job ${jobId} timed out after ${maxPolls * pollInterval / 1000} seconds.`);
-                this.eventService.updateEvent(eventId, null, 504, 'Job polling timed out', 'Job polling timed out');
+
+                // Preserve jobId in request
+                const currentEvent = this.eventService.getEventById(eventId);
+                const preservedRequestData = currentEvent && currentEvent.request
+                    ? currentEvent.request
+                    : { jobId: jobId };
+
+                this.eventService.updateEvent(eventId, null, 504, 'Job polling timed out', 'Job polling timed out', null, preservedRequestData);
                 return;
             }
 
@@ -600,7 +607,14 @@ export class MessageService {
                     clearInterval(intervalId);
                     this.currentlyPolling.delete(jobId);
                     const errorText = await response.text();
-                    this.eventService.updateEvent(eventId, null, response.status, `Job status check failed: ${errorText}`, errorText);
+
+                    // Preserve jobId in request
+                    const currentEvent = this.eventService.getEventById(eventId);
+                    const preservedRequestData = currentEvent && currentEvent.request
+                        ? currentEvent.request
+                        : { jobId: jobId };
+
+                    this.eventService.updateEvent(eventId, null, response.status, `Job status check failed: ${errorText}`, errorText, null, preservedRequestData);
                     return;
                 }
 
@@ -612,13 +626,20 @@ export class MessageService {
                     console.log(`[Cloud] Job ${jobId} finished with status: ${job.status}`);
 
                     if (job.status === 'failed') {
-                        // Handle failed job
+                        // Handle failed job - preserve jobId in request
+                        const currentEvent = this.eventService.getEventById(eventId);
+                        const preservedRequestData = currentEvent && currentEvent.request
+                            ? currentEvent.request
+                            : { jobId: jobId };
+
                         this.eventService.updateEvent(
                             eventId,
                             null,
                             500,
                             job.error || 'Job failed',
-                            job.error || 'Job failed'
+                            job.error || 'Job failed',
+                            null, // No screenshot for failed jobs
+                            preservedRequestData // Preserve jobId
                         );
                     } else {
                         // Job completed successfully - fetch the results
@@ -647,6 +668,12 @@ export class MessageService {
                                     hasEvaluation: !!(llmResponse.evaluation)
                                 });
 
+                                // Get the current event to preserve jobId
+                                const currentEvent = this.eventService.getEventById(eventId);
+                                const mergedRequestData = currentEvent && currentEvent.request
+                                    ? { ...currentEvent.request, llmRequestPayload: latestResult.llmRequestPayload }
+                                    : { jobId: jobId, llmRequestPayload: latestResult.llmRequestPayload };
+
                                 this.eventService.updateEvent(
                                     eventId,
                                     llmResponse.evaluation || llmResponse, // The LLM response
@@ -654,7 +681,7 @@ export class MessageService {
                                     null,
                                     JSON.stringify(llmResponse),
                                     latestResult.screenshotData, // Include screenshot
-                                    latestResult.llmRequestPayload // Include request payload
+                                    mergedRequestData // Preserve jobId while adding LLM request payload
                                 );
 
                                 // Purge the result from server since we've processed it
@@ -666,23 +693,39 @@ export class MessageService {
                                     console.warn(`[Cloud] Failed to purge result for job ${jobId}:`, purgeError);
                                 }
                             } else {
-                                // No results available
+                                // No results available - preserve jobId in request
+                                const currentEvent = this.eventService.getEventById(eventId);
+                                const preservedRequestData = currentEvent && currentEvent.request
+                                    ? currentEvent.request
+                                    : { jobId: jobId };
+
                                 this.eventService.updateEvent(
                                     eventId,
                                     null,
                                     200,
                                     null,
-                                    'Job completed but no results available'
+                                    'Job completed but no results available',
+                                    null, // No screenshot
+                                    preservedRequestData // Preserve jobId
                                 );
                             }
                         } catch (fetchError) {
                             console.error(`[Cloud] Error fetching results for job ${jobId}:`, fetchError);
+
+                            // Preserve jobId in request
+                            const currentEvent = this.eventService.getEventById(eventId);
+                            const preservedRequestData = currentEvent && currentEvent.request
+                                ? currentEvent.request
+                                : { jobId: jobId };
+
                             this.eventService.updateEvent(
                                 eventId,
                                 null,
                                 500,
                                 'Failed to fetch job results',
-                                fetchError.message
+                                fetchError.message,
+                                null, // No screenshot
+                                preservedRequestData // Preserve jobId
                             );
                         }
                     }

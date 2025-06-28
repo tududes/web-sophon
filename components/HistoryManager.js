@@ -326,6 +326,7 @@ export class HistoryManager {
         const localGroups = [];
 
         events.forEach(event => {
+            console.log(`Grouping event ${event.id}: source=${event.source}, hasRequest=${!!event.request}, jobId=${event.request?.jobId}`);
             if (event.source === 'cloud' && event.request && event.request.jobId) {
                 // This is a cloud job result - group by jobId
                 const jobId = event.request.jobId;
