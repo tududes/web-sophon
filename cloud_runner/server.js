@@ -6,6 +6,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import { getSystemPrompt } from './utils/prompt-formatters.js';
 import { parseSAPIENTResponse } from './utils/sapient-parser.js';
+import { fireFieldWebhooks } from './utils/webhook-utils.js';
 
 const app = express();
 const port = process.env.PORT || 7113;
@@ -1380,6 +1381,12 @@ async function processJob(jobId, jobData) {
         }
         const { response, requestPayload, rawContent } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);
 
+        // Fire field-level webhooks if response contains evaluation data
+        let fieldWebhooks = [];
+        if (response && response.evaluation) {
+            fieldWebhooks = await fireFieldWebhooks(jobId, domain, response, fields);
+        }
+
         // Add the new result to the job's history
         job.results.push({
             resultId: uuidv4(),
@@ -1389,7 +1396,8 @@ async function processJob(jobId, jobData) {
             llmResponse: response,
             llmRawResponse: rawContent, // Store the raw SAPIENT response
             error: null,
-            captureSettings: captureSettings // Store settings used for this capture
+            captureSettings: captureSettings, // Store settings used for this capture
+            fieldWebhooks: fieldWebhooks // Store webhook results
         });
 
         job.status = job.interval ? 'idle' : 'complete'; // Reset to idle for next interval
@@ -1401,6 +1409,9 @@ async function processJob(jobId, jobData) {
         }
 
         console.log(`[${jobId}] Job run completed successfully. Total results: ${job.results.length}`);
+        if (fieldWebhooks.length > 0) {
+            console.log(`[${jobId}] Fired ${fieldWebhooks.length} field webhooks`);
+        }
 
     } catch (error) {
         console.error(`[${jobId}] Error processing job:`, error);
@@ -1532,8 +1543,6 @@ async function callLlmService(base64Image, llmConfig, fields, previousEvaluation
 
     return { response: finalResponse, requestPayload: requestPayload, rawContent: rawContent };
 }
-
-
 
 // Normalize cloud LLM response to match local parsing logic
 function normalizeCloudLLMResponse(rawResponse, fields) {

@@ -2211,6 +2211,15 @@ class FieldManagerLLM {
         return `field_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    maskWebhookUrl(url) {
+        if (!url || url.length < 20) return url;
+
+        // Show first 10 and last 6 characters with dots in between
+        const start = url.substring(0, 10);
+        const end = url.substring(url.length - 6);
+        return `${start}...${end}`;
+    }
+
     addField(data = {}) {
         const friendlyName = data.friendlyName || data.name || '';
         const baseSanitizedName = this.sanitizeFieldName(friendlyName);

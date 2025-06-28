@@ -339,7 +339,13 @@ export class MessageService {
                 .filter(f => f.name && f.name.trim() && f.description && f.description.trim())
                 .map(f => ({
                     name: this.captureService.sanitizeFieldName(f.friendlyName || f.name),
-                    criteria: f.description
+                    criteria: f.description,
+                    // Include webhook configuration for cloud runner
+                    webhookEnabled: f.webhookEnabled || false,
+                    webhookUrl: f.webhookUrl || null,
+                    webhookPayload: f.webhookPayload || null,
+                    webhookTrigger: f.webhookTrigger !== undefined ? f.webhookTrigger : true, // Default to true
+                    webhookMinConfidence: f.webhookMinConfidence !== undefined ? f.webhookMinConfidence : 75 // Default to 75%
                 }));
 
             console.log(`Prepared ${fields.length} fields for automatic capture`);
@@ -677,15 +683,34 @@ export class MessageService {
                                 // Use raw response if available, otherwise stringify the parsed response
                                 const responseText = latestResult.llmRawResponse || JSON.stringify(llmResponse);
 
-                                this.eventService.updateEvent(
-                                    eventId,
-                                    llmResponse.evaluation || llmResponse, // The LLM response
+                                // Track the event with all data including field webhooks
+                                const eventData = this.eventService.trackEvent(
+                                    llmResponse.evaluation || llmResponse, // The LLM response evaluation
+                                    domain,
+                                    `https://${domain}`, // Provide a reasonable URL for cloud runs
+                                    true,
                                     200,
                                     null,
+                                    latestResult.screenshotData, // Pass screenshot data
+                                    {
+                                        jobId: jobId,
+                                        captureSettings: latestResult.captureSettings,
+                                        timestamp: latestResult.timestamp,
+                                        llmRequestPayload: latestResult.llmRequestPayload,
+                                        source: 'cloud_sync'
+                                    },
                                     responseText,
-                                    latestResult.screenshotData, // Include screenshot
-                                    mergedRequestData // Preserve jobId while adding LLM request payload
+                                    eventId,
+                                    'completed',
+                                    'cloud',
+                                    latestResult.timestamp // Use server timestamp
                                 );
+
+                                // If the result includes field webhooks fired by cloud runner, add them to the event
+                                if (latestResult.fieldWebhooks && latestResult.fieldWebhooks.length > 0) {
+                                    console.log(`[Sync] Adding ${latestResult.fieldWebhooks.length} field webhooks to event ${eventId}`);
+                                    this.eventService.addFieldWebhooksToEvent(eventId, latestResult.fieldWebhooks);
+                                }
 
                                 // Purge the result from server since we've processed it
                                 try {
@@ -872,7 +897,8 @@ export class MessageService {
                             // Use raw response if available, otherwise stringify the parsed response
                             const responseText = result.llmRawResponse || JSON.stringify(llmResponse);
 
-                            this.eventService.trackEvent(
+                            // Track the event with all data including field webhooks
+                            const eventData = this.eventService.trackEvent(
                                 llmResponse.evaluation || llmResponse, // The LLM response evaluation
                                 domain,
                                 `https://${domain}`, // Provide a reasonable URL for cloud runs
@@ -893,6 +919,12 @@ export class MessageService {
                                 'cloud',
                                 result.timestamp // Use server timestamp
                             );
+
+                            // If the result includes field webhooks fired by cloud runner, add them to the event
+                            if (result.fieldWebhooks && result.fieldWebhooks.length > 0) {
+                                console.log(`[Sync] Adding ${result.fieldWebhooks.length} field webhooks to event ${eventId}`);
+                                this.eventService.addFieldWebhooksToEvent(eventId, result.fieldWebhooks);
+                            }
                         }
                         syncedCount++;
                     } catch (eventError) {

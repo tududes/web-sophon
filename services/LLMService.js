@@ -1,6 +1,7 @@
 // LLM API service for field evaluation using multimodal models
 import { getSystemPrompt } from "../utils/prompt-formatters.js";
 import { parseSAPIENTResponse } from "../utils/sapient-parser.js";
+import { fireFieldWebhooks } from "../utils/webhook-utils.js";
 
 export class LLMService {
     constructor(captureService, eventService) {
@@ -458,7 +459,7 @@ export class LLMService {
 
             // Fire field-level webhooks for TRUE results if configured
             if (hasActualFields && responseData) {
-                await this.fireFieldWebhooks(eventId, domain, responseData);
+                await this.fireFieldWebhooksWrapper(eventId, domain, responseData);
             }
 
             console.log(`LLM analysis completed successfully`);
@@ -501,8 +502,8 @@ export class LLMService {
         }
     }
 
-    // Fire webhooks for individual fields (reused from WebhookService)
-    async fireFieldWebhooks(eventId, domain, mainResponseData) {
+    // Wrapper to use the shared webhook utility with the event service integration
+    async fireFieldWebhooksWrapper(eventId, domain, mainResponseData) {
         console.log('Checking for field webhooks to fire after LLM analysis...');
         console.log('LLM Response Data:', mainResponseData);
 
@@ -511,169 +512,14 @@ export class LLMService {
 
         console.log('Field configurations from storage:', fieldConfigs);
 
-        // Create multiple lookup maps for robust field matching
-        const fieldConfigMap = {};
-        const fieldConfigMapBySanitized = {};
-        fieldConfigs.forEach(field => {
-            if (field.name) {
-                const originalName = field.name;
-                const sanitizedName = field.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-
-                // Map both original and sanitized names
-                fieldConfigMap[originalName] = field;
-                fieldConfigMap[originalName.toLowerCase()] = field;
-                fieldConfigMapBySanitized[sanitizedName] = field;
-
-                console.log(`Field mapping: "${originalName}" -> sanitized: "${sanitizedName}"`);
-            }
-        });
-
-        console.log('Field config maps:', { fieldConfigMap, fieldConfigMapBySanitized });
-
-        const fieldWebhooks = [];
-        let fieldResultsFound = false;
-
-        // Process field results from the LLM response
-        for (const [fieldName, fieldResult] of Object.entries(mainResponseData)) {
-            if (fieldName !== 'summary' && Array.isArray(fieldResult) && fieldResult.length >= 1) {
-                fieldResultsFound = true;
-                const result = fieldResult[0]; // boolean result
-                const probability = fieldResult.length > 1 ? fieldResult[1] : null;
-
-                console.log(`LLM Field "${fieldName}" result:`, result, 'probability:', probability);
-
-                // Try multiple lookup strategies
-                let fieldConfig = fieldConfigMap[fieldName] ||
-                    fieldConfigMap[fieldName.toLowerCase()] ||
-                    fieldConfigMapBySanitized[fieldName] ||
-                    fieldConfigMapBySanitized[fieldName.toLowerCase()];
-
-                console.log(`Field "${fieldName}" config lookup result:`, fieldConfig ? 'FOUND' : 'NOT FOUND');
-
-                if (fieldConfig && fieldConfig.webhookEnabled && fieldConfig.webhookUrl) {
-                    // Check minimum confidence threshold (default to 75% if not set)
-                    const minConfidence = fieldConfig.webhookMinConfidence !== undefined ? fieldConfig.webhookMinConfidence : 75;
-                    const confidencePercent = probability ? probability * 100 : 0;
-
-                    if (confidencePercent < minConfidence) {
-                        console.log(`LLM Field "${fieldName}" confidence ${confidencePercent.toFixed(1)}% is below minimum ${minConfidence}% - skipping webhook`);
-                        continue;
-                    }
-
-                    const shouldTriggerOnTrue = fieldConfig.webhookTrigger !== false;
-                    const shouldFireWebhook = shouldTriggerOnTrue ? result === true : result === false;
-
-                    if (shouldFireWebhook) {
-                        console.log(`LLM Field "${fieldName}" firing webhook:`, fieldConfig.webhookUrl);
-
-                        try {
-                            const fieldWebhookResult = await this.fireFieldWebhook(
-                                fieldConfig.name,
-                                fieldConfig.webhookUrl,
-                                fieldConfig.webhookPayload,
-                                { result: [result, probability] }
-                            );
-
-                            fieldWebhooks.push({
-                                fieldName: fieldConfig.name,
-                                ...fieldWebhookResult
-                            });
-                        } catch (error) {
-                            console.error(`Failed to fire webhook for LLM field "${fieldConfig.name}":`, error);
-                            fieldWebhooks.push({
-                                fieldName: fieldConfig.name,
-                                request: {
-                                    url: fieldConfig.webhookUrl,
-                                    method: fieldConfig.webhookPayload ? 'POST' : 'GET',
-                                    payload: fieldConfig.webhookPayload
-                                },
-                                response: `Error: ${error.message}`,
-                                error: error.message,
-                                success: false,
-                                httpStatus: null
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        console.log(`Field processing summary: Found ${fieldResultsFound ? 'YES' : 'NO'} field results, Fired ${fieldWebhooks.length} webhooks`);
+        // Call the shared utility
+        const fieldWebhooks = await fireFieldWebhooks(eventId, domain, mainResponseData, fieldConfigs);
 
         if (fieldWebhooks.length > 0) {
             console.log(`Fired ${fieldWebhooks.length} field webhooks after LLM analysis`);
             this.eventService.addFieldWebhooksToEvent(eventId, fieldWebhooks);
-        } else if (fieldResultsFound) {
-            console.log('Field results were found but no webhooks were fired (webhooks may not be configured for these fields)');
         } else {
-            console.log('No field results found in LLM response');
-        }
-    }
-
-    // Fire a single field webhook (reused from WebhookService)
-    async fireFieldWebhook(fieldName, webhookUrl, customPayload, fieldResult) {
-        console.log(`Firing webhook for LLM field "${fieldName}" to ${webhookUrl}`);
-
-        const requestData = {
-            url: webhookUrl,
-            method: customPayload ? 'POST' : 'GET',
-            payload: customPayload,
-            timestamp: new Date().toISOString()
-        };
-
-        try {
-            let response;
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-            if (customPayload) {
-                let parsedPayload;
-                try {
-                    parsedPayload = JSON.parse(customPayload);
-                } catch (e) {
-                    parsedPayload = { error: 'Invalid JSON payload', raw: customPayload };
-                }
-
-                response = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(parsedPayload),
-                    signal: controller.signal
-                });
-            } else {
-                response = await fetch(webhookUrl, {
-                    method: 'GET',
-                    signal: controller.signal
-                });
-            }
-
-            clearTimeout(timeoutId);
-
-            let responseText = '';
-            try {
-                responseText = await response.text();
-            } catch (e) {
-                responseText = `Failed to read response: ${e.message}`;
-            }
-
-            return {
-                request: requestData,
-                response: responseText,
-                httpStatus: response.status,
-                success: response.ok,
-                error: response.ok ? null : `HTTP ${response.status}: ${response.statusText}`
-            };
-
-        } catch (error) {
-            return {
-                request: requestData,
-                response: error.message,
-                httpStatus: null,
-                success: false,
-                error: error.message
-            };
+            console.log('No field webhooks were fired');
         }
     }
 
