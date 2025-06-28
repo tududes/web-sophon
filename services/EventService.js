@@ -162,6 +162,13 @@ export class EventService {
         event.error = error;
         event.response = responseText; // ALWAYS contains response data (JSON, text, or error message)
         event.source = originalSource; // Explicitly preserve the original source
+
+        // Debug logging to verify what's being stored
+        console.log('=== EVENT SERVICE STORING RESPONSE ===');
+        console.log('Event ID:', eventId);
+        console.log('Response being stored:', responseText);
+        console.log('Is SAPIENT format?', responseText && responseText.includes('::SAPIENT v:') ? 'YES' : 'NO');
+        console.log('=====================================');
         if (screenshot) {
             event.screenshot = screenshot;
         }

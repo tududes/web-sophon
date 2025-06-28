@@ -25,11 +25,19 @@ export function getTimeAgo(date) {
 
 // Format response data for display
 export function formatResponseData(responseText) {
+    console.log('=== FORMAT RESPONSE DATA ===');
+    console.log('Input responseText:', responseText);
+    console.log('Type:', typeof responseText);
+    console.log('Length:', responseText ? responseText.length : 0);
+    console.log('Is SAPIENT?', responseText && responseText.includes('::SAPIENT v:') ? 'YES' : 'NO');
+    console.log('===========================');
+
     if (!responseText) return '<div class="no-response">No response data</div>';
 
     // Check if this is a SAPIENT protocol response
     if (responseText.includes('::SAPIENT v:') && responseText.includes('::END:SAPIENT::')) {
         // Display SAPIENT response as-is without warning
+        console.log('Detected SAPIENT format, displaying as SAPIENT');
         return `
             <div class="raw-response-container">
                 <div class="raw-response-note">📝 SAPIENT Protocol Response</div>

@@ -289,7 +289,13 @@ export class LLMService {
                         console.log('Content length:', content.length);
                         console.log('First 500 chars:', content.substring(0, 500));
                         console.log('Full content:', content);
+                        console.log('Is SAPIENT format?', content.includes('::SAPIENT v:') ? 'YES' : 'NO');
                         console.log('=================================');
+
+                        // Also log what we're storing
+                        console.log('=== STORING RESPONSE TEXT ===');
+                        console.log('responseText that will be stored:', responseText);
+                        console.log('=============================');
 
                         // Parse the JSON content from the LLM
                         // First, check if it's SAPIENT format
