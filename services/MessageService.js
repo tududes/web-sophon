@@ -1389,11 +1389,7 @@ export class MessageService {
             const response = await fetch(url, authOptions);
             console.log(`[AUTH] Response status: ${response.status}`);
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`[AUTH] Request failed: ${response.status} - ${errorText}`);
-            }
-
+            // Don't read the response body here - let the caller handle it
             return response;
         } catch (error) {
             console.error(`[AUTH] Network error:`, error);
@@ -1582,7 +1578,7 @@ export class MessageService {
                 throw new Error(`Server error (${response.status}): ${errorText}`);
             }
 
-            // Get response as text first to debug
+            // Get response as text for debug (only if response is OK)
             const responseText = await response.text();
             console.log('[CAPTCHA] Raw response text:', responseText);
 
