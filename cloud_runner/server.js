@@ -1291,7 +1291,16 @@ app.get('/job/:id/results', requireValidToken, (req, res) => {
 
             console.log(`[${jobId}] Sending results payload to ${req.clientId}:`);
             try {
-                console.log(JSON.stringify(responsePayload, null, 2));
+                // Create sanitized version for logging (without large screenshotData)
+                const sanitizedPayload = JSON.parse(JSON.stringify(responsePayload));
+                if (sanitizedPayload.results) {
+                    sanitizedPayload.results.forEach(result => {
+                        if (result.screenshotData) {
+                            result.screenshotData = `[SCREENSHOT DATA - ${result.screenshotData.length} chars]`;
+                        }
+                    });
+                }
+                console.log(JSON.stringify(sanitizedPayload, null, 2));
             } catch (jsonError) {
                 console.error(`[RESULTS] JSON stringify error:`, jsonError);
                 console.log(`[RESULTS] Payload structure:`, typeof responsePayload, Object.keys(responsePayload));
