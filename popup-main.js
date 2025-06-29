@@ -370,6 +370,7 @@ class CleanPopupController {
                 break;
             case 'fields':
                 this.renderFields();
+                this.renderPresets(); // Load presets for the preset dropdown
                 break;
             case 'history':
                 if (!this.historyManager) {
