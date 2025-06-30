@@ -784,7 +784,8 @@ export class MessageService {
                                     hasScreenshot: !!latestResult.screenshotData,
                                     screenshotSize: latestResult.screenshotData ? latestResult.screenshotData.length : 0,
                                     hasLlmResponse: !!llmResponse,
-                                    hasEvaluation: !!(llmResponse.evaluation)
+                                    hasEvaluation: !!(llmResponse.evaluation),
+                                    screenshotPrefix: latestResult.screenshotData ? latestResult.screenshotData.substring(0, 50) + '...' : 'null'
                                 });
                                 console.log(`[Cloud] DEBUG 5: Logged processing info`);
 
@@ -819,6 +820,15 @@ export class MessageService {
                                 const updatedRequestData = currentEvent && currentEvent.request
                                     ? { ...currentEvent.request, llmRequestPayload: latestResult.llmRequestPayload }
                                     : { jobId: jobId, llmRequestPayload: latestResult.llmRequestPayload };
+
+                                // Debug what we're about to pass to updateEvent
+                                console.log(`[Cloud] DEBUG: About to call updateEvent with:`, {
+                                    eventId,
+                                    hasScreenshotData: !!latestResult.screenshotData,
+                                    screenshotDataType: typeof latestResult.screenshotData,
+                                    screenshotDataLength: latestResult.screenshotData ? latestResult.screenshotData.length : 0,
+                                    screenshotDataPrefix: latestResult.screenshotData ? latestResult.screenshotData.substring(0, 30) : 'null'
+                                });
 
                                 // Update the existing event with results
                                 this.eventService.updateEvent(

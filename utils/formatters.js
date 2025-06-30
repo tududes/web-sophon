@@ -94,128 +94,56 @@ export function downloadScreenshot(screenshotData, timestamp) {
     }
 }
 
-// Throttle function for performance
-function throttle(func, limit) {
-    let inThrottle;
-    return function () {
-        const args = arguments;
-        const context = this;
-        if (!inThrottle) {
-            func.apply(context, args);
-            inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
+// Open screenshot in new tab
+export function openScreenshotInNewTab(screenshotData) {
+    try {
+        // Create a new tab with the image
+        const newTab = window.open();
+        if (newTab) {
+            // Set page title
+            newTab.document.title = 'WebSophon Screenshot';
+
+            // Style the page for better viewing
+            newTab.document.body.style.margin = '0';
+            newTab.document.body.style.padding = '0';
+            newTab.document.body.style.backgroundColor = '#1a1a1a';
+            newTab.document.body.style.display = 'flex';
+            newTab.document.body.style.justifyContent = 'center';
+            newTab.document.body.style.alignItems = 'center';
+            newTab.document.body.style.minHeight = '100vh';
+
+            // Create and add the image
+            const img = newTab.document.createElement('img');
+            img.src = screenshotData;
+            img.style.maxWidth = '100%';
+            img.style.maxHeight = '100vh';
+            img.style.objectFit = 'contain';
+            img.style.cursor = 'zoom-in';
+
+            // Add click to toggle zoom
+            let zoomed = false;
+            img.addEventListener('click', () => {
+                if (zoomed) {
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '100vh';
+                    img.style.cursor = 'zoom-in';
+                } else {
+                    img.style.maxWidth = 'none';
+                    img.style.maxHeight = 'none';
+                    img.style.cursor = 'zoom-out';
+                }
+                zoomed = !zoomed;
+            });
+
+            newTab.document.body.appendChild(img);
+        } else {
+            console.error('Failed to open new tab - popup may be blocked');
+            return { success: false, message: 'Failed to open new tab - check popup blocker' };
         }
-    }
-}
 
-// Handle image zoom with mouse position (throttled for performance)
-export const handleImageZoom = throttle(function (e) {
-    const img = e.target;
-
-    // Only apply zoom to thumbnail images in history
-    if (!img.classList.contains('history-screenshot-thumbnail')) {
-        return;
-    }
-
-    // Add will-change for performance if not already set
-    if (!img.style.willChange) {
-        img.style.willChange = 'transform';
-        img.style.transition = 'none'; // Remove transition for instant following
-    }
-
-    const rect = img.getBoundingClientRect();
-    const container = img.closest('.screenshot-container');
-
-    // Calculate mouse position relative to the thumbnail image bounds
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    // Map mouse position to percentage coordinates on the original image
-    // This creates a 1:1 mapping between mouse position on thumbnail and zoom area
-    // Mouse at 0% across thumbnail = show 0% area of original image
-    // Mouse at 100% across thumbnail = show 100% area of original image
-    const x = (mouseX / rect.width) * 100;
-    const y = (mouseY / rect.height) * 100;
-
-    // Debug logging to see what's happening
-    console.log('Zoom debug:', {
-        clientX: e.clientX.toFixed(1),
-        clientY: e.clientY.toFixed(1),
-        rectLeft: rect.left.toFixed(1),
-        rectTop: rect.top.toFixed(1),
-        mouseX: mouseX.toFixed(1),
-        mouseY: mouseY.toFixed(1),
-        rectWidth: rect.width.toFixed(1),
-        rectHeight: rect.height.toFixed(1),
-        x: x.toFixed(1),
-        y: y.toFixed(1),
-        transformOrigin: `${x.toFixed(1)}% ${y.toFixed(1)}%`
-    });
-
-    // Adaptive zoom factor based on image format
-    // JPEG compressed images benefit from higher zoom for better detail visibility
-    const isJPEG = img.src.includes('data:image/jpeg');
-    const zoomFactor = isJPEG ? 4.0 : 3.5; // Higher zoom for compressed images
-
-    // Set transform origin to exact mouse position on the image
-    // This creates a "magnifying glass" effect that follows the mouse
-    img.style.transformOrigin = `${x}% ${y}%`;
-    img.style.transform = `scale(${zoomFactor})`;
-    img.style.zIndex = '9999';
-    img.style.position = 'relative';
-    img.style.borderRadius = '4px';
-    img.style.boxShadow = '0 12px 48px rgba(0,0,0,0.4)';
-
-    // Optimize rendering for different image formats
-    if (isJPEG) {
-        // For JPEG: Use automatic rendering with slight sharpening
-        img.style.imageRendering = 'auto';
-        img.style.filter = 'contrast(1.05) saturate(1.02)'; // Subtle enhancement for compressed images
-    } else {
-        // For PNG: Use crisp edges for pixel-perfect rendering
-        img.style.imageRendering = 'crisp-edges';
-    }
-    img.style.backfaceVisibility = 'hidden';
-
-    // Ensure container doesn't clip the zoomed image
-    if (container) {
-        container.style.overflow = 'visible';
-        container.style.zIndex = '9998';
-        container.style.position = 'relative';
-        // Temporarily remove max-height constraint during zoom
-        container.dataset.originalMaxHeight = container.style.maxHeight || '';
-        container.style.maxHeight = 'none';
-    }
-}, 8); // Higher frequency for real-time panning feel
-
-// Reset image zoom
-export function resetImageZoom(e) {
-    const img = e.target;
-
-    console.log('Resetting zoom for image');
-
-    img.style.transform = 'scale(1)';
-    img.style.zIndex = '';
-    img.style.position = '';
-    img.style.transformOrigin = 'center';
-    img.style.willChange = '';
-    img.style.transition = '';
-    img.style.borderRadius = '';
-    img.style.boxShadow = '';
-    img.style.imageRendering = '';
-    img.style.backfaceVisibility = '';
-    img.style.filter = ''; // Clear any zoom enhancement filters
-
-    // Reset container overflow
-    const container = img.closest('.screenshot-container');
-    if (container) {
-        container.style.overflow = '';
-        container.style.zIndex = '';
-        container.style.position = '';
-        // Restore original max-height
-        if (container.dataset.originalMaxHeight !== undefined) {
-            container.style.maxHeight = container.dataset.originalMaxHeight;
-            delete container.dataset.originalMaxHeight;
-        }
+        return { success: true, message: 'Screenshot opened in new tab' };
+    } catch (error) {
+        console.error('Error opening screenshot:', error);
+        return { success: false, message: 'Failed to open screenshot' };
     }
 } 

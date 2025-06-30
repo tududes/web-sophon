@@ -169,8 +169,9 @@ export class EventService {
         console.log('Response being stored:', responseText);
         console.log('Is SAPIENT format?', responseText && responseText.includes('::SAPIENT v:') ? 'YES' : 'NO');
         console.log('=====================================');
-        if (screenshot) {
+        if (screenshot !== null && screenshot !== undefined && screenshot !== '') {
             event.screenshot = screenshot;
+            console.log(`[EventService] Updated screenshot for event ${eventId}, size: ${screenshot.length} chars`);
         }
         if (requestPayload) {
             event.request = requestPayload;

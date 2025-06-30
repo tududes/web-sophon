@@ -2657,28 +2657,19 @@ input:checked+.slider:hover {
 }
 
 .history-screenshot-thumbnail {
-    /* Don't force width to 100% - let image load at natural size */
     max-width: 100%;
     height: auto;
     display: block;
-    cursor: zoom-in;
-    transition: none;
-    /* Removed for instant zoom following */
-    transform-origin: center;
-    /* Use object-fit to ensure proper scaling without quality loss */
+    cursor: pointer;
+    transition: opacity 0.2s ease, border-color 0.2s ease;
     object-fit: contain;
-    /* Ensure high-quality rendering */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-    /* Enable smooth panning during zoom */
-    backface-visibility: hidden;
+    border-radius: 4px;
+    border: 1px solid #3a3a3a;
 }
 
 .history-screenshot-thumbnail:hover {
-    cursor: move;
-    /* Change to move cursor to indicate panning capability */
-    /* When zoomed, allow the image to overflow its container */
-    max-width: none;
+    opacity: 0.9;
+    border-color: #4A90E2;
 }
 
 /* Enhanced Data Section Headers */

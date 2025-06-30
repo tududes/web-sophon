@@ -1,5 +1,5 @@
 // History management functionality
-import { getTimeAgo, formatResponseData, downloadScreenshot, handleImageZoom, resetImageZoom } from '../utils/formatters.js';
+import { getTimeAgo, formatResponseData, downloadScreenshot, openScreenshotInNewTab } from '../utils/formatters.js';
 
 export class HistoryManager {
     constructor() {
@@ -29,8 +29,52 @@ export class HistoryManager {
 
             if (response && response.events && Array.isArray(response.events)) {
                 console.log('Loaded events from background:', response.events.length);
-                this.recentEvents = response.events;
-                this.renderHistory();
+
+                // Check if we can do a smart update instead of full re-render
+                const canDoSmartUpdate = this.recentEvents.length > 0 && response.events.length > 0;
+
+                if (canDoSmartUpdate) {
+                    // Find new events (events that exist in background but not in current)
+                    const currentEventIds = new Set(this.recentEvents.map(e => e.id));
+                    const newEvents = response.events.filter(e => !currentEventIds.has(e.id));
+
+                    if (newEvents.length > 0) {
+                        console.log(`[HistoryManager] Found ${newEvents.length} new events, using smart insertion`);
+
+                        // Update our data array
+                        this.recentEvents = response.events;
+
+                        // Insert new events at top without disrupting UI
+                        this.insertNewEventsAtTop(newEvents);
+                        return;
+                    } else {
+                        console.log('[HistoryManager] No new events found, checking for updates to existing events');
+
+                        // Check if any existing events have been updated
+                        let hasUpdates = false;
+                        for (const bgEvent of response.events) {
+                            const currentEvent = this.recentEvents.find(e => e.id === bgEvent.id);
+                            if (currentEvent && JSON.stringify(currentEvent) !== JSON.stringify(bgEvent)) {
+                                hasUpdates = true;
+                                // Update the event in place
+                                const eventIndex = this.recentEvents.findIndex(e => e.id === bgEvent.id);
+                                if (eventIndex !== -1) {
+                                    this.recentEvents[eventIndex] = bgEvent;
+                                    this.updateEventInPlace(bgEvent.id, bgEvent);
+                                }
+                            }
+                        }
+
+                        if (!hasUpdates) {
+                            console.log('[HistoryManager] No changes detected, skipping update');
+                            return;
+                        }
+                    }
+                } else {
+                    console.log('[HistoryManager] Cannot do smart update, doing full render');
+                    this.recentEvents = response.events;
+                    this.renderHistory();
+                }
             } else {
                 console.log('No valid response from background, loading from storage directly');
                 await this.loadFromStorageDirect();
@@ -122,11 +166,200 @@ export class HistoryManager {
 
             // Save updated events to storage
             this.saveToStorage();
-            this.renderHistory();
+
+            // Use surgical update instead of full re-render to preserve UI state
+            this.updateEventInPlace(eventId, event);
         } else {
             console.log('Event not found in local array, reloading history');
             // Event not in our array, reload history
             this.loadHistory();
+        }
+    }
+
+    // Update a specific event in place without full re-render
+    updateEventInPlace(eventId, event) {
+        console.log(`[HistoryManager] Updating event ${eventId} in place`);
+
+        // Find the DOM element for this event
+        const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+        if (!eventElement) {
+            console.log(`[HistoryManager] Event ${eventId} not found in DOM, doing full refresh`);
+            this.renderHistory();
+            return;
+        }
+
+        // Preserve the expanded state before updating
+        const wasExpanded = eventElement.classList.contains('expanded') ||
+            eventElement.querySelector('.history-details').style.display !== 'none';
+
+        // Get the event index for rendering
+        const eventIndex = this.recentEvents.findIndex(e => e.id === eventId);
+        if (eventIndex === -1) {
+            console.log(`[HistoryManager] Event ${eventId} not found in data array`);
+            return;
+        }
+
+        // Apply filter check
+        const shouldShowEvent = this.showTrueOnly ? event.hasTrueResult : true;
+        if (!shouldShowEvent) {
+            // Event should be hidden due to filter, remove it
+            eventElement.remove();
+            return;
+        }
+
+        // Generate the updated HTML for this event
+        const updatedHtml = this.renderIndividualEvent(event, eventIndex, false);
+
+        // Create a temporary container to parse the HTML
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = updatedHtml;
+        const newEventElement = tempDiv.firstElementChild;
+
+        // Replace the old element with the new one
+        eventElement.parentNode.replaceChild(newEventElement, eventElement);
+
+        // Restore expanded state if it was expanded before
+        if (wasExpanded) {
+            const detailsElement = newEventElement.querySelector('.history-details');
+            if (detailsElement) {
+                detailsElement.style.display = 'block';
+                newEventElement.classList.add('expanded');
+            }
+        }
+
+        // Re-attach event handlers for the new element
+        this.attachEventHandlersToElement(newEventElement);
+
+        console.log(`[HistoryManager] Successfully updated event ${eventId} in place`);
+    }
+
+    // Insert new events at the top without disrupting scroll position
+    insertNewEventsAtTop(newEvents) {
+        console.log(`[HistoryManager] Inserting ${newEvents.length} new events at top`);
+
+        if (!this.elements.historyContainer) {
+            console.log('[HistoryManager] No history container found, doing full render');
+            this.renderHistory();
+            return;
+        }
+
+        // Check if we currently have an empty state
+        const hasEmptyState = this.elements.historyContainer.querySelector('.history-empty');
+        if (hasEmptyState) {
+            // If we have empty state, do a full render since we're going from empty to populated
+            this.renderHistory();
+            return;
+        }
+
+        // Apply filter to new events
+        const filteredNewEvents = this.showTrueOnly
+            ? newEvents.filter(e => e.hasTrueResult)
+            : newEvents;
+
+        if (filteredNewEvents.length === 0) {
+            console.log('[HistoryManager] No new events to show after filtering');
+            return;
+        }
+
+        // Preserve scroll position
+        const scrollElement = this.elements.historyContainer.parentElement;
+        const scrollTop = scrollElement ? scrollElement.scrollTop : 0;
+
+        // Create fragment for new events
+        const fragment = document.createDocumentFragment();
+
+        filteredNewEvents.forEach((event, index) => {
+            const eventHtml = this.renderIndividualEvent(event, index, false);
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = eventHtml;
+            const eventElement = tempDiv.firstElementChild;
+            fragment.appendChild(eventElement);
+        });
+
+        // Insert at the beginning of the container
+        if (this.elements.historyContainer.firstChild) {
+            this.elements.historyContainer.insertBefore(fragment, this.elements.historyContainer.firstChild);
+        } else {
+            this.elements.historyContainer.appendChild(fragment);
+        }
+
+        // Re-attach event handlers for new elements
+        this.attachEventHandlers();
+
+        // Restore scroll position
+        if (scrollElement && scrollTop > 0) {
+            scrollElement.scrollTop = scrollTop;
+        }
+
+        console.log(`[HistoryManager] Successfully inserted ${filteredNewEvents.length} new events`);
+    }
+
+    // Attach event handlers to a specific element
+    attachEventHandlersToElement(element) {
+        // Handle click events for this specific element
+        const header = element.querySelector('.history-header');
+        if (header) {
+            header.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const historyItem = e.target.closest('.history-item');
+                const details = historyItem.querySelector('.history-details');
+                const caret = historyItem.querySelector('.history-header-caret');
+
+                if (details.style.display === 'none') {
+                    details.style.display = 'block';
+                    caret.innerHTML = '▼';
+                    historyItem.classList.add('expanded');
+                } else {
+                    details.style.display = 'none';
+                    caret.innerHTML = '▶';
+                    historyItem.classList.remove('expanded');
+                }
+            });
+        }
+
+        // Handle summary toggle for this element
+        const reasonHeader = element.querySelector('.history-reason-header');
+        if (reasonHeader) {
+            reasonHeader.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const reasonSection = e.target.closest('.history-reason-section');
+                const content = reasonSection.querySelector('.history-reason-content');
+                const caret = reasonSection.querySelector('.history-reason-caret');
+
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    caret.innerHTML = '▼';
+                    reasonSection.classList.add('expanded');
+                } else {
+                    content.style.display = 'none';
+                    caret.innerHTML = '▶';
+                    reasonSection.classList.remove('expanded');
+                }
+            });
+        }
+
+        // Handle screenshot downloads for this element
+        const downloadBtn = element.querySelector('.download-screenshot-btn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                downloadScreenshot(downloadBtn.getAttribute('data-screenshot'), downloadBtn.getAttribute('data-timestamp'));
+            });
+        }
+
+        // Handle screenshot click to open in new tab
+        const screenshot = element.querySelector('.history-screenshot-thumbnail');
+        if (screenshot) {
+            screenshot.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openScreenshotInNewTab(screenshot.src);
+            });
         }
     }
 
@@ -555,12 +788,23 @@ export class HistoryManager {
             statusHtml = `<span class="history-status">📸 Captured</span>`;
         }
 
-        const fieldsHtml = event.fields && event.fields.length > 0 ? event.fields.map(field => `
-          <div class="history-field ${field.result ? 'true' : 'false'}">
-            <span class="history-field-indicator ${field.result ? 'true' : 'false'}"></span>
-            <span>${field.name}: ${field.result ? 'TRUE' : 'FALSE'} ${field.probability ? `(${(field.probability * 100).toFixed(0)}%)` : ''}</span>
-          </div>
-        `).join('') : '<div class="history-no-fields">No field evaluations</div>';
+        // Only show fields section based on event status
+        let fieldsHtml = '';
+        if (event.status === 'pending') {
+            // For pending events, don't show fields section at all
+            fieldsHtml = '';
+        } else if (event.fields && event.fields.length > 0) {
+            // Show actual field results
+            fieldsHtml = event.fields.map(field => `
+              <div class="history-field ${field.result ? 'true' : 'false'}">
+                <span class="history-field-indicator ${field.result ? 'true' : 'false'}"></span>
+                <span>${field.name}: ${field.result ? 'TRUE' : 'FALSE'} ${field.probability ? `(${(field.probability * 100).toFixed(0)}%)` : ''}</span>
+              </div>
+            `).join('');
+        } else {
+            // For completed events with no fields
+            fieldsHtml = '<div class="history-no-fields">No field evaluations</div>';
+        }
 
         // Format the summary with proper styling and make it collapsible
         // Always start collapsed by default to reduce visual clutter
@@ -609,7 +853,7 @@ export class HistoryManager {
                     </div>
                   </div>
                   <div class="screenshot-container">
-                                            <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (3.5x) and pan - move mouse across image to explore different areas">
+                                            <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Click to view full size in new tab" style="cursor: pointer;">
                   </div>
                 </div>
               ` : ''}
@@ -788,15 +1032,13 @@ export class HistoryManager {
             });
         });
 
-        // Prevent propagation on interactive elements
+        // Handle screenshot clicks to open in new tab
         document.querySelectorAll('.history-screenshot-thumbnail').forEach(img => {
             img.addEventListener('click', (e) => {
+                e.preventDefault();
                 e.stopPropagation();
+                openScreenshotInNewTab(img.src);
             });
-
-            // Add mousemove for zoom positioning and mouseleave to reset
-            img.addEventListener('mousemove', handleImageZoom);
-            img.addEventListener('mouseleave', resetImageZoom);
         });
 
         document.querySelectorAll('.data-section').forEach(section => {
