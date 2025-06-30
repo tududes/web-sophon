@@ -2653,20 +2653,23 @@ class CleanPopupController {
 
     async processCloudJobSync(cloudJobs) {
         console.log(`Syncing with ${cloudJobs.length} cloud runner jobs`);
+        console.log('Cloud jobs data:', JSON.stringify(cloudJobs, null, 2));
 
         // Get current local jobs
         const localJobs = this.jobManager.getActiveJobs();
         const localCloudJobs = localJobs.filter(job => job.isCloudJob);
+        console.log(`Current local cloud jobs: ${localCloudJobs.length}`, localCloudJobs.map(j => ({ id: j.id, jobId: j.jobId, domain: j.domain })));
 
         // Check for cloud jobs that don't exist locally
         for (const cloudJob of cloudJobs) {
+            console.log(`Processing cloud job:`, cloudJob);
             const localJob = localCloudJobs.find(lj => lj.jobId === cloudJob.id);
 
             if (!localJob) {
                 // Cloud job exists but not locally - add it
                 console.log(`Found cloud job ${cloudJob.id} not in local state, adding...`);
 
-                await this.jobManager.createJob({
+                const newJobData = {
                     domain: cloudJob.domain,
                     url: cloudJob.url || `https://${cloudJob.domain}`,
                     interval: cloudJob.interval,
@@ -2674,10 +2677,15 @@ class CleanPopupController {
                     status: this.mapCloudStatus(cloudJob.status),
                     isCloudJob: true,
                     jobId: cloudJob.id
-                });
+                };
+                console.log('Creating job with data:', newJobData);
+
+                const createdJobId = await this.jobManager.createJob(newJobData);
+                console.log(`Created local job ${createdJobId} for cloud job ${cloudJob.id}`);
             } else {
                 // Update existing local job with cloud status
                 const mappedStatus = this.mapCloudStatus(cloudJob.status);
+                console.log(`Found existing local job ${localJob.id} for cloud job ${cloudJob.id}`);
                 if (localJob.status !== mappedStatus) {
                     console.log(`Updating job ${cloudJob.id} status from ${localJob.status} to ${mappedStatus}`);
                     await this.jobManager.updateJob(localJob.id, {
@@ -2704,7 +2712,12 @@ class CleanPopupController {
         }
 
         // Refresh job list if we made changes
+        console.log('Refreshing job list UI');
         this.renderActiveJobs();
+
+        // Show final state
+        const finalLocalJobs = this.jobManager.getActiveJobs();
+        console.log(`Final local jobs count: ${finalLocalJobs.length}`, finalLocalJobs.map(j => ({ id: j.id, domain: j.domain, status: j.status, isCloud: j.isCloudJob })));
     }
 
     mapCloudStatus(cloudStatus) {

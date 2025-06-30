@@ -22,9 +22,12 @@ export class JobManager {
             isCloudJob = false
         } = jobData;
 
+        console.log(`JobManager: Creating job with data:`, jobData);
+
         const existingJobId = this.domainJobs.get(domain);
         if (existingJobId) {
             // Update existing job
+            console.log(`JobManager: Existing job found for domain ${domain}, updating job ${existingJobId}`);
             return this.updateJob(existingJobId, jobData);
         }
 
@@ -44,11 +47,13 @@ export class JobManager {
             lastError: null
         };
 
+        console.log(`JobManager: Creating new job:`, job);
+
         this.jobs.set(newJobId, job);
         this.domainJobs.set(domain, newJobId);
         await this.saveJobs();
 
-        console.log(`JobManager: Created job ${newJobId} for domain ${domain}`);
+        console.log(`JobManager: Successfully created job ${newJobId} for domain ${domain}. Total jobs: ${this.jobs.size}`);
         return newJobId;
     }
 
