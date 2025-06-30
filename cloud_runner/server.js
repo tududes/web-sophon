@@ -1316,7 +1316,13 @@ app.get('/job/:id/results', requireValidToken, (req, res) => {
 
         console.log(`[RESULTS] Filtering results...`);
         // Filter results to only include those not yet retrieved by this client
-        const resultsToReturn = job.results.filter(r => !r.retrievedBy.includes(req.clientId));
+        const resultsToReturn = job.results.filter(r => {
+            // Ensure retrievedBy exists (for backward compatibility with error results)
+            if (!r.retrievedBy) {
+                r.retrievedBy = [];
+            }
+            return !r.retrievedBy.includes(req.clientId);
+        });
 
         console.log(`[RESULTS] ${resultsToReturn.length} new results for client ${req.clientId}`);
 
@@ -1552,23 +1558,36 @@ async function processJob(jobId, jobData) {
                 // Also refresh localStorage and sessionStorage
                 if (sessionData.localStorage || sessionData.sessionStorage) {
                     console.log(`[${jobId}] Refreshing storage data...`);
-                    await page.evaluate((storage) => {
-                        // Clear and refresh localStorage
-                        if (storage.localStorage) {
-                            window.localStorage.clear();
-                            for (const [key, value] of Object.entries(storage.localStorage)) {
-                                window.localStorage.setItem(key, value);
+                    try {
+                        await page.evaluate((storage) => {
+                            // Clear and refresh localStorage
+                            if (storage.localStorage) {
+                                try {
+                                    window.localStorage.clear();
+                                    for (const [key, value] of Object.entries(storage.localStorage)) {
+                                        window.localStorage.setItem(key, value);
+                                    }
+                                } catch (e) {
+                                    console.log('localStorage access denied:', e.message);
+                                }
                             }
-                        }
-                        // Clear and refresh sessionStorage
-                        if (storage.sessionStorage) {
-                            window.sessionStorage.clear();
-                            for (const [key, value] of Object.entries(storage.sessionStorage)) {
-                                window.sessionStorage.setItem(key, value);
+                            // Clear and refresh sessionStorage
+                            if (storage.sessionStorage) {
+                                try {
+                                    window.sessionStorage.clear();
+                                    for (const [key, value] of Object.entries(storage.sessionStorage)) {
+                                        window.sessionStorage.setItem(key, value);
+                                    }
+                                } catch (e) {
+                                    console.log('sessionStorage access denied:', e.message);
+                                }
                             }
-                        }
-                    }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
-                    console.log(`[${jobId}] Storage data refreshed`);
+                        }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
+                        console.log(`[${jobId}] Storage data refreshed`);
+                    } catch (storageError) {
+                        console.warn(`[${jobId}] Could not refresh storage data:`, storageError.message);
+                        // Continue anyway - cookies are more important for auth
+                    }
                 }
 
                 // Check if we're still on the correct URL
@@ -1635,11 +1654,24 @@ async function processJob(jobId, jobData) {
 
             // Set local/session storage
             await page.evaluateOnNewDocument((storage) => {
-                for (const [key, value] of Object.entries(storage.localStorage)) {
-                    window.localStorage.setItem(key, value);
+                // Wrap in try-catch as some pages block localStorage access
+                if (storage.localStorage) {
+                    try {
+                        for (const [key, value] of Object.entries(storage.localStorage)) {
+                            window.localStorage.setItem(key, value);
+                        }
+                    } catch (e) {
+                        console.log('localStorage access denied on new document:', e.message);
+                    }
                 }
-                for (const [key, value] of Object.entries(storage.sessionStorage)) {
-                    window.sessionStorage.setItem(key, value);
+                if (storage.sessionStorage) {
+                    try {
+                        for (const [key, value] of Object.entries(storage.sessionStorage)) {
+                            window.sessionStorage.setItem(key, value);
+                        }
+                    } catch (e) {
+                        console.log('sessionStorage access denied on new document:', e.message);
+                    }
                 }
             }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
 
@@ -1845,7 +1877,8 @@ async function processJob(jobId, jobData) {
             resultId: uuidv4(),
             timestamp: new Date().toISOString(),
             error: error.message,
-            captureSettings: captureSettings
+            captureSettings: captureSettings,
+            retrievedBy: [] // Initialize retrievedBy array for error results too
         });
 
         // Remove from browser pool if error occurred
