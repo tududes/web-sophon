@@ -1049,10 +1049,10 @@ const jobScheduler = {
             for (const jobId in jobs) {
                 const job = jobs[jobId];
                 if (job.interval && job.status !== 'running') {
-                    const lastRun = job.lastRun || 0;
-                    if (now - lastRun >= job.interval * 1000) {
-                        console.log(`[Scheduler] Job ${jobId} is due. Last run was at ${new Date(lastRun).toISOString()}.`);
-                        job.lastRun = now;
+                    const lastRunTime = job.lastRun ? new Date(job.lastRun).getTime() : 0;
+                    if (now - lastRunTime >= job.interval * 1000) {
+                        console.log(`[Scheduler] Job ${jobId} is due. Last run was at ${job.lastRun || 'never'}.`);
+                        job.lastRun = new Date().toISOString(); // Store as ISO string
                         // Don't await this, let it run in the background
                         processJob(jobId, job.jobData);
                     }
@@ -1735,6 +1735,7 @@ async function processJob(jobId, jobData) {
         });
 
         job.status = job.interval ? 'idle' : 'complete'; // Reset to idle for next interval
+        job.lastRun = new Date().toISOString(); // Update lastRun timestamp
 
         // Update quotas when manual job completes
         if (!job.interval && job.authToken) {
