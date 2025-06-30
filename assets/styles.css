@@ -2304,6 +2304,20 @@ input:checked+.slider:hover {
     border-radius: var(--radius-md);
 }
 
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-md);
+}
+
+.section-header h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
 .active-jobs-section h3 {
     margin: 0 0 var(--space-md) 0;
     color: var(--text-primary);

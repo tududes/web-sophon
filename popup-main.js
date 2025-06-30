@@ -1705,13 +1705,19 @@ class CleanPopupController {
 
     async sendMessageToBackground(message) {
         return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage(message, (response) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else {
-                    resolve(response || {});
-                }
-            });
+            try {
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn(`Background message failed (${message.action}):`, chrome.runtime.lastError.message);
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(response || {});
+                    }
+                });
+            } catch (error) {
+                console.error(`Error sending message to background (${message.action}):`, error);
+                reject(error);
+            }
         });
     }
 
@@ -2370,6 +2376,15 @@ class CleanPopupController {
 
         // Add event listeners for job controls
         this.setupJobControlListeners();
+
+        // Manual cloud sync button
+        this.elements.syncCloudJobsBtn = document.getElementById('syncCloudJobsBtn');
+        if (this.elements.syncCloudJobsBtn) {
+            this.elements.syncCloudJobsBtn.addEventListener('click', () => {
+                console.log('Manual cloud sync triggered');
+                this.syncWithCloudRunner();
+            });
+        }
     }
 
     renderJobItem(job) {
@@ -2601,8 +2616,10 @@ class CleanPopupController {
     // === CLOUD RUNNER SYNCHRONIZATION ===
 
     startCloudRunnerSync() {
-        // Sync immediately on startup
-        this.syncWithCloudRunner();
+        // Delay initial sync to allow popup to fully initialize
+        setTimeout(() => {
+            this.syncWithCloudRunner();
+        }, 2000); // 2 second delay
 
         // Set up periodic sync every 30 seconds
         if (this.cloudSyncInterval) {
@@ -2613,7 +2630,7 @@ class CleanPopupController {
             this.syncWithCloudRunner();
         }, 30000); // 30 seconds
 
-        console.log('Cloud runner synchronization started');
+        console.log('Cloud runner synchronization started (initial sync in 2s)');
     }
 
     stopCloudRunnerSync() {
@@ -2630,19 +2647,29 @@ class CleanPopupController {
             const tokenStats = await this.sendMessageToBackground({ action: 'getTokenStats' });
             if (!tokenStats || !tokenStats.quotas || !tokenStats.expiresAt) {
                 // No valid token, skip sync
+                console.log('Skipping cloud sync - no valid token');
                 return;
             }
 
-            // Get cloud runner jobs for our token
-            const response = await this.sendMessageToBackground({
-                action: 'getCloudJobs'
-            });
+            console.log('Starting cloud job sync...');
 
-            if (response.success) {
+            // Get cloud runner jobs for our token with timeout
+            const response = await Promise.race([
+                this.sendMessageToBackground({
+                    action: 'getCloudJobs'
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Cloud sync timeout')), 10000)
+                )
+            ]);
+
+            console.log('Cloud sync response:', response);
+
+            if (response && response.success) {
                 await this.processCloudJobSync(response.jobs || []);
             } else {
-                console.warn('Failed to sync with cloud runner:', response.error);
-                await this.handleCloudSyncError(response.error);
+                console.warn('Failed to sync with cloud runner:', response?.error || 'No response');
+                await this.handleCloudSyncError(response?.error || 'Failed to get cloud jobs');
             }
 
         } catch (error) {
