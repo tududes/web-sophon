@@ -2368,6 +2368,11 @@ class CleanPopupController {
     }
 
     formatInterval(seconds) {
+        // Handle null, undefined, or invalid intervals
+        if (!seconds || seconds <= 0 || !Number.isFinite(seconds)) {
+            return 'manual';
+        }
+
         if (seconds < 60) {
             return `${seconds} seconds`;
         } else if (seconds < 3600) {
@@ -2702,13 +2707,17 @@ class CleanPopupController {
         console.log(`Syncing with ${cloudJobs.length} cloud runner jobs`);
         console.log('Cloud jobs data:', JSON.stringify(cloudJobs, null, 2));
 
+        // Filter out manual jobs (jobs without valid intervals)
+        const intervalJobs = cloudJobs.filter(job => job.interval && job.interval > 0);
+        console.log(`Filtered to ${intervalJobs.length} interval jobs from ${cloudJobs.length} total cloud jobs`);
+
         // Get current local jobs
         const localJobs = this.jobManager.getActiveJobs();
         const localCloudJobs = localJobs.filter(job => job.isCloudJob);
         console.log(`Current local cloud jobs: ${localCloudJobs.length}`, localCloudJobs.map(j => ({ id: j.id, jobId: j.jobId, domain: j.domain })));
 
-        // Check for cloud jobs that don't exist locally
-        for (const cloudJob of cloudJobs) {
+        // Check for cloud interval jobs that don't exist locally
+        for (const cloudJob of intervalJobs) {
             console.log(`Processing cloud job:`, cloudJob);
             const localJob = localCloudJobs.find(lj => lj.jobId === cloudJob.id);
 
@@ -2746,7 +2755,7 @@ class CleanPopupController {
 
         // Check for local cloud jobs that don't exist on cloud runner
         for (const localJob of localCloudJobs) {
-            const cloudJob = cloudJobs.find(cj => cj.id === localJob.jobId);
+            const cloudJob = intervalJobs.find(cj => cj.id === localJob.jobId);
 
             if (!cloudJob) {
                 // Local job exists but not on cloud runner - mark as disconnected

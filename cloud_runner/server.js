@@ -1381,8 +1381,22 @@ app.get('/jobs', requireValidToken, (req, res) => {
         // Filter jobs that belong to this token
         const userJobs = Object.values(jobs).filter(job => job.authToken === req.authToken);
 
+        // Only return interval jobs or manual jobs that are still running
+        // Exclude completed/failed manual jobs from sync
+        const activeJobs = userJobs.filter(job => {
+            // Always include interval jobs
+            if (job.interval && job.interval > 0) {
+                return true;
+            }
+            // Only include manual jobs if they're still running
+            if (!job.interval && job.status === 'running') {
+                return true;
+            }
+            return false;
+        });
+
         // Return simplified job data for synchronization
-        const jobsData = userJobs.map(job => ({
+        const jobsData = activeJobs.map(job => ({
             id: job.id,
             domain: job.domain,
             status: job.status,
@@ -1395,7 +1409,7 @@ app.get('/jobs', requireValidToken, (req, res) => {
             url: job.jobData?.sessionData?.url || `https://${job.domain}`
         }));
 
-        console.log(`[SYNC] Returning ${jobsData.length} jobs for client ${req.tokenData.clientId}`);
+        console.log(`[SYNC] Returning ${jobsData.length} active jobs for client ${req.tokenData.clientId} (filtered from ${userJobs.length} total)`);
         res.json({ jobs: jobsData });
 
     } catch (error) {
@@ -1548,13 +1562,14 @@ async function processJob(jobId, jobData) {
             console.log(`[${jobId}] Navigating to ${sessionData.url}...`);
 
             // Enhanced navigation with multiple wait conditions
+            // Increased timeout for slow-loading sites like TradingView
             await page.goto(sessionData.url, {
                 waitUntil: ['load', 'domcontentloaded', 'networkidle0'],
-                timeout: 60000 // 60 second timeout
+                timeout: 120000 // 120 second timeout for slow sites
             });
 
             // Additional wait for any dynamic content
-            await page.waitForTimeout(1000); // Small delay for JS execution
+            await page.waitForTimeout(2000); // Increased delay for JS execution
 
             console.log(`[${jobId}] Page fully loaded`);
         }
@@ -1564,11 +1579,11 @@ async function processJob(jobId, jobData) {
             console.log(`[${jobId}] Refreshing page before capture (refresh enabled)...`);
             await page.reload({
                 waitUntil: ['load', 'domcontentloaded', 'networkidle0'],
-                timeout: 60000
+                timeout: 120000 // Consistent timeout for reloads
             });
 
             // Additional wait after reload
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(2000); // Increased delay
             console.log(`[${jobId}] Page refresh completed`);
         }
 
@@ -1705,13 +1720,16 @@ async function processJob(jobId, jobData) {
                 browserPool.delete(jobId);
             }
 
+            // Clean up failed jobs faster than successful ones
+            const cleanupDelay = job.status === 'failed' ? 60000 : 60000 * 15; // 1 minute for failed, 15 minutes for completed
+
             const timeoutId = setTimeout(() => {
                 if (jobs[jobId]) {
-                    console.log(`[${jobId}] Deleting completed one-off job.`);
+                    console.log(`[${jobId}] Deleting completed one-off job (status: ${job.status}).`);
                     delete jobs[jobId];
                     jobDeletionTimeouts.delete(jobId);
                 }
-            }, 60000 * 15); // 15 minutes
+            }, cleanupDelay);
 
             // Store the timeout ID so we can cancel it if needed
             jobDeletionTimeouts.set(jobId, timeoutId);
