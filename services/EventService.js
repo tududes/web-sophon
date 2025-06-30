@@ -707,14 +707,49 @@ export class EventService {
     // Fetch screenshot from cloud runner
     async fetchCloudScreenshot(event) {
         try {
-            // Get cloud runner URL from storage
+            console.log('fetchCloudScreenshot called for event:', {
+                eventId: event.id,
+                screenshotUrl: event.screenshotUrl,
+                hasJobId: !!(event.request?.jobId)
+            });
+
+            // If event already has a direct screenshot URL, use it
+            if (event.screenshotUrl && event.screenshotUrl.startsWith('http')) {
+                console.log(`Using direct screenshot URL: ${event.screenshotUrl}`);
+
+                const response = await chrome.runtime.sendMessage({
+                    action: 'makeAuthenticatedRequest',
+                    url: event.screenshotUrl,
+                    options: { method: 'GET' }
+                });
+
+                if (response && response.success) {
+                    // The response might contain binary data or base64
+                    if (response.data && response.data.startsWith('data:image/')) {
+                        console.log('Cloud screenshot fetched successfully via URL');
+                        return response.data;
+                    } else if (response.blob) {
+                        // Convert blob to base64
+                        const reader = new FileReader();
+                        return new Promise((resolve) => {
+                            reader.onload = () => resolve(reader.result);
+                            reader.readAsDataURL(response.blob);
+                        });
+                    }
+                }
+
+                console.warn('Cloud screenshot not available via URL:', event.screenshotUrl);
+                return null;
+            }
+
+            // Fallback to old method using jobId and timestamp
             const settings = await chrome.storage.local.get(['cloudRunnerUrl']);
             const cloudRunnerUrl = settings.cloudRunnerUrl || 'https://runner.websophon.tududes.com';
 
             // Extract jobId from event request data
             const jobId = event.request?.jobId;
             if (!jobId) {
-                console.error('No jobId found for cloud event:', event.id);
+                console.error('No jobId found for cloud event and no direct URL:', event.id);
                 return null;
             }
 
@@ -725,7 +760,7 @@ export class EventService {
             // Construct URL to fetch screenshot using jobId_timestamp format
             const url = `${cloudRunnerUrl.replace(/\/$/, '')}/screenshots/${filename}`;
 
-            console.log(`Fetching cloud screenshot from: ${url}`);
+            console.log(`Fetching cloud screenshot from fallback method: ${url}`);
 
             // Make authenticated request to cloud runner
             const response = await chrome.runtime.sendMessage({
@@ -735,11 +770,11 @@ export class EventService {
             });
 
             if (response && response.success && response.data) {
-                console.log('Cloud screenshot fetched successfully');
+                console.log('Cloud screenshot fetched successfully via fallback');
                 return response.data; // Should be base64 image data
             }
 
-            console.warn('Cloud screenshot not available:', filename);
+            console.warn('Cloud screenshot not available via fallback:', filename);
             return null;
 
         } catch (error) {

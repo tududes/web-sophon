@@ -1104,7 +1104,10 @@ export class MessageService {
 
                             // Debug the data we're about to process
                             console.log(`[Sync] Processing result ${eventId}:`, {
-                                hasScreenshot: !!result.screenshotData,
+                                hasScreenshotData: !!result.screenshotData,
+                                hasScreenshotUrl: !!result.screenshotUrl,
+                                screenshotUrl: result.screenshotUrl,
+                                screenshotFilename: result.screenshotFilename,
                                 screenshotSize: result.screenshotData ? result.screenshotData.length : 0,
                                 hasLlmResponse: !!llmResponse,
                                 llmResponseKeys: Object.keys(llmResponse),
@@ -1123,7 +1126,7 @@ export class MessageService {
                                 true,
                                 200,
                                 null,
-                                result.screenshotData, // Pass screenshot data
+                                result.screenshotData || null, // Pass screenshot data if available (for backwards compatibility)
                                 {
                                     jobId: jobId,
                                     captureSettings: result.captureSettings,
@@ -1137,6 +1140,21 @@ export class MessageService {
                                 'cloud',
                                 result.timestamp // Use server timestamp
                             );
+
+                            // Add screenshot URL for cloud events if available (new format)
+                            if (result.screenshotUrl && !result.screenshotData) {
+                                const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
+                                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+                                const fullScreenshotUrl = `${runnerEndpoint}${result.screenshotUrl}`;
+
+                                // Update the event with screenshot URL
+                                const event = this.eventService.getEventById(eventId);
+                                if (event) {
+                                    event.screenshotUrl = fullScreenshotUrl;
+                                    event.screenshotFilename = result.screenshotFilename;
+                                    console.log(`[Sync] Added screenshot URL to event ${eventId}: ${fullScreenshotUrl}`);
+                                }
+                            }
 
                             // If the result includes field webhooks fired by cloud runner, add them to the event
                             if (result.fieldWebhooks && result.fieldWebhooks.length > 0) {
