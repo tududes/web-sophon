@@ -80,6 +80,31 @@ export class UIManager {
         <textarea class="field-description" 
                   placeholder="Describe the criteria for evaluating this field...">${field.description}</textarea>
         
+        <div class="field-state-config">
+          <div class="field-state-header">
+            <span>Field State (Previous Context & Meta-Evaluation)</span>
+          </div>
+          
+          <div class="field-state-controls">
+            <div class="expected-result-group">
+              <label class="state-setting-label">Expected Result:</label>
+              <select class="expected-result-dropdown">
+                <option value="null" ${field.expectedResult === null ? 'selected' : ''}>Unset</option>
+                <option value="true" ${field.expectedResult === true ? 'selected' : ''}>TRUE</option>
+                <option value="false" ${field.expectedResult === false ? 'selected' : ''}>FALSE</option>
+              </select>
+            </div>
+            
+            <div class="confidence-threshold-group">
+              <label class="state-setting-label">Confidence Threshold: <span class="threshold-value">${field.confidenceThreshold || 75}%</span></label>
+              <input type="range" 
+                     class="confidence-threshold-slider" 
+                     min="0" max="100" step="5"
+                     value="${field.confidenceThreshold || 75}">
+            </div>
+          </div>
+        </div>
+        
         <div class="field-webhook-config">
           <div class="webhook-toggle-group">
             <label class="toggle-switch">
@@ -156,6 +181,11 @@ export class UIManager {
         const sanitizedSpan = fieldEl.querySelector('.field-name-sanitized');
         const descInput = fieldEl.querySelector('.field-description');
         const removeBtn = fieldEl.querySelector('.remove-field-btn');
+        // Field state controls
+        const expectedResultDropdown = fieldEl.querySelector('.expected-result-dropdown');
+        const confidenceThresholdSlider = fieldEl.querySelector('.confidence-threshold-slider');
+        const thresholdValueSpan = fieldEl.querySelector('.threshold-value');
+        // Webhook controls
         const webhookToggle = fieldEl.querySelector('.webhook-toggle');
         const webhookTriggerDropdown = fieldEl.querySelector('.webhook-trigger-dropdown');
         const webhookSettings = fieldEl.querySelector('.webhook-settings');
@@ -223,6 +253,36 @@ export class UIManager {
                 this.fieldManager.saveToStorage();
             }
         });
+
+        // Field state controls
+        // Update expected result
+        if (expectedResultDropdown) {
+            expectedResultDropdown.addEventListener('change', () => {
+                const actualField = this.fieldManager.getField(field.id);
+                if (!actualField) return;
+
+                const value = expectedResultDropdown.value;
+                if (value === 'null') {
+                    actualField.expectedResult = null;
+                } else {
+                    actualField.expectedResult = value === 'true';
+                }
+                this.fieldManager.saveToStorage();
+            });
+        }
+
+        // Update confidence threshold
+        if (confidenceThresholdSlider && thresholdValueSpan) {
+            confidenceThresholdSlider.addEventListener('input', () => {
+                const actualField = this.fieldManager.getField(field.id);
+                if (!actualField) return;
+
+                const threshold = parseInt(confidenceThresholdSlider.value);
+                actualField.confidenceThreshold = threshold;
+                thresholdValueSpan.textContent = `${threshold}%`;
+                this.fieldManager.saveToStorage();
+            });
+        }
 
         // Toggle webhook
         webhookToggle.addEventListener('change', () => {

@@ -835,6 +835,111 @@ input:checked+.slider:hover {
     color: var(--text-muted);
 }
 
+/* Field State Configuration */
+.field-state-config {
+    margin-top: var(--space-lg);
+    padding: var(--space-lg);
+    background-color: var(--info-light);
+    border: 1px solid var(--info-border);
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--info);
+}
+
+.field-state-header {
+    margin-bottom: var(--space-md);
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.field-state-header::before {
+    content: "⚡";
+    font-size: var(--text-base);
+}
+
+.field-state-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.expected-result-group,
+.confidence-threshold-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.state-setting-label {
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-xs);
+}
+
+.expected-result-dropdown {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.expected-result-dropdown:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+}
+
+.confidence-threshold-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.confidence-threshold-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--info);
+    cursor: pointer;
+    border: 2px solid var(--bg-primary);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.confidence-threshold-slider::-webkit-slider-thumb:hover {
+    background: var(--info);
+    transform: scale(1.1);
+}
+
+.confidence-threshold-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--info);
+    cursor: pointer;
+    border: 2px solid var(--bg-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.threshold-value {
+    font-weight: 600;
+    color: var(--info);
+}
+
 /* Webhook Configuration - Enhanced */
 .field-webhook-config {
     background-color: var(--bg-primary);

@@ -2245,6 +2245,10 @@ class FieldManagerLLM {
             lastEventId: null,
             lastResultTime: null,
             isPending: false,
+            // Field state management (for previous context and meta-evaluation)
+            expectedResult: data.expectedResult !== undefined ? data.expectedResult : null, // null = unset, true/false = expected
+            confidenceThreshold: data.confidenceThreshold !== undefined ? data.confidenceThreshold : 75,
+            // Webhook properties (separate from field state)
             webhookEnabled: data.webhookEnabled || false,
             webhookTrigger: data.webhookTrigger !== undefined ? data.webhookTrigger : true,
             webhookUrl: data.webhookUrl || '',
@@ -2303,7 +2307,10 @@ class FieldManagerLLM {
             .filter(f => f.friendlyName && f.description)
             .map(f => ({
                 name: f.name,  // Use the sanitized name for LLM communication
-                criteria: f.description.trim()
+                criteria: f.description.trim(),
+                // Include field state for meta-evaluation context
+                expectedResult: f.expectedResult !== undefined ? f.expectedResult : null,
+                confidenceThreshold: f.confidenceThreshold !== undefined ? f.confidenceThreshold : 75
             }));
     }
 
@@ -2398,6 +2405,10 @@ class FieldManagerLLM {
                 name: field.name,
                 friendlyName: field.friendlyName,
                 description: field.description,
+                // Field state management
+                expectedResult: field.expectedResult,
+                confidenceThreshold: field.confidenceThreshold,
+                // Webhook properties
                 webhookEnabled: field.webhookEnabled,
                 webhookTrigger: field.webhookTrigger,
                 webhookUrl: field.webhookUrl,
@@ -2428,7 +2439,10 @@ class FieldManagerLLM {
             lastEventId: null,
             lastResultTime: null,
             isPending: false,
-            // Add webhook properties for backwards compatibility
+            // Field state management (for backwards compatibility)
+            expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : null,
+            confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
+            // Webhook properties (for backwards compatibility)
             webhookEnabled: fieldData.webhookEnabled || false,
             webhookTrigger: fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true,
             webhookUrl: fieldData.webhookUrl || '',
@@ -2494,7 +2508,10 @@ class FieldManagerLLM {
                 lastEventId: fieldData.lastEventId || null,
                 lastResultTime: fieldData.lastResponseTime || fieldData.lastResultTime || null,
                 isPending: fieldData.isPending || false,
-                // Ensure webhook properties exist for backwards compatibility
+                // Field state management (for backwards compatibility)
+                expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : null,
+                confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
+                // Webhook properties (for backwards compatibility)
                 webhookEnabled: fieldData.webhookEnabled || false,
                 webhookTrigger: fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true,
                 webhookUrl: fieldData.webhookUrl || '',

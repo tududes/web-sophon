@@ -48,6 +48,31 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
     }
   }
 
+  // Build field state context (expected results and confidence thresholds)
+  let fieldStateContext = '';
+  const fieldsWithState = fields.filter(field =>
+    field.expectedResult !== null && field.expectedResult !== undefined ||
+    (field.confidenceThreshold && field.confidenceThreshold !== 75)
+  );
+
+  if (fieldsWithState.length > 0) {
+    fieldStateContext = `\n\n### Field State Context (Meta-Evaluation Guidance)\nThe following fields have specific expectations set. Use this as context for evaluation:\n`;
+
+    for (const field of fieldsWithState) {
+      if (field.expectedResult !== null && field.expectedResult !== undefined) {
+        fieldStateContext += `- "${field.name}": Expected result = ${field.expectedResult ? 'TRUE' : 'FALSE'}`;
+        if (field.confidenceThreshold && field.confidenceThreshold !== 75) {
+          fieldStateContext += `, Confidence threshold = ${field.confidenceThreshold}%`;
+        }
+        fieldStateContext += '\n';
+      } else if (field.confidenceThreshold && field.confidenceThreshold !== 75) {
+        fieldStateContext += `- "${field.name}": Confidence threshold = ${field.confidenceThreshold}%\n`;
+      }
+    }
+
+    fieldStateContext += '\nNote: This field state is for reference and context. Your evaluation should still be based on what you actually observe in the screenshot, but consider these expectations when determining confidence levels and explaining any discrepancies.';
+  }
+
   return `You are an AI assistant that communicates exclusively using the SAPIENT protocol. Your task is to analyze web page screenshots and evaluate specific boolean conditions.
 
 ## SAPIENT Communication Rules:
@@ -79,7 +104,7 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
 
 Analyze the screenshot and evaluate these boolean conditions:
 
-${fieldsJson}${previousContext}
+${fieldsJson}${previousContext}${fieldStateContext}
 
 ## Required Response Format:
 
