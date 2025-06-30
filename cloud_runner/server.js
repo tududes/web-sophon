@@ -2002,18 +2002,30 @@ app.put('/job/:id/session', requireValidToken, async (req, res) => {
         return res.status(403).json({ error: 'Unauthorized to update this job' });
     }
 
-    if (!sessionData || !sessionData.url) {
-        return res.status(400).json({ error: 'Valid session data required' });
+    if (!sessionData) {
+        return res.status(400).json({ error: 'Session data required' });
     }
 
-    // Update the job's session data
-    console.log(`[${jobId}] Updating session data for domain ${job.domain}`);
-    job.jobData.sessionData = sessionData;
+    // Preserve the original URL while updating other session data
+    const originalUrl = job.jobData.sessionData.url;
+    console.log(`[${jobId}] Updating session data for domain ${job.domain}, preserving original URL: ${originalUrl}`);
+
+    // Log if the incoming session data had a different URL
+    if (sessionData.url && sessionData.url !== originalUrl) {
+        console.log(`[${jobId}] Note: Incoming session data had different URL (${sessionData.url}), but keeping original URL (${originalUrl})`);
+    }
+
+    // Update session data but keep the original URL
+    job.jobData.sessionData = {
+        ...sessionData,
+        url: originalUrl // Always preserve the original URL
+    };
     job.lastSessionUpdate = new Date().toISOString();
 
     res.status(200).json({
         success: true,
         message: 'Session data updated',
-        lastUpdate: job.lastSessionUpdate
+        lastUpdate: job.lastSessionUpdate,
+        preservedUrl: originalUrl
     });
 });
