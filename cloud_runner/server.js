@@ -1511,7 +1511,13 @@ async function processJob(jobId, jobData) {
         return;
     }
 
-    const { sessionData, llmConfig, fields, captureSettings = {} } = jobData;
+    // ALWAYS use the latest jobData from the job object, not the parameter
+    // This ensures we get fresh session data if the job was updated
+    const latestJobData = job.jobData || jobData;
+    const { sessionData, llmConfig, fields, captureSettings = {} } = latestJobData;
+
+    console.log(`[${jobId}] Using ${latestJobData === job.jobData ? 'latest' : 'provided'} job data`);
+
     let browser;
     let page;
     let shouldCloseBrowser = false;
@@ -1529,6 +1535,41 @@ async function processJob(jobId, jobData) {
                 page = existingBrowser.page;
                 existingBrowser.lastUsed = Date.now();
 
+                // Always refresh cookies to maintain session, even when reusing browser
+                console.log(`[${jobId}] Refreshing cookies for session persistence...`);
+                if (sessionData.cookies && sessionData.cookies.length > 0) {
+                    // Clear existing cookies first to avoid conflicts
+                    const cookies = await page.cookies();
+                    if (cookies.length > 0) {
+                        await page.deleteCookie(...cookies);
+                    }
+                    // Set fresh cookies from session data
+                    await page.setCookie(...sessionData.cookies);
+                    console.log(`[${jobId}] Refreshed ${sessionData.cookies.length} cookies`);
+                }
+
+                // Also refresh localStorage and sessionStorage
+                if (sessionData.localStorage || sessionData.sessionStorage) {
+                    console.log(`[${jobId}] Refreshing storage data...`);
+                    await page.evaluate((storage) => {
+                        // Clear and refresh localStorage
+                        if (storage.localStorage) {
+                            window.localStorage.clear();
+                            for (const [key, value] of Object.entries(storage.localStorage)) {
+                                window.localStorage.setItem(key, value);
+                            }
+                        }
+                        // Clear and refresh sessionStorage
+                        if (storage.sessionStorage) {
+                            window.sessionStorage.clear();
+                            for (const [key, value] of Object.entries(storage.sessionStorage)) {
+                                window.sessionStorage.setItem(key, value);
+                            }
+                        }
+                    }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
+                    console.log(`[${jobId}] Storage data refreshed`);
+                }
+
                 // Check if we're still on the correct URL
                 try {
                     const currentUrl = await page.url();
@@ -1538,9 +1579,13 @@ async function processJob(jobId, jobData) {
                     if (currentUrl !== sessionData.url && !currentUrl.startsWith(sessionData.url)) {
                         console.log(`[${jobId}] Page navigated away or blank, re-navigating to ${sessionData.url}`);
                         await page.goto(sessionData.url, {
-                            waitUntil: 'domcontentloaded',
-                            timeout: 120000
+                            waitUntil: ['load', 'networkidle2'],  // Wait for load and network to mostly settle
+                            timeout: 120000 // 120 second timeout for slow sites
                         });
+
+                        // Additional wait for JavaScript-heavy sites to render
+                        console.log(`[${jobId}] Waiting 5 seconds for JavaScript rendering...`);
+                        await new Promise(resolve => setTimeout(resolve, 5000));
                     } else {
                         console.log(`[${jobId}] Page still on correct URL, proceeding with screenshot`);
                     }
@@ -1602,11 +1647,15 @@ async function processJob(jobId, jobData) {
             // Use less strict wait conditions - just wait for basic page load
             // Sites like TradingView continuously stream data, so networkidle0 will never complete
             await page.goto(sessionData.url, {
-                waitUntil: 'domcontentloaded',  // Just wait for DOM to be ready
+                waitUntil: ['load', 'networkidle2'],  // Wait for load and network to mostly settle
                 timeout: 120000 // 120 second timeout for slow sites
             });
 
             console.log(`[${jobId}] Page loaded`);
+
+            // Additional wait for JavaScript-heavy sites to render
+            console.log(`[${jobId}] Waiting 5 seconds for JavaScript rendering...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
 
         // Handle page refresh if enabled
@@ -1644,7 +1693,7 @@ async function processJob(jobId, jobData) {
 
         console.log(`[${jobId}] Sending to LLM...`);
         // Use the job's last result as context for the next one
-        let previousEvaluation = jobData.previousEvaluation; // Start with initial context
+        let previousEvaluation = latestJobData.previousEvaluation; // Start with initial context
         if (job.results.length > 0) {
             const lastResult = job.results[job.results.length - 1];
             if (lastResult.llmResponse && lastResult.llmResponse.evaluation) {
