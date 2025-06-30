@@ -45,41 +45,6 @@ const blockedIPs = new Set();
 const blockedClients = new Set();
 const jobDeletionTimeouts = new Map(); // Track deletion timeouts for jobs
 
-// Add browser pool for persistent browser instances
-const browserPool = new Map(); // jobId -> { browser, page, lastUsed }
-const BROWSER_IDLE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-
-// Clean up idle browsers periodically
-setInterval(async () => {
-    const now = Date.now();
-    for (const [jobId, browserInfo] of browserPool.entries()) {
-        if (now - browserInfo.lastUsed > BROWSER_IDLE_TIMEOUT) {
-            console.log(`[BROWSER] Closing idle browser for job ${jobId}`);
-            try {
-                await browserInfo.browser.close();
-            } catch (error) {
-                console.error(`[BROWSER] Error closing browser for job ${jobId}:`, error);
-            }
-            browserPool.delete(jobId);
-        }
-    }
-
-    // Also check for crashed browsers
-    for (const [jobId, browserInfo] of browserPool.entries()) {
-        try {
-            // Try to check if browser is still connected
-            const pages = await browserInfo.browser.pages();
-            if (pages.length === 0) {
-                console.log(`[BROWSER] Browser for job ${jobId} has no pages, removing from pool`);
-                browserPool.delete(jobId);
-            }
-        } catch (error) {
-            console.log(`[BROWSER] Browser for job ${jobId} appears to be crashed, removing from pool`);
-            browserPool.delete(jobId);
-        }
-    }
-}, 60 * 1000); // Check every minute
-
 // Token and quota management
 class TokenManager {
     constructor() {
@@ -1259,13 +1224,7 @@ app.delete('/job/:id', requireValidToken, (req, res) => {
         return res.status(403).json({ error: 'Unauthorized to delete this job' });
     }
 
-    // Clean up browser instance if exists
-    if (browserPool.has(jobId)) {
-        const browserInfo = browserPool.get(jobId);
-        browserInfo.browser.close().catch(console.error);
-        browserPool.delete(jobId);
-        console.log(`[${jobId}] Closed persistent browser instance`);
-    }
+    // Browser cleanup no longer needed - we create fresh browser per capture
 
     // Update quotas when deleting job
     if (job.interval) {
@@ -1526,176 +1485,74 @@ async function processJob(jobId, jobData) {
     console.log(`[${jobId}] Using ${latestJobData === job.jobData ? 'latest' : 'provided'} job data`);
 
     let browser;
-    let page;
-    let shouldCloseBrowser = false;
 
     try {
         console.log(`[${jobId}] Starting job processing...`);
         job.status = 'running';
 
-        // For interval jobs without refresh, try to reuse browser instance
-        if (job.interval && !captureSettings.refreshPageToggle) {
-            const existingBrowser = browserPool.get(jobId);
-            if (existingBrowser) {
-                console.log(`[${jobId}] Reusing existing browser instance`);
-                browser = existingBrowser.browser;
-                page = existingBrowser.page;
-                existingBrowser.lastUsed = Date.now();
+        // ALWAYS create a fresh browser for reliable session handling
+        console.log(`[${jobId}] Launching new Puppeteer instance...`);
+        browser = await puppeteer.launch({
+            headless: true,
+            executablePath: '/usr/bin/google-chrome',
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+        const page = await browser.newPage();
 
-                // Always refresh cookies to maintain session, even when reusing browser
-                console.log(`[${jobId}] Refreshing cookies for session persistence...`);
-                if (sessionData.cookies && sessionData.cookies.length > 0) {
-                    // Clear existing cookies first to avoid conflicts
-                    const cookies = await page.cookies();
-                    if (cookies.length > 0) {
-                        await page.deleteCookie(...cookies);
-                    }
-                    // Set fresh cookies from session data
-                    await page.setCookie(...sessionData.cookies);
-                    console.log(`[${jobId}] Refreshed ${sessionData.cookies.length} cookies`);
-                }
+        console.log(`[${jobId}] Setting up browser environment...`);
 
-                // Also refresh localStorage and sessionStorage
-                if (sessionData.localStorage || sessionData.sessionStorage) {
-                    console.log(`[${jobId}] Refreshing storage data...`);
-                    try {
-                        await page.evaluate((storage) => {
-                            // Clear and refresh localStorage
-                            if (storage.localStorage) {
-                                try {
-                                    window.localStorage.clear();
-                                    for (const [key, value] of Object.entries(storage.localStorage)) {
-                                        window.localStorage.setItem(key, value);
-                                    }
-                                } catch (e) {
-                                    console.log('localStorage access denied:', e.message);
-                                }
-                            }
-                            // Clear and refresh sessionStorage
-                            if (storage.sessionStorage) {
-                                try {
-                                    window.sessionStorage.clear();
-                                    for (const [key, value] of Object.entries(storage.sessionStorage)) {
-                                        window.sessionStorage.setItem(key, value);
-                                    }
-                                } catch (e) {
-                                    console.log('sessionStorage access denied:', e.message);
-                                }
-                            }
-                        }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
-                        console.log(`[${jobId}] Storage data refreshed`);
-                    } catch (storageError) {
-                        console.warn(`[${jobId}] Could not refresh storage data:`, storageError.message);
-                        // Continue anyway - cookies are more important for auth
-                    }
-                }
+        if (sessionData.userAgent) await page.setUserAgent(sessionData.userAgent);
+        if (sessionData.viewport) await page.setViewport(sessionData.viewport);
 
-                // Check if we're still on the correct URL
+        // Set cookies
+        if (sessionData.cookies && sessionData.cookies.length > 0) {
+            await page.setCookie(...sessionData.cookies);
+            console.log(`[${jobId}] Set ${sessionData.cookies.length} cookies`);
+        }
+
+        // Set local/session storage
+        await page.evaluateOnNewDocument((storage) => {
+            // Wrap in try-catch as some pages block localStorage access
+            if (storage.localStorage) {
                 try {
-                    const currentUrl = await page.url();
-                    console.log(`[${jobId}] Current URL: ${currentUrl}, Expected: ${sessionData.url}`);
-
-                    // If the URL doesn't match or is about:blank, navigate again
-                    if (currentUrl !== sessionData.url && !currentUrl.startsWith(sessionData.url)) {
-                        console.log(`[${jobId}] Page navigated away or blank, re-navigating to ${sessionData.url}`);
-                        await page.goto(sessionData.url, {
-                            waitUntil: ['load', 'networkidle2'],  // Wait for load and network to mostly settle
-                            timeout: 120000 // 120 second timeout for slow sites
-                        });
-
-                        // Additional wait for JavaScript-heavy sites to render
-                        console.log(`[${jobId}] Waiting 5 seconds for JavaScript rendering...`);
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                    } else {
-                        console.log(`[${jobId}] Page still on correct URL, proceeding with screenshot`);
+                    for (const [key, value] of Object.entries(storage.localStorage)) {
+                        window.localStorage.setItem(key, value);
                     }
-                } catch (navError) {
-                    console.error(`[${jobId}] Error checking page URL:`, navError);
-                    // Page might be crashed, remove from pool and create new instance
-                    browserPool.delete(jobId);
-                    throw new Error('Browser page crashed or became unresponsive');
+                } catch (e) {
+                    console.log('localStorage access denied on new document:', e.message);
                 }
-            } else {
-                // Need to create new browser instance
-                console.log(`[${jobId}] Creating new persistent browser instance for interval job`);
-                browser = await puppeteer.launch({
-                    headless: true,
-                    executablePath: '/usr/bin/google-chrome',
-                    args: ['--no-sandbox', '--disable-setuid-sandbox']
-                });
-                page = await browser.newPage();
-
-                // Store in pool for reuse
-                browserPool.set(jobId, { browser, page, lastUsed: Date.now() });
             }
-        } else {
-            // For one-off jobs or interval jobs with refresh enabled
-            console.log(`[${jobId}] Launching new Puppeteer instance...`);
-            shouldCloseBrowser = true;
-            browser = await puppeteer.launch({
-                headless: true,
-                executablePath: '/usr/bin/google-chrome',
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
-            });
-            page = await browser.newPage();
-        }
-
-        // Set up page only if it's new or we need to navigate
-        if (!browserPool.has(jobId) || captureSettings.refreshPageToggle || !job.lastRun) {
-            console.log(`[${jobId}] Setting up browser environment...`);
-
-            if (sessionData.userAgent) await page.setUserAgent(sessionData.userAgent);
-            if (sessionData.viewport) await page.setViewport(sessionData.viewport);
-
-            // Only set cookies if navigating
-            if (sessionData.cookies && sessionData.cookies.length > 0) {
-                await page.setCookie(...sessionData.cookies);
+            if (storage.sessionStorage) {
+                try {
+                    for (const [key, value] of Object.entries(storage.sessionStorage)) {
+                        window.sessionStorage.setItem(key, value);
+                    }
+                } catch (e) {
+                    console.log('sessionStorage access denied on new document:', e.message);
+                }
             }
+        }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
 
-            // Set local/session storage
-            await page.evaluateOnNewDocument((storage) => {
-                // Wrap in try-catch as some pages block localStorage access
-                if (storage.localStorage) {
-                    try {
-                        for (const [key, value] of Object.entries(storage.localStorage)) {
-                            window.localStorage.setItem(key, value);
-                        }
-                    } catch (e) {
-                        console.log('localStorage access denied on new document:', e.message);
-                    }
-                }
-                if (storage.sessionStorage) {
-                    try {
-                        for (const [key, value] of Object.entries(storage.sessionStorage)) {
-                            window.sessionStorage.setItem(key, value);
-                        }
-                    } catch (e) {
-                        console.log('sessionStorage access denied on new document:', e.message);
-                    }
-                }
-            }, { localStorage: sessionData.localStorage, sessionStorage: sessionData.sessionStorage });
+        console.log(`[${jobId}] Navigating to ${sessionData.url}...`);
 
-            console.log(`[${jobId}] Navigating to ${sessionData.url}...`);
+        // Use less strict wait conditions - just wait for basic page load
+        // Sites like TradingView continuously stream data, so networkidle0 will never complete
+        await page.goto(sessionData.url, {
+            waitUntil: ['load', 'networkidle2'],  // Wait for load and network to mostly settle
+            timeout: 120000 // 120 second timeout for slow sites
+        });
 
-            // Use less strict wait conditions - just wait for basic page load
-            // Sites like TradingView continuously stream data, so networkidle0 will never complete
-            await page.goto(sessionData.url, {
-                waitUntil: ['load', 'networkidle2'],  // Wait for load and network to mostly settle
-                timeout: 120000 // 120 second timeout for slow sites
-            });
+        console.log(`[${jobId}] Page loaded`);
 
-            console.log(`[${jobId}] Page loaded`);
-
-            // Additional wait for JavaScript-heavy sites to render
-            console.log(`[${jobId}] Waiting 5 seconds for JavaScript rendering...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        }
+        // Additional wait for JavaScript-heavy sites to render
+        console.log(`[${jobId}] Waiting 5 seconds for JavaScript rendering...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Handle page refresh if enabled
-        if (captureSettings.refreshPageToggle && job.lastRun > 0) {
+        if (captureSettings.refreshPageToggle && job.lastRun) {
             console.log(`[${jobId}] Refreshing page before capture (refresh enabled)...`);
             await page.reload({
-                waitUntil: 'domcontentloaded',  // Consistent with initial load
+                waitUntil: ['load', 'networkidle2'],
                 timeout: 120000
             });
             console.log(`[${jobId}] Page refresh completed`);
@@ -1880,25 +1737,15 @@ async function processJob(jobId, jobData) {
             captureSettings: captureSettings,
             retrievedBy: [] // Initialize retrievedBy array for error results too
         });
-
-        // Remove from browser pool if error occurred
-        if (browserPool.has(jobId)) {
-            browserPool.delete(jobId);
-        }
     } finally {
-        if (browser && shouldCloseBrowser) {
+        // ALWAYS close the browser after each capture
+        if (browser) {
             await browser.close();
+            console.log(`[${jobId}] Browser closed`);
         }
 
         // If it was a one-off job that's done, clean it up after a while
         if (job && !job.interval) {
-            // Also remove from browser pool
-            if (browserPool.has(jobId)) {
-                const browserInfo = browserPool.get(jobId);
-                await browserInfo.browser.close();
-                browserPool.delete(jobId);
-            }
-
             // Clean up failed jobs faster than successful ones
             const cleanupDelay = job.status === 'failed' ? 60000 : 60000 * 15; // 1 minute for failed, 15 minutes for completed
 
@@ -2125,17 +1972,10 @@ app.listen(port, () => {
     jobScheduler.start();
 });
 
-// Graceful shutdown - clean up browser instances
+// Graceful shutdown
 process.on('SIGINT', () => {
     console.log('SIGINT signal received: closing HTTP server');
     jobScheduler.stop();
-
-    // Close all browser instances
-    for (const [jobId, browserInfo] of browserPool.entries()) {
-        console.log(`[SHUTDOWN] Closing browser for job ${jobId}`);
-        browserInfo.browser.close().catch(console.error);
-    }
-    browserPool.clear();
 
     app.close(() => {
         console.log('HTTP server closed');
