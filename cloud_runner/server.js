@@ -1648,10 +1648,37 @@ async function processJob(jobId, jobData) {
         if (job.results.length > 0) {
             const lastResult = job.results[job.results.length - 1];
             if (lastResult.llmResponse && lastResult.llmResponse.evaluation) {
-                // For subsequent runs, construct the context from the 'evaluation' block of the last run.
+                // Apply confidence threshold filtering before passing to next iteration
+                const filteredEvaluation = {};
+
+                for (const field of fields) {
+                    const fieldName = field.name;
+                    const fieldResult = lastResult.llmResponse.evaluation[fieldName];
+
+                    if (fieldResult && Array.isArray(fieldResult) && fieldResult.length >= 1) {
+                        const result = fieldResult[0]; // boolean result
+                        const probability = fieldResult.length > 1 ? fieldResult[1] : 0.8;
+
+                        // Apply confidence threshold filtering (using webhookMinConfidence for consistency)
+                        const minConfidence = field.webhookMinConfidence !== undefined ? field.webhookMinConfidence : 75;
+                        const confidencePercent = probability * 100;
+
+                        let filteredResult = result;
+                        if (result === true && confidencePercent < minConfidence) {
+                            filteredResult = false; // Demote low-confidence TRUE to FALSE
+                            console.log(`[${jobId}] Previous evaluation: Field "${fieldName}" TRUE demoted to FALSE (${confidencePercent.toFixed(1)}% < ${minConfidence}%)`);
+                        }
+
+                        // Only pass the boolean value, not the confidence score
+                        filteredEvaluation[fieldName] = filteredResult;
+                    }
+                }
+
+                // Pass only filtered boolean values as context
                 previousEvaluation = {
-                    results: lastResult.llmResponse.evaluation
+                    results: filteredEvaluation
                 };
+                console.log(`[${jobId}] Filtered previous evaluation for context:`, filteredEvaluation);
             }
         }
         // Use original uncompressed screenshot for LLM analysis (better quality)

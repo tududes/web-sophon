@@ -371,7 +371,8 @@ export class MessageService {
                 }
                 // FALSE results stay FALSE regardless of confidence
 
-                filteredResults[fieldName] = [filteredResult, probability];
+                // Only store the boolean value, not the confidence score
+                filteredResults[fieldName] = filteredResult;
             });
 
             return filteredResults;
