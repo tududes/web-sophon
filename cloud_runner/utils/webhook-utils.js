@@ -48,8 +48,11 @@ async function fireFieldWebhook(fieldName, webhookUrl, customPayload, fieldResul
 
             // Check if this is a Discord webhook
             if (webhookUrl.includes('discord.com/api/webhooks')) {
+                console.log(`[Webhook] Discord webhook detected. Custom payload:`, JSON.stringify(customPayload));
+                console.log(`[Webhook] Parsed payload before formatting:`, JSON.stringify(parsedPayload));
                 // Format payload for Discord
                 parsedPayload = formatDiscordPayload(fieldName, result, probability, parsedPayload, context);
+                console.log(`[Webhook] Final payload after formatting:`, JSON.stringify(parsedPayload));
             }
 
             response = await fetch(webhookUrl, {
@@ -114,8 +117,12 @@ async function fireFieldWebhook(fieldName, webhookUrl, customPayload, fieldResul
  * @returns {Object} Discord-formatted payload
  */
 function formatDiscordPayload(fieldName, result, probability, customPayload, context) {
+    console.log(`[formatDiscordPayload] Checking custom payload:`, JSON.stringify(customPayload));
+    console.log(`[formatDiscordPayload] Has content:`, !!customPayload?.content, 'Has embeds:', !!customPayload?.embeds);
+
     // If user provided a valid Discord payload structure, use it
     if (customPayload && (customPayload.content || customPayload.embeds)) {
+        console.log(`[formatDiscordPayload] Using custom payload as-is`);
         return customPayload;
     }
 
