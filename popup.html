@@ -352,6 +352,28 @@
                 </div>
 
                 <div class="settings-section">
+                    <h3>📦 Storage Management</h3>
+                    <div id="storageInfo" class="storage-info">
+                        <div class="storage-usage">
+                            <div class="storage-bar">
+                                <div id="storageProgress" class="storage-progress" style="width: 0%"></div>
+                            </div>
+                            <div class="storage-text">
+                                <span id="storageUsed">0 KB</span> / <span id="storageTotal">5 MB</span>
+                                (<span id="storagePercent">0%</span> used)
+                            </div>
+                        </div>
+                        <div class="storage-actions">
+                            <button id="refreshStorageBtn" class="small-button secondary">🔄 Refresh</button>
+                            <button id="cleanupStorageBtn" class="small-button">🧹 Cleanup</button>
+                        </div>
+                    </div>
+                    <div id="storageStatus" class="status-message"></div>
+                    <div class="setting-description">WebSophon stores screenshots and capture data locally. Old data is
+                        automatically cleaned up to prevent storage issues.</div>
+                </div>
+
+                <div class="settings-section">
                     <h3>Known Domains</h3>
                     <div id="domainsContainer" class="domains-container">
                         <!-- Domain items will be dynamically added here -->

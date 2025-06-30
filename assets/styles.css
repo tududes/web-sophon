@@ -1354,6 +1354,207 @@ input:checked+.slider:hover {
     font-style: italic;
 }
 
+/* Storage Management Styles */
+.storage-section {
+    margin-bottom: var(--space-xl);
+    padding: var(--space-lg);
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-primary);
+}
+
+.storage-section h3 {
+    margin: 0 0 var(--space-lg) 0;
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.storage-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.storage-usage {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.storage-bar {
+    width: 100%;
+    height: 8px;
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    position: relative;
+}
+
+.storage-progress {
+    height: 100%;
+    background: linear-gradient(90deg, var(--success) 0%, var(--warning) 70%, var(--danger) 90%);
+    border-radius: var(--radius-sm);
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.storage-progress::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.storage-text {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.storage-actions {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+.storage-actions .small-button {
+    flex-shrink: 0;
+}
+
+/* Storage quota warnings */
+.storage-progress[style*="width: 8"]~.storage-text,
+.storage-progress[style*="width: 9"]~.storage-text {
+    color: var(--warning);
+    font-weight: 500;
+}
+
+.storage-progress[style*="width: 9"]~.storage-text {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+/* Storage cleanup animation */
+.storage-section.cleaning {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.storage-section.cleaning .storage-progress::after {
+    animation: shimmer 0.5s infinite;
+}
+
+/* Screenshot Lazy Loading Styles */
+.screenshot-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    background-color: var(--bg-tertiary);
+    border: 2px dashed var(--border-secondary);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.screenshot-placeholder:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--border-hover);
+}
+
+.placeholder-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-sm);
+    opacity: 0.7;
+}
+
+.placeholder-text {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: var(--space-xs);
+}
+
+.placeholder-source {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.load-screenshot-btn {
+    margin-right: var(--space-sm);
+}
+
+.load-screenshot-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.loading-progress {
+    width: 100%;
+    height: 4px;
+    background-color: var(--bg-secondary);
+    border-radius: 2px;
+    margin-top: var(--space-sm);
+    overflow: hidden;
+    position: relative;
+}
+
+.loading-progress::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 30%;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-hover));
+    border-radius: 2px;
+    animation: loading-slide 1.5s infinite;
+}
+
+@keyframes loading-slide {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(333%);
+    }
+}
+
+/* Enhanced screenshot controls */
+.screenshot-controls {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+.screenshot-controls .small-button {
+    font-size: var(--text-xs);
+    padding: var(--space-xs) var(--space-sm);
+}
+
 /* Status Messages */
 .status-message {
     padding: 12px 16px;

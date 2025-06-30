@@ -34,7 +34,8 @@ export class MessageService {
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
                     'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
-                    'storeAuthToken', 'startAuthPolling', 'getCloudJobs', 'startCloudInterval'
+                    'storeAuthToken', 'startAuthPolling', 'getCloudJobs', 'startCloudInterval',
+                    'getStorageInfo', 'performManualCleanup', 'makeAuthenticatedRequest', 'fetchScreenshot'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
@@ -188,6 +189,64 @@ export class MessageService {
                 this.getCloudJobs()
                     .then(res)
                     .catch(err => res({ success: false, error: err.message }));
+            },
+            'getStorageInfo': (req, sender, res) => {
+                this.eventService.getStorageInfo()
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'performManualCleanup': (req, sender, res) => {
+                this.eventService.performManualCleanup()
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'makeAuthenticatedRequest': (req, sender, res) => {
+                this.makeAuthenticatedRequest(req.url, req.options)
+                    .then(response => res({ success: true, data: response }))
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'fetchScreenshot': (req, sender, res) => {
+                console.log('fetchScreenshot handler called for eventId:', req.eventId);
+
+                const event = this.eventService.getEventById(req.eventId);
+                if (!event) {
+                    console.error('Event not found in fetchScreenshot handler:', req.eventId);
+                    res({ success: false, error: 'Event not found' });
+                    return;
+                }
+
+                console.log('Event found for screenshot fetch:', {
+                    id: event.id,
+                    source: event.source,
+                    hasScreenshot: !!event.screenshot,
+                    hasScreenshotUrl: !!event.screenshotUrl,
+                    screenshotUrl: event.screenshotUrl
+                });
+
+                this.eventService.fetchScreenshot(event)
+                    .then(screenshotData => {
+                        console.log('fetchScreenshot result:', {
+                            hasData: !!screenshotData,
+                            dataType: typeof screenshotData,
+                            isValidDataUrl: screenshotData ? screenshotData.startsWith('data:image/') : false,
+                            dataLength: screenshotData ? screenshotData.length : 0
+                        });
+
+                        if (screenshotData && screenshotData.startsWith('data:image/')) {
+                            // Return the screenshot data directly for consistency
+                            res(screenshotData);
+                        } else {
+                            const errorMsg = screenshotData ?
+                                'Invalid screenshot data format' :
+                                `No screenshot available for ${event.source} event (ID: ${event.id})`;
+                            console.warn('fetchScreenshot failed:', errorMsg);
+                            res({ success: false, error: errorMsg });
+                        }
+                    })
+                    .catch(err => {
+                        console.error('fetchScreenshot error:', err);
+                        res({ success: false, error: err.message || 'Failed to fetch screenshot' });
+                    });
             }
         };
         return handlers[action];

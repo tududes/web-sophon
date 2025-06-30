@@ -180,6 +180,15 @@ class CleanPopupController {
             showTrueOnly: document.getElementById('showTrueOnly'),
             clearHistoryBtn: document.getElementById('clearHistoryBtn'),
 
+            // Storage management
+            storageUsed: document.getElementById('storageUsed'),
+            storageTotal: document.getElementById('storageTotal'),
+            storagePercent: document.getElementById('storagePercent'),
+            storageProgress: document.getElementById('storageProgress'),
+            refreshStorageBtn: document.getElementById('refreshStorageBtn'),
+            cleanupStorageBtn: document.getElementById('cleanupStorageBtn'),
+            storageStatus: document.getElementById('storageStatus'),
+
             // Known Domains
             domainsContainer: document.getElementById('domainsContainer'),
 
@@ -337,6 +346,15 @@ class CleanPopupController {
         this.elements.clearTokenBtn?.addEventListener('click', () => {
             this.clearAuthToken();
         });
+
+        // Storage management
+        this.elements.refreshStorageBtn?.addEventListener('click', () => {
+            this.refreshStorageInfo();
+        });
+
+        this.elements.cleanupStorageBtn?.addEventListener('click', () => {
+            this.performStorageCleanup();
+        });
     }
 
     initializeTabSystem() {
@@ -419,6 +437,8 @@ class CleanPopupController {
                 await this.loadKnownDomains();
                 // Load token status and quotas
                 await this.loadTokenStatus();
+                // Load storage information when viewing settings
+                await this.refreshStorageInfo();
                 break;
         }
     }
@@ -1235,29 +1255,27 @@ class CleanPopupController {
                     if (this.historyManager && this.currentTab === 'history') {
                         this.historyManager.updateEvent(request.eventId, request.event);
                     }
-                    // Also reload history if it's currently empty (might have been a race condition)
-                    if (this.historyManager && this.historyManager.recentEvents.length === 0) {
-                        console.log('History empty, reloading after event update...');
-                        this.historyManager.loadHistory();
+                    // Only reload history if it's currently empty AND we're actually on the history tab
+                    if (this.historyManager && this.historyManager.recentEvents.length === 0 && this.currentTab === 'history') {
+                        console.log('History empty and on history tab, gentle reload after event update...');
+                        this.historyManager.loadHistory(false); // gentle reload
                     }
-                    // If we're on the settings tab, refresh domain statistics
+                    // If we're on the settings tab, refresh domain statistics (debounced)
                     if (this.currentTab === 'settings' && request.event) {
-                        console.log('Refreshing settings tab after event update...');
-                        this.loadKnownDomains();
+                        this.debouncedRefreshSettings();
                     }
                     break;
 
                 case 'cloudResultsSynced':
                     console.log('Cloud results synced:', request);
-                    // Refresh history if we're on the history tab
+                    // Only refresh history if we're actively on the history tab
                     if (this.historyManager && this.currentTab === 'history') {
-                        console.log('Refreshing history due to cloud sync...');
-                        this.historyManager.loadHistory();
+                        console.log('On history tab, gentle refresh due to cloud sync...');
+                        this.historyManager.loadHistory(false); // gentle reload
                     }
-                    // Refresh settings tab to update domain statistics
+                    // Refresh settings tab to update domain statistics (debounced)
                     if (this.currentTab === 'settings') {
-                        console.log('Refreshing settings tab after cloud sync...');
-                        this.loadKnownDomains();
+                        this.debouncedRefreshSettings();
                     }
                     // Show toast notification about new results
                     this.showStatus(`${request.resultCount} new cloud results synced for ${request.domain}`, 'success');
@@ -1703,6 +1721,14 @@ class CleanPopupController {
         }, 500);
     }
 
+    debouncedRefreshSettings() {
+        clearTimeout(this.settingsRefreshTimer);
+        this.settingsRefreshTimer = setTimeout(() => {
+            console.log('Debounced settings refresh...');
+            this.loadKnownDomains();
+        }, 750); // Slightly longer delay for settings refresh
+    }
+
     async sendMessageToBackground(message) {
         return new Promise((resolve, reject) => {
             try {
@@ -2094,8 +2120,8 @@ class CleanPopupController {
             await this.loadKnownDomains();
 
             // Refresh history if we're on the history tab
-            if (this.historyManager && this.historyManager.loadHistory) {
-                this.historyManager.loadHistory();
+            if (this.historyManager && this.historyManager.loadHistory && this.currentTab === 'history') {
+                this.historyManager.loadHistory(false); // gentle reload
             }
 
             this.showStatus(`All settings for "${domain}" have been deleted`, 'success');
@@ -2779,6 +2805,138 @@ class CleanPopupController {
 
         if (hasChanges) {
             this.renderActiveJobs();
+        }
+    }
+
+    // === STORAGE MANAGEMENT ===
+
+    async refreshStorageInfo() {
+        try {
+            console.log('Refreshing storage information...');
+
+            // Get storage info from EventService
+            const response = await this.sendMessageToBackground({ action: 'getStorageInfo' });
+
+            if (response && response.used !== undefined) {
+                this.updateStorageDisplay(response);
+            } else {
+                console.error('Failed to get storage info:', response);
+                this.showToast('Failed to load storage information', 'error', this.elements.storageStatus);
+            }
+
+        } catch (error) {
+            console.error('Error refreshing storage info:', error);
+            this.showToast('Error loading storage information', 'error', this.elements.storageStatus);
+        }
+    }
+
+    updateStorageDisplay(storageInfo) {
+        if (!this.elements.storageUsed || !storageInfo) return;
+
+        const { used, quota, usedPercentage } = storageInfo;
+
+        // Format bytes to readable format
+        const formatBytes = (bytes) => {
+            if (bytes === 0) return '0 KB';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        };
+
+        // Update text displays
+        this.elements.storageUsed.textContent = formatBytes(used);
+        this.elements.storageTotal.textContent = formatBytes(quota);
+        this.elements.storagePercent.textContent = `${usedPercentage}%`;
+
+        // Update progress bar
+        if (this.elements.storageProgress) {
+            this.elements.storageProgress.style.width = `${Math.min(usedPercentage, 100)}%`;
+        }
+
+        // Show warning if storage is getting full
+        if (usedPercentage >= 90) {
+            this.showToast('⚠️ Storage nearly full! Consider cleaning up old data.', 'warning', this.elements.storageStatus);
+        } else if (usedPercentage >= 75) {
+            this.showToast('Storage usage is high. Consider cleaning up if needed.', 'info', this.elements.storageStatus);
+        } else {
+            // Clear any previous storage warnings
+            if (this.elements.storageStatus) {
+                this.elements.storageStatus.textContent = '';
+                this.elements.storageStatus.className = 'status-message';
+            }
+        }
+
+        console.log(`Storage: ${formatBytes(used)} / ${formatBytes(quota)} (${usedPercentage}%)`);
+    }
+
+    async performStorageCleanup() {
+        if (!confirm('This will remove old screenshots and large data to free up storage space. Continue?')) {
+            return;
+        }
+
+        try {
+            // Add cleaning animation
+            const storageSection = document.querySelector('.storage-section');
+            if (storageSection) {
+                storageSection.classList.add('cleaning');
+            }
+
+            this.showToast('Cleaning up storage...', 'info', this.elements.storageStatus);
+
+            // Call manual cleanup method from EventService
+            const response = await this.sendMessageToBackground({ action: 'performManualCleanup' });
+
+            if (response && response.success) {
+                const { removedScreenshots, eventsBefore, eventsAfter, spaceSaved } = response;
+
+                // Format space saved
+                const formatBytes = (bytes) => {
+                    if (bytes === 0) return '0 KB';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                };
+
+                let message = `✅ Cleanup completed! `;
+                if (removedScreenshots > 0) {
+                    message += `Removed ${removedScreenshots} screenshots. `;
+                }
+                if (eventsBefore !== eventsAfter) {
+                    message += `Events: ${eventsBefore} → ${eventsAfter}. `;
+                }
+                if (spaceSaved > 0) {
+                    message += `Space saved: ${formatBytes(spaceSaved)}.`;
+                }
+
+                this.showToast(message, 'success', this.elements.storageStatus);
+
+                // Refresh storage info to show new usage
+                setTimeout(() => {
+                    this.refreshStorageInfo();
+                }, 1000);
+
+                // Refresh history if it's currently loaded
+                if (this.historyManager && this.currentTab === 'history') {
+                    setTimeout(() => {
+                        this.historyManager.loadHistory();
+                    }, 1000);
+                }
+
+            } else {
+                throw new Error(response?.error || 'Cleanup failed');
+            }
+
+        } catch (error) {
+            console.error('Storage cleanup failed:', error);
+            this.showToast(`❌ Cleanup failed: ${error.message}`, 'error', this.elements.storageStatus);
+        } finally {
+            // Remove cleaning animation
+            const storageSection = document.querySelector('.storage-section');
+            if (storageSection) {
+                storageSection.classList.remove('cleaning');
+            }
         }
     }
 }

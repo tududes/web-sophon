@@ -5,6 +5,8 @@ export class EventService {
         this.unreadTrueCount = 0; // Count of unread TRUE events
         this.isLoading = true; // Track loading state
         this.loadPromise = this.loadEventsFromStorage(); // Store the promise
+        this.screenshotCache = new Map(); // In-memory cache for fetched screenshots
+        this.fetchingScreenshots = new Set(); // Track ongoing fetch requests
     }
 
     // Load recent events from storage on startup
@@ -107,7 +109,8 @@ export class EventService {
             summary: results ? (results.summary || '') : '',
             hasTrueResult: hasTrueResult,
             read: false,
-            screenshot: screenshot, // Store the base64 screenshot
+            screenshot: this.processScreenshotData(screenshot, source, eventId, domain), // Smart screenshot handling
+            screenshotUrl: this.generateScreenshotUrl(screenshot, source, eventId, domain), // URL for on-demand loading
             request: request,
             response: response, // Contains response data, error messages, or null for pending events
             status: status, // 'pending' or 'completed'
@@ -120,6 +123,7 @@ export class EventService {
             domain: event.domain,
             source: event.source,
             hasScreenshot: !!event.screenshot,
+            screenshotUrl: event.screenshotUrl,
             screenshotSize: event.screenshot ? event.screenshot.length : 0
         });
 
@@ -135,7 +139,7 @@ export class EventService {
             this.updateBadge();
         }
 
-        // Save to storage (note: screenshots can be large, may need to handle storage limits)
+        // Save to storage (optimized: large screenshots stored as URLs for on-demand loading)
         this.saveEventsToStorage();
 
         // Return the ID of the created event
@@ -169,9 +173,22 @@ export class EventService {
         console.log('Response being stored:', responseText);
         console.log('Is SAPIENT format?', responseText && responseText.includes('::SAPIENT v:') ? 'YES' : 'NO');
         console.log('=====================================');
+
+        // Handle screenshot update with new approach
         if (screenshot) {
-            event.screenshot = screenshot;
+            if (typeof screenshot === 'string' && screenshot.startsWith('http')) {
+                // Direct URL from cloud runner
+                event.screenshotUrl = screenshot;
+                event.screenshot = null; // Don't store base64
+            } else {
+                // Base64 data - process according to source
+                event.screenshot = this.processScreenshotData(screenshot, originalSource, eventId, event.domain);
+                if (!event.screenshotUrl) {
+                    event.screenshotUrl = this.generateScreenshotUrl(screenshot, originalSource, eventId, event.domain);
+                }
+            }
         }
+
         if (requestPayload) {
             event.request = requestPayload;
         }
@@ -372,19 +389,172 @@ export class EventService {
         return { success: true };
     }
 
-    // Save events to storage
+    // Save events to storage with intelligent cleanup
     async saveEventsToStorage() {
         try {
+            // Proactive cleanup: remove local screenshot data from old events (URLs are kept for on-demand loading)
+            await this.cleanupOldScreenshots();
+
             await chrome.storage.local.set({ recentEvents: this.recentEvents });
         } catch (err) {
             console.error('Error saving events to storage:', err);
-            // If storage fails due to size, try removing screenshots from older events
+            // If storage fails due to size, try more aggressive cleanup
             if (err.message && err.message.includes('QUOTA_BYTES')) {
-                console.log('Storage quota exceeded, removing old screenshots...');
-                this.recentEvents.slice(50).forEach(e => delete e.screenshot);
-                await chrome.storage.local.set({ recentEvents: this.recentEvents });
+                console.log('Storage quota exceeded, performing aggressive cleanup...');
+                await this.handleStorageQuotaExceeded();
+                // Try saving again after cleanup
+                try {
+                    await chrome.storage.local.set({ recentEvents: this.recentEvents });
+                    console.log('Successfully saved events after cleanup');
+                } catch (retryErr) {
+                    console.error('Failed to save events even after cleanup:', retryErr);
+                    // Last resort: keep only the most recent 20 events without screenshots
+                    this.recentEvents = this.recentEvents.slice(0, 20).map(event => ({
+                        ...event,
+                        screenshot: null
+                    }));
+                    await chrome.storage.local.set({ recentEvents: this.recentEvents });
+                    console.log('Emergency cleanup completed - kept only 20 most recent events without screenshots');
+                }
             }
         }
+    }
+
+    // Clean up old screenshots proactively
+    async cleanupOldScreenshots() {
+        const now = Date.now();
+        const seventyTwoHours = 72 * 60 * 60 * 1000; // 72 hours in milliseconds
+        let cleanedCount = 0;
+
+        // Only remove base64 screenshots from local events (cloud events don't store base64)
+        this.recentEvents.forEach((event, index) => {
+            const eventAge = now - new Date(event.timestamp).getTime();
+
+            // Remove base64 screenshot data if event is older than 72 hours OR beyond first 300 events
+            // Keep screenshotUrl for on-demand loading
+            if (event.screenshot && event.source === 'local' && (eventAge > seventyTwoHours || index >= 300)) {
+                delete event.screenshot;
+                cleanedCount++;
+            }
+        });
+
+        if (cleanedCount > 0) {
+            console.log(`Proactive cleanup: removed ${cleanedCount} old local screenshots`);
+        }
+    }
+
+    // Handle storage quota exceeded with aggressive cleanup
+    async handleStorageQuotaExceeded() {
+        console.log('Performing aggressive storage cleanup...');
+
+        // Step 1: Remove all base64 screenshots (but keep URLs for on-demand loading)
+        let removedScreenshots = 0;
+        this.recentEvents.forEach(event => {
+            if (event.screenshot && event.source === 'local') {
+                delete event.screenshot;
+                removedScreenshots++;
+            }
+        });
+        console.log(`Removed ${removedScreenshots} local screenshots`);
+
+        // Step 2: Remove large response data from older events (keep only last 72 hours or 300 events with full data)
+        const now = Date.now();
+        const seventyTwoHours = 72 * 60 * 60 * 1000;
+
+        this.recentEvents.forEach((event, index) => {
+            const eventAge = now - new Date(event.timestamp).getTime();
+
+            // Clean up large data for events older than 72 hours or beyond first 300 events
+            if (eventAge > seventyTwoHours || index >= 300) {
+                // Truncate large response data
+                if (event.response && typeof event.response === 'string' && event.response.length > 1000) {
+                    event.response = event.response.substring(0, 200) + '... [truncated for storage]';
+                }
+
+                // Clean up large request data
+                if (event.request && typeof event.request === 'object') {
+                    // Remove screenshot data from request if present
+                    if (event.request.sessionData && event.request.sessionData.screenshotData) {
+                        delete event.request.sessionData.screenshotData;
+                    }
+                }
+            }
+        });
+
+        console.log('Aggressive cleanup completed');
+    }
+
+    // Get storage usage information
+    async getStorageInfo() {
+        try {
+            const usage = await chrome.storage.local.getBytesInUse();
+            const quota = 5242880; // Chrome extension limit: ~5MB
+            return {
+                used: usage,
+                quota: quota,
+                available: quota - usage,
+                usedPercentage: Math.round((usage / quota) * 100)
+            };
+        } catch (error) {
+            console.error('Error getting storage info:', error);
+            return null;
+        }
+    }
+
+    // Manual cleanup method that can be called from UI
+    async performManualCleanup() {
+        console.log('Manual cleanup requested');
+
+        const beforeInfo = await this.getStorageInfo();
+        const beforeEvents = this.recentEvents.length;
+
+        // Remove all base64 screenshots (but keep URLs for on-demand loading)
+        let removedScreenshots = 0;
+        this.recentEvents.forEach(event => {
+            if (event.screenshot && event.source === 'local') {
+                delete event.screenshot;
+                removedScreenshots++;
+            }
+        });
+
+        // Clean up large response data from older events (keep full data for events within 72 hours or first 300)
+        const now = Date.now();
+        const seventyTwoHours = 72 * 60 * 60 * 1000;
+
+        this.recentEvents.forEach((event, index) => {
+            const eventAge = now - new Date(event.timestamp).getTime();
+
+            // Clean up large data for events older than 72 hours or beyond first 300 events
+            if (eventAge > seventyTwoHours || index >= 300) {
+                if (event.response && typeof event.response === 'string' && event.response.length > 1000) {
+                    event.response = event.response.substring(0, 200) + '... [truncated for storage]';
+                }
+                if (event.request && typeof event.request === 'object') {
+                    if (event.request.sessionData && event.request.sessionData.screenshotData) {
+                        delete event.request.sessionData.screenshotData;
+                    }
+                }
+            }
+        });
+
+        // Save cleaned events
+        await this.saveEventsToStorage();
+
+        const afterInfo = await this.getStorageInfo();
+        const afterEvents = this.recentEvents.length;
+
+        const result = {
+            success: true,
+            removedScreenshots,
+            eventsBefore: beforeEvents,
+            eventsAfter: afterEvents,
+            storageBefore: beforeInfo,
+            storageAfter: afterInfo,
+            spaceSaved: beforeInfo ? beforeInfo.used - afterInfo.used : 0
+        };
+
+        console.log('Manual cleanup completed:', result);
+        return result;
     }
 
     // Update extension badge
@@ -410,5 +580,218 @@ export class EventService {
     // Get unread true count
     getUnreadTrueCount() {
         return this.unreadTrueCount;
+    }
+
+    // === SCREENSHOT MANAGEMENT METHODS ===
+
+    // Process screenshot data based on source
+    processScreenshotData(screenshot, source, eventId, domain) {
+        if (!screenshot) return null;
+
+        // For cloud events, don't store base64 locally (save storage space)
+        if (source === 'cloud') {
+            return null; // Will be loaded on-demand via screenshotUrl
+        }
+
+        // For local events, store the screenshot (subject to cleanup)
+        if (source === 'local') {
+            return this.createThumbnail(screenshot);
+        }
+
+        return null;
+    }
+
+    // Generate screenshot URL for on-demand loading
+    generateScreenshotUrl(screenshot, source, eventId, domain) {
+        if (!screenshot) return null;
+
+        if (source === 'cloud') {
+            // For cloud events, screenshots will be fetched from cloud runner using jobId_timestamp format
+            return `cloud://${domain}/${eventId}/screenshot`;
+        }
+
+        // For local events, only create URL if we have screenshot data
+        if (source === 'local' && screenshot) {
+            return `local://${eventId}/screenshot`;
+        }
+
+        return null;
+    }
+
+    // Create thumbnail from base64 image (reduce size for local storage)
+    createThumbnail(base64Image) {
+        if (!base64Image || typeof base64Image !== 'string') return null;
+
+        // Store screenshots for local events, subject to cleanup
+        const maxSize = 100000; // ~100KB limit for thumbnails
+        if (base64Image.length > maxSize) {
+            console.log(`Image large (${base64Image.length} bytes), storing reference only`);
+            return null; // Store reference only, will be cleaned up
+        }
+
+        return base64Image;
+    }
+
+    // Fetch screenshot on demand
+    async fetchScreenshot(event) {
+        const { id, screenshotUrl, source, screenshot } = event;
+
+        console.log('fetchScreenshot called for event:', {
+            id,
+            source,
+            hasScreenshotUrl: !!screenshotUrl,
+            hasScreenshot: !!screenshot,
+            screenshotUrl
+        });
+
+        // First check if we already have the screenshot data
+        if (screenshot && screenshot.startsWith('data:image/')) {
+            console.log('Using existing screenshot data for event:', id);
+            return screenshot;
+        }
+
+        if (!screenshotUrl) {
+            console.log('No screenshot URL for event:', id);
+            return null;
+        }
+
+        // Check memory cache first
+        const cacheKey = `${id}-screenshot`;
+        if (this.screenshotCache.has(cacheKey)) {
+            console.log('Screenshot loaded from cache:', id);
+            return this.screenshotCache.get(cacheKey);
+        }
+
+        // Check if already fetching to avoid duplicate requests
+        if (this.fetchingScreenshots.has(cacheKey)) {
+            console.log('Screenshot fetch already in progress:', id);
+            return null;
+        }
+
+        this.fetchingScreenshots.add(cacheKey);
+
+        try {
+            let screenshotData = null;
+
+            console.log(`Attempting to fetch screenshot for event ${id} from ${screenshotUrl}`);
+
+            if (source === 'cloud' && screenshotUrl.startsWith('cloud://')) {
+                screenshotData = await this.fetchCloudScreenshot(event);
+            } else if (source === 'local' && screenshotUrl.startsWith('local://')) {
+                screenshotData = await this.fetchLocalScreenshot(event);
+            } else if (screenshotUrl.startsWith('http')) {
+                // Direct URL to cloud runner
+                screenshotData = await this.fetchDirectScreenshot(screenshotUrl);
+            } else {
+                console.warn('Unknown screenshot URL format:', screenshotUrl);
+            }
+
+            if (screenshotData && screenshotData.startsWith('data:image/')) {
+                // Cache in memory for session
+                this.screenshotCache.set(cacheKey, screenshotData);
+                console.log('Screenshot fetched and cached:', id);
+                return screenshotData;
+            } else {
+                console.warn('Invalid or no screenshot data received for event:', id, screenshotData ? 'Data received but invalid format' : 'No data received');
+                return null;
+            }
+
+        } catch (error) {
+            console.error('Error fetching screenshot for event', id, ':', error);
+            return null;
+        } finally {
+            this.fetchingScreenshots.delete(cacheKey);
+        }
+    }
+
+    // Fetch screenshot from cloud runner
+    async fetchCloudScreenshot(event) {
+        try {
+            // Get cloud runner URL from storage
+            const settings = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const cloudRunnerUrl = settings.cloudRunnerUrl || 'https://runner.websophon.tududes.com';
+
+            // Extract jobId from event request data
+            const jobId = event.request?.jobId;
+            if (!jobId) {
+                console.error('No jobId found for cloud event:', event.id);
+                return null;
+            }
+
+            // Create filename using jobId_timestamp format
+            const timestamp = new Date(event.timestamp).toISOString().replace(/[:.]/g, '-');
+            const filename = `${jobId}_${timestamp}.png`;
+
+            // Construct URL to fetch screenshot using jobId_timestamp format
+            const url = `${cloudRunnerUrl.replace(/\/$/, '')}/screenshots/${filename}`;
+
+            console.log(`Fetching cloud screenshot from: ${url}`);
+
+            // Make authenticated request to cloud runner
+            const response = await chrome.runtime.sendMessage({
+                action: 'makeAuthenticatedRequest',
+                url: url,
+                options: { method: 'GET' }
+            });
+
+            if (response && response.success && response.data) {
+                console.log('Cloud screenshot fetched successfully');
+                return response.data; // Should be base64 image data
+            }
+
+            console.warn('Cloud screenshot not available:', filename);
+            return null;
+
+        } catch (error) {
+            console.error('Error fetching cloud screenshot:', error);
+            return null;
+        }
+    }
+
+    // Fetch screenshot from local storage/cache
+    async fetchLocalScreenshot(event) {
+        // For local events, try to get from the screenshot field
+        if (event.screenshot && event.screenshot.startsWith('data:image/')) {
+            return event.screenshot;
+        }
+
+        // Local screenshot not available (was cleaned up)
+        console.log('Local screenshot not available for event:', event.id, '(cleaned up to save storage)');
+        return null;
+    }
+
+    // Fetch screenshot from direct URL
+    async fetchDirectScreenshot(url) {
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                const blob = await response.blob();
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching direct screenshot:', error);
+        }
+        return null;
+    }
+
+    // Update event with cloud screenshot URL
+    updateEventScreenshotUrl(eventId, screenshotUrl) {
+        const event = this.recentEvents.find(e => e.id === eventId);
+        if (event) {
+            event.screenshotUrl = screenshotUrl;
+            this.saveEventsToStorage();
+            console.log('Updated screenshot URL for event:', eventId, screenshotUrl);
+        }
+    }
+
+    // Clear screenshot cache (useful for memory management)
+    clearScreenshotCache() {
+        this.screenshotCache.clear();
+        this.fetchingScreenshots.clear();
+        console.log('Screenshot cache cleared');
     }
 } 

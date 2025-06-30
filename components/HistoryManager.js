@@ -7,6 +7,8 @@ export class HistoryManager {
         this.showTrueOnly = false;
         this.elements = {};
         this.isScrolling = false; // Prevent multiple scroll operations
+        this.updateTimeout = null; // For debouncing updates
+        this.pendingUpdates = new Set(); // Track pending event updates
     }
 
     // Set DOM element references
@@ -20,8 +22,8 @@ export class HistoryManager {
     }
 
     // Load history from background and storage
-    async loadHistory() {
-        console.log('Loading history...');
+    async loadHistory(forceReload = false) {
+        console.log('Loading history...', forceReload ? '(forced reload)' : '');
 
         try {
             // First try to get from background script (most current)
@@ -29,8 +31,22 @@ export class HistoryManager {
 
             if (response && response.events && Array.isArray(response.events)) {
                 console.log('Loaded events from background:', response.events.length);
-                this.recentEvents = response.events;
-                this.renderHistory();
+
+                // Check if this is a new load or just an update
+                const hadEvents = this.recentEvents && this.recentEvents.length > 0;
+                const isSignificantChange = !hadEvents ||
+                    forceReload ||
+                    Math.abs(response.events.length - this.recentEvents.length) > 5; // More than 5 new events
+
+                if (isSignificantChange) {
+                    // Significant change - preserve state during full re-render
+                    const expandedState = this.captureExpandedState();
+                    this.recentEvents = response.events;
+                    this.renderHistoryWithStatePreservation(expandedState);
+                } else {
+                    // Minor change - try selective update
+                    this.updateHistorySelectively(response.events);
+                }
             } else {
                 console.log('No valid response from background, loading from storage directly');
                 await this.loadFromStorageDirect();
@@ -39,6 +55,132 @@ export class HistoryManager {
             console.error('Error loading history:', error);
             // Fallback to direct storage loading
             await this.loadFromStorageDirect();
+        }
+    }
+
+    // Capture the current expanded state of events
+    captureExpandedState() {
+        const expandedState = new Map();
+
+        document.querySelectorAll('.history-item[data-event-id]').forEach(item => {
+            const eventId = item.getAttribute('data-event-id');
+            const isExpanded = item.classList.contains('expanded');
+            const detailsElement = item.querySelector('.history-details');
+            const detailsVisible = detailsElement && detailsElement.style.display !== 'none';
+
+            if (isExpanded || detailsVisible) {
+                expandedState.set(eventId, {
+                    expanded: isExpanded,
+                    detailsVisible: detailsVisible
+                });
+            }
+        });
+
+        // Also capture reason section states
+        document.querySelectorAll('.history-reason-section.expanded').forEach(section => {
+            const eventItem = section.closest('.history-item[data-event-id]');
+            if (eventItem) {
+                const eventId = eventItem.getAttribute('data-event-id');
+                const current = expandedState.get(eventId) || {};
+                current.reasonExpanded = true;
+                expandedState.set(eventId, current);
+            }
+        });
+
+        console.log('Captured expanded state for', expandedState.size, 'events');
+        return expandedState;
+    }
+
+    // Render history while preserving expanded state
+    renderHistoryWithStatePreservation(expandedState) {
+        // Perform normal render
+        this.renderHistory();
+
+        // Restore expanded state after a brief delay to allow DOM to settle
+        setTimeout(() => {
+            this.restoreExpandedState(expandedState);
+        }, 50);
+    }
+
+    // Restore the expanded state of events
+    restoreExpandedState(expandedState) {
+        if (!expandedState || expandedState.size === 0) return;
+
+        expandedState.forEach((state, eventId) => {
+            const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+            if (!eventElement) return;
+
+            if (state.expanded || state.detailsVisible) {
+                eventElement.classList.add('expanded');
+                const detailsElement = eventElement.querySelector('.history-details');
+                if (detailsElement) {
+                    detailsElement.style.display = 'block';
+                }
+            }
+
+            if (state.reasonExpanded) {
+                const reasonSection = eventElement.querySelector('.history-reason-section');
+                if (reasonSection) {
+                    reasonSection.classList.add('expanded');
+                    const content = reasonSection.querySelector('.history-reason-content');
+                    const caret = reasonSection.querySelector('.history-reason-caret');
+                    if (content) content.style.display = 'block';
+                    if (caret) caret.textContent = '▼';
+                }
+            }
+        });
+
+        console.log('Restored expanded state for', expandedState.size, 'events');
+    }
+
+    // Update history selectively for minor changes
+    updateHistorySelectively(newEvents) {
+        const oldEventIds = new Set(this.recentEvents.map(e => e.id));
+        const newEventIds = new Set(newEvents.map(e => e.id));
+
+        // Find truly new events (not just updates)
+        const addedEvents = newEvents.filter(e => !oldEventIds.has(e.id));
+        const removedEventIds = [...oldEventIds].filter(id => !newEventIds.has(id));
+
+        console.log(`Selective update: ${addedEvents.length} new, ${removedEventIds.length} removed`);
+
+        // Update our local array
+        this.recentEvents = newEvents;
+
+        // Remove deleted events from DOM
+        removedEventIds.forEach(eventId => {
+            const element = document.querySelector(`[data-event-id="${eventId}"]`);
+            if (element) {
+                element.remove();
+            }
+        });
+
+        // Add new events to DOM (insert at the top)
+        if (addedEvents.length > 0) {
+            const container = this.elements.historyContainer;
+            if (container && container.children.length > 0) {
+                // Check if we need to respect the filter
+                const filteredNewEvents = this.showTrueOnly
+                    ? addedEvents.filter(e => e.hasTrueResult)
+                    : addedEvents;
+
+                // Insert new events at the beginning
+                filteredNewEvents.reverse().forEach((event, index) => {
+                    const eventHtml = this.renderIndividualEvent(event, index, false);
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = eventHtml;
+                    const eventElement = tempDiv.firstElementChild;
+
+                    // Insert at the beginning
+                    container.insertBefore(eventElement, container.firstChild);
+
+                    // Attach handlers
+                    this.attachSingleEventHandlers(eventElement);
+                });
+            } else {
+                // Container is empty or not found, fall back to full render
+                this.renderHistory();
+            }
         }
     }
 
@@ -67,13 +209,22 @@ export class HistoryManager {
         try {
             const storage = await chrome.storage.local.get(['recentEvents']);
             if (storage.recentEvents && Array.isArray(storage.recentEvents)) {
-                this.recentEvents = storage.recentEvents;
+                // Preserve state if we already have events displayed
+                const hadEvents = this.recentEvents && this.recentEvents.length > 0;
+                if (hadEvents) {
+                    const expandedState = this.captureExpandedState();
+                    this.recentEvents = storage.recentEvents;
+                    this.renderHistoryWithStatePreservation(expandedState);
+                } else {
+                    this.recentEvents = storage.recentEvents;
+                    this.renderHistory();
+                }
                 console.log('Loaded events from storage:', this.recentEvents.length);
             } else {
                 console.log('No events found in storage');
                 this.recentEvents = [];
+                this.renderHistory();
             }
-            this.renderHistory();
         } catch (error) {
             console.error('Error loading events from storage:', error);
             this.recentEvents = [];
@@ -122,12 +273,251 @@ export class HistoryManager {
 
             // Save updated events to storage
             this.saveToStorage();
-            this.renderHistory();
+
+            // Add to pending updates and debounce the UI update
+            this.pendingUpdates.add(eventId);
+            this.debouncedUpdateEvent(eventId, event);
         } else {
             console.log('Event not found in local array, reloading history');
             // Event not in our array, reload history
             this.loadHistory();
         }
+    }
+
+    // Debounced event update to prevent rapid UI thrashing
+    debouncedUpdateEvent(eventId, event) {
+        // Clear any existing timeout
+        if (this.updateTimeout) {
+            clearTimeout(this.updateTimeout);
+        }
+
+        // Set a new timeout to batch updates
+        this.updateTimeout = setTimeout(() => {
+            // Process all pending updates
+            const updatesToProcess = Array.from(this.pendingUpdates);
+            this.pendingUpdates.clear();
+
+            console.log(`Processing ${updatesToProcess.length} pending UI updates`);
+
+            // For multiple rapid updates, just do a full refresh with state preservation
+            if (updatesToProcess.length > 3) {
+                const expandedState = this.captureExpandedState();
+                this.renderHistoryWithStatePreservation(expandedState);
+            } else {
+                // For few updates, update them individually
+                updatesToProcess.forEach(updateEventId => {
+                    const updateEvent = this.recentEvents.find(e => e.id === updateEventId);
+                    if (updateEvent) {
+                        this.updateEventInPlace(updateEventId, updateEvent);
+                    }
+                });
+            }
+
+            this.updateTimeout = null;
+        }, 250); // 250ms debounce delay
+    }
+
+    // Save event to storage without triggering UI updates
+    async saveEventToStorageQuietly(event) {
+        try {
+            // Update the event in our local array
+            const eventIndex = this.recentEvents.findIndex(e => e.id === event.id);
+            if (eventIndex !== -1) {
+                this.recentEvents[eventIndex] = event;
+            }
+
+            // Save to storage directly
+            await chrome.storage.local.set({ recentEvents: this.recentEvents });
+            console.log('Event saved quietly to storage:', event.id);
+        } catch (error) {
+            console.error('Failed to save event quietly:', error);
+        }
+    }
+
+    // Update a specific event in place without full re-render
+    updateEventInPlace(eventId, updatedEvent) {
+        try {
+            const existingEventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+            if (!existingEventElement) {
+                console.log('Event element not found, falling back to full re-render');
+                this.renderHistory();
+                return;
+            }
+
+            // Preserve the current expanded state
+            const wasExpanded = existingEventElement.classList.contains('expanded');
+            const detailsElement = existingEventElement.querySelector('.history-details');
+            const detailsWasVisible = detailsElement && detailsElement.style.display !== 'none';
+
+            // Find the event's position in the filtered list
+            const filteredEvents = this.showTrueOnly
+                ? this.recentEvents.filter(e => e.hasTrueResult)
+                : this.recentEvents;
+
+            const eventIndex = filteredEvents.findIndex(e => e.id == eventId);
+            if (eventIndex === -1) {
+                console.log('Event not in filtered list, falling back to full re-render');
+                this.renderHistory();
+                return;
+            }
+
+            // Create new HTML for the updated event
+            const newEventHtml = this.renderIndividualEvent(updatedEvent, eventIndex, false);
+
+            // Create a temporary container to parse the new HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = newEventHtml;
+            const newEventElement = tempDiv.firstElementChild;
+
+            // Restore expanded state if it was expanded
+            if (wasExpanded && detailsWasVisible) {
+                newEventElement.classList.add('expanded');
+                const newDetailsElement = newEventElement.querySelector('.history-details');
+                if (newDetailsElement) {
+                    newDetailsElement.style.display = 'block';
+                }
+            }
+
+            // Replace the old element with the new one
+            existingEventElement.replaceWith(newEventElement);
+
+            // Re-attach event handlers for the new element
+            this.attachSingleEventHandlers(newEventElement);
+
+            console.log('Event updated in place:', eventId);
+
+        } catch (error) {
+            console.error('Error updating event in place:', error);
+            // Fall back to full re-render if selective update fails
+            this.renderHistory();
+        }
+    }
+
+    // Attach event handlers to a single event element
+    attachSingleEventHandlers(eventElement) {
+        // Add click handler for expanding details
+        eventElement.addEventListener('click', function (e) {
+            // Don't collapse if clicking on interactive elements
+            if (e.target.closest('.history-screenshot') ||
+                e.target.closest('.data-section') ||
+                e.target.closest('.json-display') ||
+                e.target.closest('.copy-data-btn') ||
+                e.target.closest('.download-screenshot-btn') ||
+                e.target.closest('.load-screenshot-btn') ||
+                e.target.closest('.cancel-request-btn') ||
+                e.target.closest('.history-reason-section')) {
+                return;
+            }
+
+            const details = this.querySelector('.history-details');
+            if (details) {
+                const isExpanded = details.style.display !== 'none';
+                details.style.display = isExpanded ? 'none' : 'block';
+                this.classList.toggle('expanded', !isExpanded);
+            }
+        });
+
+        // Add handlers for reason sections
+        const reasonHeaders = eventElement.querySelectorAll('.history-reason-header');
+        reasonHeaders.forEach(header => {
+            header.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const section = this.closest('.history-reason-section');
+                const content = section.querySelector('.history-reason-content');
+                const caret = this.querySelector('.history-reason-caret');
+
+                const isExpanded = section.classList.contains('expanded');
+
+                if (!isExpanded) {
+                    content.style.display = 'block';
+                    section.classList.add('expanded');
+                    if (caret) caret.textContent = '▼';
+                } else {
+                    content.style.display = 'none';
+                    section.classList.remove('expanded');
+                    if (caret) caret.textContent = '▶';
+                }
+            });
+        });
+
+        // Add handlers for screenshots
+        const screenshots = eventElement.querySelectorAll('.history-screenshot-thumbnail');
+        screenshots.forEach(img => {
+            img.addEventListener('click', (e) => e.stopPropagation());
+            img.addEventListener('mousemove', handleImageZoom);
+            img.addEventListener('mouseleave', resetImageZoom);
+        });
+
+        // Add handlers for copy buttons
+        const copyBtns = eventElement.querySelectorAll('.copy-data-btn');
+        copyBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const content = decodeURIComponent(btn.getAttribute('data-content'));
+                navigator.clipboard.writeText(content).then(() => {
+                    btn.textContent = '✓';
+                    setTimeout(() => {
+                        btn.textContent = '📋';
+                    }, 1000);
+                }).catch((err) => {
+                    console.error('Failed to copy: ', err);
+                    btn.textContent = '✗';
+                    setTimeout(() => {
+                        btn.textContent = '📋';
+                    }, 1000);
+                });
+            });
+        });
+
+        // Add handlers for download buttons
+        const downloadBtns = eventElement.querySelectorAll('.download-screenshot-btn');
+        downloadBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const screenshotData = btn.getAttribute('data-screenshot');
+                const timestamp = btn.getAttribute('data-timestamp');
+                const eventId = btn.getAttribute('data-event-id');
+
+                console.log('Download button clicked:', { eventId, hasScreenshotData: !!screenshotData, timestamp });
+
+                if (screenshotData && screenshotData.startsWith('data:image/')) {
+                    downloadScreenshot(screenshotData, timestamp);
+                } else {
+                    console.error('Download button has invalid screenshot data:', screenshotData);
+                    // Optionally try to load the screenshot first
+                    const loadBtn = document.querySelector(`[data-event-id="${eventId}"].load-screenshot-btn`);
+                    if (loadBtn) {
+                        console.log('Attempting to load screenshot first...');
+                        this.loadScreenshot(eventId);
+                    }
+                }
+            });
+        }, this);
+
+        // Add handlers for load screenshot buttons
+        const loadBtns = eventElement.querySelectorAll('.load-screenshot-btn');
+        loadBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const eventId = btn.getAttribute('data-event-id');
+                this.loadScreenshot(eventId);
+            });
+        }, this);
+
+        // Add handlers for cancel buttons
+        const cancelBtns = eventElement.querySelectorAll('.cancel-request-btn');
+        cancelBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.cancelRequest(btn.getAttribute('data-event-id'));
+            });
+        }, this);
     }
 
     // Find event by ID and scroll to it
@@ -600,19 +990,7 @@ export class HistoryManager {
               
               ${this.renderPreviousEvaluation(event)}
 
-              ${event.screenshot ? `
-                <div class="detail-item screenshot-detail">
-                  <div class="screenshot-header">
-                    <strong>Screenshot:</strong>
-                    <div class="screenshot-controls">
-                      <button class="download-screenshot-btn small-button" data-screenshot="${event.screenshot}" data-timestamp="${event.timestamp}">💾 Download</button>
-                    </div>
-                  </div>
-                  <div class="screenshot-container">
-                                            <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (3.5x) and pan - move mouse across image to explore different areas">
-                  </div>
-                </div>
-              ` : ''}
+              ${this.renderScreenshotSection(event)}
               
               ${event.request ? `
                 <details class="data-section">
@@ -836,7 +1214,21 @@ export class HistoryManager {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                downloadScreenshot(btn.getAttribute('data-screenshot'), btn.getAttribute('data-timestamp'));
+
+                const screenshotData = btn.getAttribute('data-screenshot');
+                const timestamp = btn.getAttribute('data-timestamp');
+                const eventId = btn.getAttribute('data-event-id');
+
+                console.log('Download button clicked (main):', { eventId, hasScreenshotData: !!screenshotData, timestamp });
+
+                if (screenshotData && screenshotData.startsWith('data:image/')) {
+                    const result = downloadScreenshot(screenshotData, timestamp);
+                    if (!result.success) {
+                        console.error('Download failed:', result.message);
+                    }
+                } else {
+                    console.error('Download button has invalid screenshot data:', screenshotData);
+                }
             });
         });
 
@@ -846,6 +1238,16 @@ export class HistoryManager {
                 e.preventDefault();
                 e.stopPropagation();
                 this.cancelRequest(btn.getAttribute('data-event-id'));
+            });
+        });
+
+        // Add load screenshot handlers
+        document.querySelectorAll('.load-screenshot-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const eventId = btn.getAttribute('data-event-id');
+                this.loadScreenshot(eventId);
             });
         });
     }
@@ -915,6 +1317,179 @@ export class HistoryManager {
                 </div>
             </div>
         `;
+    }
+
+    // Render screenshot section with lazy loading support
+    renderScreenshotSection(event) {
+        // If no screenshot data or URL, don't show section
+        if (!event.screenshot && !event.screenshotUrl) {
+            return '';
+        }
+
+        // If we have immediate screenshot data (local thumbnails), show it
+        if (event.screenshot) {
+            return `
+                <div class="detail-item screenshot-detail">
+                    <div class="screenshot-header">
+                        <strong>Screenshot:</strong>
+                        <div class="screenshot-controls">
+                            <button class="download-screenshot-btn small-button" data-screenshot="${event.screenshot}" data-timestamp="${event.timestamp}" data-event-id="${event.id}">💾 Download</button>
+                        </div>
+                    </div>
+                    <div class="screenshot-container">
+                        <img src="${event.screenshot}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (3.5x) and pan - move mouse across image to explore different areas">
+                    </div>
+                </div>
+            `;
+        }
+
+        // If we have a screenshot URL but no data, show lazy loading UI
+        if (event.screenshotUrl) {
+            const loadingId = `screenshot-loading-${event.id}`;
+            const containerId = `screenshot-container-${event.id}`;
+
+            return `
+                <div class="detail-item screenshot-detail">
+                    <div class="screenshot-header">
+                        <strong>Screenshot:</strong>
+                        <div class="screenshot-controls">
+                            <button class="load-screenshot-btn small-button" data-event-id="${event.id}" data-timestamp="${event.timestamp}">📸 Load Screenshot</button>
+                            <button class="download-screenshot-btn small-button" data-event-id="${event.id}" data-timestamp="${event.timestamp}" style="display: none;">💾 Download</button>
+                        </div>
+                    </div>
+                    <div class="screenshot-container" id="${containerId}">
+                        <div class="screenshot-placeholder" id="${loadingId}">
+                            <div class="placeholder-icon">📸</div>
+                            <div class="placeholder-text">Click "Load Screenshot" to view</div>
+                            <div class="placeholder-source">${event.source === 'cloud' ? 'Stored on cloud runner' : 'Available on demand'}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return '';
+    }
+
+    // Load screenshot on demand
+    async loadScreenshot(eventId) {
+        const event = this.recentEvents.find(e => e.id == eventId);
+        if (!event) {
+            console.error('Event not found for screenshot loading:', eventId);
+            return;
+        }
+
+        const containerId = `screenshot-container-${eventId}`;
+        const loadingId = `screenshot-loading-${eventId}`;
+        const container = document.getElementById(containerId);
+        const loadingDiv = document.getElementById(loadingId);
+        const loadBtn = document.querySelector(`[data-event-id="${eventId}"].load-screenshot-btn`);
+        const downloadBtn = document.querySelector(`[data-event-id="${eventId}"].download-screenshot-btn`);
+
+        if (!container || !loadBtn) {
+            console.error('Screenshot UI elements not found');
+            return;
+        }
+
+        try {
+            // Show loading state
+            loadBtn.disabled = true;
+            loadBtn.textContent = '⏳ Loading...';
+            if (loadingDiv) {
+                loadingDiv.innerHTML = `
+                    <div class="placeholder-icon">⏳</div>
+                    <div class="placeholder-text">Loading screenshot...</div>
+                    <div class="loading-progress"></div>
+                `;
+            }
+
+            // Request screenshot from EventService
+            const response = await chrome.runtime.sendMessage({
+                action: 'fetchScreenshot',
+                eventId: eventId
+            });
+
+            console.log('Screenshot fetch response:', response);
+
+            // Handle different response formats
+            let screenshotData = null;
+            if (typeof response === 'string' && response.startsWith('data:image/')) {
+                // Direct base64 data
+                screenshotData = response;
+            } else if (response && response.success && response.data) {
+                // Response object with data
+                screenshotData = response.data;
+            } else if (response && !response.success) {
+                // Error response
+                throw new Error(response.error || 'Screenshot not available');
+            } else if (response && typeof response === 'string') {
+                // String response that might be the data
+                screenshotData = response;
+            }
+
+            if (screenshotData && screenshotData.startsWith('data:image/')) {
+                // Update event with loaded screenshot (but don't trigger re-render)
+                event.screenshot = screenshotData;
+
+                // Replace placeholder with actual image
+                container.innerHTML = `
+                    <img src="${screenshotData}" alt="Captured screenshot" class="history-screenshot-thumbnail" title="Hover to zoom (3.5x) and pan - move mouse across image to explore different areas">
+                `;
+
+                // Update buttons
+                loadBtn.style.display = 'none';
+                downloadBtn.style.display = 'inline-block';
+                downloadBtn.setAttribute('data-screenshot', screenshotData);
+                downloadBtn.setAttribute('data-timestamp', event.timestamp);
+
+                // Re-attach image event handlers
+                const img = container.querySelector('.history-screenshot-thumbnail');
+                if (img) {
+                    img.addEventListener('click', (e) => e.stopPropagation());
+                    img.addEventListener('mousemove', handleImageZoom);
+                    img.addEventListener('mouseleave', resetImageZoom);
+                }
+
+                // Re-attach download handler for the download button
+                downloadBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    downloadScreenshot(screenshotData, event.timestamp);
+                });
+
+                console.log('Screenshot loaded successfully for event:', eventId);
+
+                // Save updated event to storage WITHOUT re-rendering the entire history
+                this.saveEventToStorageQuietly(event);
+
+            } else {
+                throw new Error('Invalid screenshot data received');
+            }
+
+        } catch (error) {
+            console.error('Error loading screenshot:', error);
+
+            // Show appropriate error message
+            let errorMessage;
+            if (event.source === 'cloud') {
+                errorMessage = 'Cloud screenshot not available - may have been cleaned up by server';
+            } else {
+                errorMessage = 'Local screenshot was removed during storage cleanup';
+            }
+
+            // Show error state
+            if (loadingDiv) {
+                loadingDiv.innerHTML = `
+                    <div class="placeholder-icon">❌</div>
+                    <div class="placeholder-text">Screenshot unavailable</div>
+                    <div class="placeholder-source">${errorMessage}</div>
+                `;
+            }
+
+            // Reset button for retry (especially useful for cloud screenshots)
+            loadBtn.disabled = false;
+            loadBtn.textContent = '🔄 Retry';
+        }
     }
 
     // Process and display a single event
