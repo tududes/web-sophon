@@ -29,10 +29,15 @@ class CleanPopupController {
             // 2. Get DOM elements
             this.getDOMElements();
 
-            // 3. Initialize UI manager with field manager and set its elements
+            // 3. Initialize managers
             const { UIManager } = await import('./components/UIManager.js');
+            const { JobManager } = await import('./services/JobManager.js');
+
             this.uiManager = new UIManager(this.fieldManager);
             this.uiManager.setElements(this.elements);
+
+            this.jobManager = new JobManager();
+            await this.jobManager.loadJobs();
 
             // 4. Load field state from storage
             this.fieldManager.currentDomain = this.currentDomain;
@@ -49,6 +54,9 @@ class CleanPopupController {
             await this.loadBasicSettings();
             await this.loadCaptureSettings(); // Load capture settings for default tab
             this.displayCurrentDomain();
+
+            // 8. Load and display active jobs
+            this.renderActiveJobs();
 
             // Populate models dynamically
             await this.populateLlmModels(this.elements.llmModel?.value);
@@ -175,7 +183,8 @@ class CleanPopupController {
             fullPageCaptureToggle: document.getElementById('fullPageCaptureToggle'),
             usePreviousEvaluationToggle: document.getElementById('usePreviousEvaluationToggle'),
             clearPreviousEvaluationBtn: document.getElementById('clearPreviousEvaluationBtn'),
-            cloudRunnerToggle: document.getElementById('cloudRunnerToggle')
+            cloudRunnerToggle: document.getElementById('cloudRunnerToggle'),
+            activeJobsList: document.getElementById('activeJobsList')
         };
     }
 
@@ -367,6 +376,7 @@ class CleanPopupController {
             case 'capture':
                 // Load capture-specific settings when switching to capture tab
                 await this.loadCaptureSettings();
+                this.renderActiveJobs();
                 break;
             case 'fields':
                 this.renderFields();
@@ -1159,13 +1169,22 @@ class CleanPopupController {
     // === MESSAGE HANDLING (Clean) ===
 
     setupMessageListener() {
-        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
             console.log('Popup received message:', request.action);
 
             switch (request.action) {
                 case 'fieldResults':
                     console.log('Received field results for event:', request.eventId);
                     this.handleCaptureResults(request.results, request.eventId);
+
+                    // Update job statistics if this was from an interval capture
+                    if (request.domain && !request.isManual) {
+                        const job = this.jobManager.getJobByDomain(request.domain);
+                        if (job) {
+                            await this.jobManager.recordJobRun(job.id, true);
+                            this.renderActiveJobs(); // Refresh to show updated stats
+                        }
+                    }
                     break;
 
                 case 'fieldsCancelled':
@@ -1967,6 +1986,11 @@ class CleanPopupController {
                 if (confirm(`Stop the recurring cloud job for "${domain}"?`)) {
                     await this.clearCloudJob(jobId, domain);
                 }
+            } else if (target.matches('.domain-name-text')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const domain = target.textContent.trim();
+                this.openDomain(domain);
             }
         });
     }
@@ -2146,9 +2170,20 @@ class CleanPopupController {
                 console.log('Stopping automatic capture');
                 await this.sendMessageToBackground({
                     action: 'stopCapture',
-                    tabId: tabId
+                    tabId: tabId,
+                    domain: this.currentDomain
                 });
+
+                // Remove job from JobManager
+                const existingJob = this.jobManager.getJobByDomain(this.currentDomain);
+                if (existingJob) {
+                    await this.jobManager.deleteJob(existingJob.id);
+                }
+
                 this.showStatus('Automatic capture stopped', 'info');
+
+                // Refresh job list
+                this.renderActiveJobs();
             } else {
                 // Validate domain consent and LLM config before starting
                 if (!this.elements.consentToggle?.checked) {
@@ -2170,6 +2205,10 @@ class CleanPopupController {
                 const intervalSeconds = parseInt(intervalValue);
                 console.log(`Starting automatic capture every ${intervalSeconds} seconds`);
 
+                // Get current URL for job tracking
+                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+                const currentUrl = tabs[0]?.url || `https://${this.currentDomain}`;
+
                 await this.sendMessageToBackground({
                     action: 'startCapture',
                     tabId: tabId,
@@ -2177,7 +2216,20 @@ class CleanPopupController {
                     interval: intervalSeconds
                 });
 
+                // Create job in JobManager
+                await this.jobManager.createJob({
+                    domain: this.currentDomain,
+                    url: currentUrl,
+                    interval: intervalSeconds,
+                    tabId: tabId,
+                    status: 'active',
+                    isCloudJob: this.elements.cloudRunnerToggle?.checked || false
+                });
+
                 this.showStatus(`Automatic capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
+
+                // Refresh job list
+                this.renderActiveJobs();
             }
 
         } catch (error) {
@@ -2196,6 +2248,193 @@ class CleanPopupController {
         } else {
             return `${Math.floor(seconds / 86400)} days`;
         }
+    }
+
+    // === ACTIVE JOBS MANAGEMENT ===
+
+    renderActiveJobs() {
+        if (!this.elements.activeJobsList) return;
+
+        const activeJobs = this.jobManager.getActiveJobs();
+
+        if (activeJobs.length === 0) {
+            this.elements.activeJobsList.innerHTML = '<div class="no-active-jobs">No active interval captures</div>';
+            return;
+        }
+
+        const jobsHtml = activeJobs.map(job => this.renderJobItem(job)).join('');
+        this.elements.activeJobsList.innerHTML = jobsHtml;
+
+        // Add event listeners for job controls
+        this.setupJobControlListeners();
+    }
+
+    renderJobItem(job) {
+        const statusClass = job.status.toLowerCase();
+        const statusText = job.status.charAt(0).toUpperCase() + job.status.slice(1);
+        const intervalText = this.formatInterval(job.interval);
+        const lastRun = job.lastRun ? new Date(job.lastRun).toLocaleString() : 'Never';
+        const cloudBadge = job.isCloudJob ? '<span class="job-cloud-badge">Cloud</span>' : '';
+
+        return `
+            <div class="job-item" data-job-id="${job.id}">
+                <div class="job-header">
+                    <div class="job-info">
+                        <div class="job-domain" onclick="this.openDomain('${job.domain}')" title="Open ${job.domain}">
+                            ${job.domain}
+                        </div>
+                        <div class="job-url" onclick="this.openUrl('${job.url}')" title="Open ${job.url}">
+                            ${job.url}
+                        </div>
+                        <div class="job-status">
+                            <div class="job-status-indicator ${statusClass}"></div>
+                            <span>${statusText}</span>
+                            ${cloudBadge}
+                        </div>
+                    </div>
+                    <div class="job-controls">
+                        ${job.status === 'active' ?
+                '<button class="job-control-btn" data-action="pause" data-job-id="' + job.id + '">⏸️ Pause</button>' :
+                '<button class="job-control-btn primary" data-action="resume" data-job-id="' + job.id + '">▶️ Resume</button>'
+            }
+                        <button class="job-control-btn danger" data-action="delete" data-job-id="${job.id}">🗑️ Delete</button>
+                    </div>
+                </div>
+                <div class="job-details">
+                    <div class="job-interval">Every ${intervalText}</div>
+                    <div class="job-stats">
+                        <span>Runs: ${job.runCount}</span>
+                        <span>Last: ${lastRun}</span>
+                        ${job.errorCount > 0 ? `<span style="color: var(--danger)">Errors: ${job.errorCount}</span>` : ''}
+                    </div>
+                </div>
+                ${job.lastError ? `<div class="job-error" style="color: var(--danger); font-size: var(--text-xs); margin-top: var(--space-xs);">Error: ${job.lastError}</div>` : ''}
+            </div>
+        `;
+    }
+
+    setupJobControlListeners() {
+        if (!this.elements.activeJobsList) return;
+
+        this.elements.activeJobsList.addEventListener('click', async (e) => {
+            const button = e.target.closest('.job-control-btn');
+            if (!button) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const action = button.dataset.action;
+            const jobId = button.dataset.jobId;
+
+            try {
+                await this.handleJobAction(action, jobId);
+            } catch (error) {
+                console.error(`Error handling job action ${action}:`, error);
+                this.showError(`Failed to ${action} job: ${error.message}`);
+            }
+        });
+
+        // Handle URL/domain clicks
+        this.elements.activeJobsList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('job-domain')) {
+                const domain = e.target.textContent.trim();
+                this.openDomain(domain);
+            } else if (e.target.classList.contains('job-url')) {
+                const url = e.target.textContent.trim();
+                this.openUrl(url);
+            }
+        });
+    }
+
+    async handleJobAction(action, jobId) {
+        const job = this.jobManager.getJob(jobId);
+        if (!job) {
+            throw new Error('Job not found');
+        }
+
+        switch (action) {
+            case 'pause':
+                if (job.isCloudJob) {
+                    // For cloud jobs, we don't have pause functionality yet
+                    // Just update local state
+                    await this.jobManager.pauseJob(jobId);
+                } else {
+                    // For local jobs, stop the capture and mark as paused
+                    await this.sendMessageToBackground({
+                        action: 'stopCapture',
+                        tabId: job.tabId,
+                        domain: job.domain
+                    });
+                    await this.jobManager.pauseJob(jobId);
+                }
+                this.showStatus(`Paused job for ${job.domain}`, 'info');
+                break;
+
+            case 'resume':
+                if (job.status !== 'paused') {
+                    throw new Error('Job is not paused');
+                }
+
+                if (job.isCloudJob) {
+                    // For cloud jobs, restart the cloud job
+                    await this.sendMessageToBackground({
+                        action: 'startCapture',
+                        tabId: job.tabId,
+                        domain: job.domain,
+                        interval: job.interval
+                    });
+                } else {
+                    // For local jobs, restart the capture
+                    await this.sendMessageToBackground({
+                        action: 'startCapture',
+                        tabId: job.tabId,
+                        domain: job.domain,
+                        interval: job.interval
+                    });
+                }
+                await this.jobManager.resumeJob(jobId);
+                this.showStatus(`Resumed job for ${job.domain}`, 'success');
+                break;
+
+            case 'delete':
+                const confirmMessage = `Delete interval capture job for "${job.domain}"?\n\nThis will stop the ${this.formatInterval(job.interval)} capture schedule.`;
+                if (!confirm(confirmMessage)) return;
+
+                // Stop the actual capture
+                await this.sendMessageToBackground({
+                    action: 'stopCapture',
+                    tabId: job.tabId,
+                    domain: job.domain
+                });
+
+                // Remove from job manager
+                await this.jobManager.deleteJob(jobId);
+
+                // Reset interval selector if this is the current domain
+                if (job.domain === this.currentDomain && this.elements.captureInterval) {
+                    this.elements.captureInterval.value = 'manual';
+                    const intervalKey = `interval_${this.currentDomain}`;
+                    await chrome.storage.local.set({ [intervalKey]: 'manual' });
+                }
+
+                this.showStatus(`Deleted job for ${job.domain}`, 'success');
+                break;
+
+            default:
+                throw new Error(`Unknown action: ${action}`);
+        }
+
+        // Refresh the job list
+        this.renderActiveJobs();
+    }
+
+    openDomain(domain) {
+        const url = `https://${domain}`;
+        chrome.tabs.create({ url });
+    }
+
+    openUrl(url) {
+        chrome.tabs.create({ url });
     }
 }
 
