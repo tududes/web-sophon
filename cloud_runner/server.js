@@ -1336,10 +1336,13 @@ app.get('/job/:id/results', requireValidToken, (req, res) => {
 
 /**
  * NEW: Endpoint to purge results after the extension has synced them.
+ * Supports selective purging with keepLast parameter for interval jobs.
  * Requires valid authentication token.
  */
 app.post('/job/:id/purge', requireValidToken, (req, res) => {
     const jobId = req.params.id;
+    const { keepLast = 0 } = req.body || {}; // New parameter to keep last N results
+
     const job = jobs[jobId];
     if (!job) {
         return res.status(404).json({ error: 'Job not found' });
@@ -1351,10 +1354,40 @@ app.post('/job/:id/purge', requireValidToken, (req, res) => {
         return res.status(403).json({ error: 'Unauthorized to purge this job' });
     }
 
-    const purgedCount = job.results.length;
-    job.results = []; // Clear the results array
-    console.log(`[${jobId}] Purged ${purgedCount} results for ${req.clientId}.`);
-    res.status(200).json({ message: `Purged ${purgedCount} results.` });
+    const totalResults = job.results.length;
+
+    if (keepLast > 0 && totalResults > keepLast) {
+        // Selective purge: keep only the last N results
+        const resultsToPurge = totalResults - keepLast;
+        job.results.splice(0, resultsToPurge); // Remove from beginning, keep end
+        console.log(`[${jobId}] Selectively purged ${resultsToPurge} results, kept last ${keepLast} for ${req.clientId}.`);
+        res.status(200).json({
+            message: `Purged ${resultsToPurge} results, kept last ${keepLast}.`,
+            purged: resultsToPurge,
+            kept: keepLast,
+            remaining: job.results.length
+        });
+    } else if (keepLast === 0) {
+        // Full purge: clear all results
+        const purgedCount = job.results.length;
+        job.results = []; // Clear the results array
+        console.log(`[${jobId}] Purged all ${purgedCount} results for ${req.clientId}.`);
+        res.status(200).json({
+            message: `Purged ${purgedCount} results.`,
+            purged: purgedCount,
+            kept: 0,
+            remaining: 0
+        });
+    } else {
+        // Nothing to purge
+        console.log(`[${jobId}] No results to purge (total: ${totalResults}, keepLast: ${keepLast}).`);
+        res.status(200).json({
+            message: 'No results to purge.',
+            purged: 0,
+            kept: totalResults,
+            remaining: totalResults
+        });
+    }
 });
 
 /**

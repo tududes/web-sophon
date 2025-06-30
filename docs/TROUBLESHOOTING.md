@@ -181,10 +181,21 @@ The cloud runner automatically preserves the original URL that was submitted whe
 Interval jobs need to maintain context from previous captures to track state changes (e.g., position states, entry/exit signals). If results are purged after each sync, the cloud runner loses this context.
 
 ### Solution: Smart Result Management
-The extension now intelligently manages cloud runner results:
-- **Interval Jobs**: Results are kept on the cloud runner to maintain context between captures
-- **One-time Jobs**: Results are purged after sync to save memory
-- **Automatic Detection**: The extension checks job type before deciding whether to purge
+The extension now intelligently manages cloud runner results with a "smart purge" approach:
+
+**For Interval Jobs:**
+- Keeps the **last result** on the cloud runner for context
+- Purges older results that have already been synced to save memory
+- Ensures the next capture always has access to the previous evaluation
+
+**For One-time Jobs:**
+- Purges all results after sync to maximize memory efficiency
+- No context needed since these jobs don't recur
+
+**Benefits:**
+- Minimal memory usage on the cloud runner
+- Context is always available for state tracking
+- All historical results are preserved in the extension
 
 This ensures that interval jobs can properly track state transitions like:
 - Position states (long_position_state, short_position_state)
@@ -194,8 +205,9 @@ This ensures that interval jobs can properly track state transitions like:
 ### Debugging Context Issues
 If you suspect context is not being passed correctly:
 1. Check cloud runner logs for "previousEvaluation" messages
-2. Verify the extension is not purging interval job results
-3. Look for "keeping results for context" in extension console logs
+2. Look for "Smart purge: removed X old results, kept last 1" in extension logs
+3. Verify the purge endpoint is being called with `keepLast: 1` for interval jobs
+4. Check that interval jobs show "Job has 1 previous results" before each capture
 
 **Logs indicating URL preservation:**
 ```
