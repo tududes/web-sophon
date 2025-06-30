@@ -68,16 +68,26 @@ export function downloadScreenshot(screenshotData, timestamp) {
         const link = document.createElement('a');
         link.href = screenshotData;
 
-        // Create filename with timestamp
+        // Detect image format from data URL
+        let extension = 'png'; // default
+        if (screenshotData.includes('data:image/jpeg')) {
+            extension = 'jpg';
+        } else if (screenshotData.includes('data:image/png')) {
+            extension = 'png';
+        } else if (screenshotData.includes('data:image/webp')) {
+            extension = 'webp';
+        }
+
+        // Create filename with timestamp and correct extension
         const date = new Date(timestamp);
-        const filename = `websophon-screenshot-${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}-${date.getHours().toString().padStart(2, '0')}-${date.getMinutes().toString().padStart(2, '0')}-${date.getSeconds().toString().padStart(2, '0')}.png`;
+        const filename = `websophon-screenshot-${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}-${date.getHours().toString().padStart(2, '0')}-${date.getMinutes().toString().padStart(2, '0')}-${date.getSeconds().toString().padStart(2, '0')}.${extension}`;
 
         link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
 
-        return { success: true, message: 'Screenshot downloaded' };
+        return { success: true, message: `Screenshot downloaded as ${extension.toUpperCase()}` };
     } catch (error) {
         console.error('Error downloading screenshot:', error);
         return { success: false, message: 'Failed to download screenshot' };
@@ -142,8 +152,10 @@ export const handleImageZoom = throttle(function (e) {
         transformOrigin: `${x.toFixed(1)}% ${y.toFixed(1)}%`
     });
 
-    // Higher zoom factor to make panning effect more noticeable
-    const zoomFactor = 3.5;
+    // Adaptive zoom factor based on image format
+    // JPEG compressed images benefit from higher zoom for better detail visibility
+    const isJPEG = img.src.includes('data:image/jpeg');
+    const zoomFactor = isJPEG ? 4.0 : 3.5; // Higher zoom for compressed images
 
     // Set transform origin to exact mouse position on the image
     // This creates a "magnifying glass" effect that follows the mouse
@@ -154,8 +166,15 @@ export const handleImageZoom = throttle(function (e) {
     img.style.borderRadius = '4px';
     img.style.boxShadow = '0 12px 48px rgba(0,0,0,0.4)';
 
-    // Ensure crisp rendering during zoom
-    img.style.imageRendering = 'crisp-edges';
+    // Optimize rendering for different image formats
+    if (isJPEG) {
+        // For JPEG: Use automatic rendering with slight sharpening
+        img.style.imageRendering = 'auto';
+        img.style.filter = 'contrast(1.05) saturate(1.02)'; // Subtle enhancement for compressed images
+    } else {
+        // For PNG: Use crisp edges for pixel-perfect rendering
+        img.style.imageRendering = 'crisp-edges';
+    }
     img.style.backfaceVisibility = 'hidden';
 
     // Ensure container doesn't clip the zoomed image
@@ -185,7 +204,7 @@ export function resetImageZoom(e) {
     img.style.boxShadow = '';
     img.style.imageRendering = '';
     img.style.backfaceVisibility = '';
-    img.style.filter = ''; // Clear any filter effects
+    img.style.filter = ''; // Clear any zoom enhancement filters
 
     // Reset container overflow
     const container = img.closest('.screenshot-container');
