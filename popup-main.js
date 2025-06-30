@@ -975,7 +975,7 @@ class CleanPopupController {
 
     async handleCapture() {
         try {
-            console.log('=== Starting manual capture ===');
+            console.log('=== Starting capture ===');
 
             // Always validate domain consent first
             if (!this.elements.consentToggle?.checked) {
@@ -990,27 +990,25 @@ class CleanPopupController {
                 throw new Error('No valid fields configured for this domain');
             }
 
-            // Mark all fields as pending atomically (UI management)
-            const eventId = Date.now().toString();
-            this.fieldManager.markFieldsPending(eventId);
-            await this.fieldManager.saveToStorage();
+            // Check current interval setting to decide capture type
+            const intervalKey = `interval_${this.currentDomain}`;
+            const intervalData = await chrome.storage.local.get([intervalKey]);
+            const currentInterval = intervalData[intervalKey] || 'manual';
 
-            // Re-render to show pending state
-            this.renderFields();
+            console.log(`Current interval setting: ${currentInterval}`);
 
-            // Check if cloud runner is enabled for this specific capture
-            if (this.elements.cloudRunnerToggle?.checked) {
-                console.log('Cloud runner is enabled. Starting cloud capture flow.');
-                this.showStatus('Starting cloud capture...', 'info');
-                await this.handleCloudCapture();
+            if (currentInterval === 'manual') {
+                // One-time capture
+                console.log('Performing one-time capture');
+                await this.performSingleCapture(fieldsForAPI);
             } else {
-                console.log('Starting local capture flow.');
-                this.showStatus('Starting local capture...', 'info');
-                await this.handleLocalCapture(fieldsForAPI, eventId);
+                // Start interval capture
+                console.log(`Starting interval capture every ${currentInterval} seconds`);
+                await this.startIntervalCapture(parseInt(currentInterval));
             }
 
         } catch (error) {
-            console.error('Manual capture failed:', error);
+            console.error('Capture failed:', error);
 
             // Mark fields as error atomically
             this.fieldManager.markFieldsError(error.message);
@@ -1018,6 +1016,27 @@ class CleanPopupController {
             this.renderFields();
 
             this.showError(error.message);
+        }
+    }
+
+    async performSingleCapture(fieldsForAPI) {
+        // Mark all fields as pending atomically (UI management)
+        const eventId = Date.now().toString();
+        this.fieldManager.markFieldsPending(eventId);
+        await this.fieldManager.saveToStorage();
+
+        // Re-render to show pending state
+        this.renderFields();
+
+        // Check if cloud runner is enabled for this specific capture
+        if (this.elements.cloudRunnerToggle?.checked) {
+            console.log('Cloud runner is enabled. Starting cloud capture flow.');
+            this.showStatus('Starting cloud capture...', 'info');
+            await this.handleCloudCapture();
+        } else {
+            console.log('Starting local capture flow.');
+            this.showStatus('Starting local capture...', 'info');
+            await this.handleLocalCapture(fieldsForAPI, eventId);
         }
     }
 
@@ -2175,13 +2194,15 @@ class CleanPopupController {
             const intervalKey = `interval_${this.currentDomain}`;
             await chrome.storage.local.set({ [intervalKey]: intervalValue });
 
+            // Only stop existing intervals when switching to manual
+            // Don't start new intervals - that should only happen when capture button is clicked
             if (intervalValue === 'manual') {
                 // Stop any existing automatic capture (both local and cloud)
                 await this.stopAllIntervalCaptures();
-                this.showStatus('Automatic capture stopped', 'info');
+                this.showStatus('Interval capture setting changed to manual', 'info');
             } else {
-                // Start interval capture - decide local vs cloud based on toggle
-                await this.startIntervalCapture(parseInt(intervalValue));
+                console.log(`Interval setting changed to ${intervalValue} seconds - will be used for next capture`);
+                this.showStatus(`Interval set to ${this.formatInterval(parseInt(intervalValue))} - click capture to start`, 'info');
             }
 
             // Refresh job list to show current state
@@ -2223,6 +2244,9 @@ class CleanPopupController {
 
     async startIntervalCapture(intervalSeconds) {
         console.log(`Starting interval capture every ${intervalSeconds} seconds`);
+
+        // Stop any existing interval captures first
+        await this.stopAllIntervalCaptures();
 
         // Validate domain consent and LLM config before starting
         if (!this.elements.consentToggle?.checked) {
@@ -2282,6 +2306,9 @@ class CleanPopupController {
         });
 
         this.showStatus(`Local interval capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
+
+        // Refresh job list to show new active job
+        this.renderActiveJobs();
     }
 
     async startCloudIntervalJob(tabId, intervalSeconds, currentUrl) {
@@ -2309,6 +2336,9 @@ class CleanPopupController {
         });
 
         this.showStatus(`Cloud interval capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
+
+        // Refresh job list to show new active job
+        this.renderActiveJobs();
     }
 
     formatInterval(seconds) {
