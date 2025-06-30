@@ -50,12 +50,31 @@ const browserPool = new Map(); // jobId -> { browser, page, lastUsed }
 const BROWSER_IDLE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
 // Clean up idle browsers periodically
-setInterval(() => {
+setInterval(async () => {
     const now = Date.now();
     for (const [jobId, browserInfo] of browserPool.entries()) {
         if (now - browserInfo.lastUsed > BROWSER_IDLE_TIMEOUT) {
             console.log(`[BROWSER] Closing idle browser for job ${jobId}`);
-            browserInfo.browser.close().catch(console.error);
+            try {
+                await browserInfo.browser.close();
+            } catch (error) {
+                console.error(`[BROWSER] Error closing browser for job ${jobId}:`, error);
+            }
+            browserPool.delete(jobId);
+        }
+    }
+
+    // Also check for crashed browsers
+    for (const [jobId, browserInfo] of browserPool.entries()) {
+        try {
+            // Try to check if browser is still connected
+            const pages = await browserInfo.browser.pages();
+            if (pages.length === 0) {
+                console.log(`[BROWSER] Browser for job ${jobId} has no pages, removing from pool`);
+                browserPool.delete(jobId);
+            }
+        } catch (error) {
+            console.log(`[BROWSER] Browser for job ${jobId} appears to be crashed, removing from pool`);
             browserPool.delete(jobId);
         }
     }
@@ -1510,8 +1529,32 @@ async function processJob(jobId, jobData) {
                 page = existingBrowser.page;
                 existingBrowser.lastUsed = Date.now();
 
-                // Just take a screenshot without navigation
-                console.log(`[${jobId}] Taking screenshot without reload (interval job, refresh disabled)`);
+                // Check if we're still on the correct URL
+                try {
+                    const currentUrl = await page.url();
+                    console.log(`[${jobId}] Current URL: ${currentUrl}, Expected: ${sessionData.url}`);
+
+                    // If the URL doesn't match or is about:blank, navigate again
+                    if (currentUrl !== sessionData.url && !currentUrl.startsWith(sessionData.url)) {
+                        console.log(`[${jobId}] Page navigated away or blank, re-navigating to ${sessionData.url}`);
+                        await page.goto(sessionData.url, {
+                            waitUntil: 'domcontentloaded',
+                            timeout: 120000
+                        });
+
+                        // Wait for dynamic content
+                        const dynamicWaitTime = 5000;
+                        console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds for dynamic content to load...`);
+                        await new Promise(resolve => setTimeout(resolve, dynamicWaitTime));
+                    } else {
+                        console.log(`[${jobId}] Page still on correct URL, proceeding with screenshot`);
+                    }
+                } catch (navError) {
+                    console.error(`[${jobId}] Error checking page URL:`, navError);
+                    // Page might be crashed, remove from pool and create new instance
+                    browserPool.delete(jobId);
+                    throw new Error('Browser page crashed or became unresponsive');
+                }
             } else {
                 // Need to create new browser instance
                 console.log(`[${jobId}] Creating new persistent browser instance for interval job`);
