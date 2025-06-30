@@ -940,6 +940,13 @@ input:checked+.slider:hover {
     color: var(--info);
 }
 
+.threshold-help {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+    font-style: italic;
+}
+
 /* Webhook Configuration - Enhanced */
 .field-webhook-config {
     background-color: var(--bg-primary);

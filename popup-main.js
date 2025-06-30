@@ -2066,7 +2066,38 @@ class CleanPopupController {
         try {
             const storageKey = `previousEvaluation_${this.currentDomain}`;
             const data = await chrome.storage.local.get([storageKey]);
-            return data[storageKey] || null;
+            const rawPreviousEvaluation = data[storageKey];
+
+            if (!rawPreviousEvaluation) {
+                return null;
+            }
+
+            // Filter results based on confidence thresholds set for each field
+            const filteredResults = {};
+
+            // Create field lookup by name for confidence thresholds
+            const fieldThresholds = {};
+            this.fieldManager.fields.forEach(field => {
+                fieldThresholds[field.name] = field.confidenceThreshold || 75;
+            });
+
+            // Filter previous evaluation results
+            for (const [fieldName, fieldData] of Object.entries(rawPreviousEvaluation)) {
+                if (fieldData && typeof fieldData.confidence === 'number') {
+                    const threshold = fieldThresholds[fieldName] || 75; // Default threshold if field not found
+                    const confidencePercentage = fieldData.confidence * 100; // Convert to percentage
+
+                    if (confidencePercentage >= threshold) {
+                        // Convert back to [boolean, confidence] format for LLM prompt
+                        filteredResults[fieldName] = [fieldData.result, fieldData.confidence];
+                    } else {
+                        console.log(`Filtering out field "${fieldName}" - confidence ${confidencePercentage.toFixed(1)}% below threshold ${threshold}%`);
+                    }
+                }
+            }
+
+            return Object.keys(filteredResults).length > 0 ? { results: filteredResults } : null;
+
         } catch (error) {
             console.error('Error getting previous evaluation:', error);
             return null;
@@ -2245,8 +2276,8 @@ class FieldManagerLLM {
             lastEventId: null,
             lastResultTime: null,
             isPending: false,
-            // Field state management (for previous context and meta-evaluation)
-            expectedResult: data.expectedResult !== undefined ? data.expectedResult : null, // null = unset, true/false = expected
+            // Field state management (for previous context filtering)
+            expectedResult: data.expectedResult !== undefined ? data.expectedResult : true, // true/false - defaults to true
             confidenceThreshold: data.confidenceThreshold !== undefined ? data.confidenceThreshold : 75,
             // Webhook properties (separate from field state)
             webhookEnabled: data.webhookEnabled || false,
@@ -2307,10 +2338,9 @@ class FieldManagerLLM {
             .filter(f => f.friendlyName && f.description)
             .map(f => ({
                 name: f.name,  // Use the sanitized name for LLM communication
-                criteria: f.description.trim(),
-                // Include field state for meta-evaluation context
-                expectedResult: f.expectedResult !== undefined ? f.expectedResult : null,
-                confidenceThreshold: f.confidenceThreshold !== undefined ? f.confidenceThreshold : 75
+                criteria: f.description.trim()
+                // Note: expectedResult and confidenceThreshold are NOT passed to LLM
+                // They are used only for filtering previous context results
             }));
     }
 
@@ -2440,7 +2470,7 @@ class FieldManagerLLM {
             lastResultTime: null,
             isPending: false,
             // Field state management (for backwards compatibility)
-            expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : null,
+            expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : true,
             confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
             // Webhook properties (for backwards compatibility)
             webhookEnabled: fieldData.webhookEnabled || false,
@@ -2509,7 +2539,7 @@ class FieldManagerLLM {
                 lastResultTime: fieldData.lastResponseTime || fieldData.lastResultTime || null,
                 isPending: fieldData.isPending || false,
                 // Field state management (for backwards compatibility)
-                expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : null,
+                expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : true,
                 confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
                 // Webhook properties (for backwards compatibility)
                 webhookEnabled: fieldData.webhookEnabled || false,

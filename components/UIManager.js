@@ -82,15 +82,14 @@ export class UIManager {
         
         <div class="field-state-config">
           <div class="field-state-header">
-            <span>Field State (Previous Context & Meta-Evaluation)</span>
+            <span>Previous Context Configuration</span>
           </div>
           
           <div class="field-state-controls">
             <div class="expected-result-group">
               <label class="state-setting-label">Expected Result:</label>
               <select class="expected-result-dropdown">
-                <option value="null" ${field.expectedResult === null ? 'selected' : ''}>Unset</option>
-                <option value="true" ${field.expectedResult === true ? 'selected' : ''}>TRUE</option>
+                <option value="true" ${field.expectedResult !== false ? 'selected' : ''}>TRUE</option>
                 <option value="false" ${field.expectedResult === false ? 'selected' : ''}>FALSE</option>
               </select>
             </div>
@@ -101,6 +100,7 @@ export class UIManager {
                      class="confidence-threshold-slider" 
                      min="0" max="100" step="5"
                      value="${field.confidenceThreshold || 75}">
+              <div class="threshold-help">Only results above this confidence will be included in previous context</div>
             </div>
           </div>
         </div>
@@ -261,12 +261,7 @@ export class UIManager {
                 const actualField = this.fieldManager.getField(field.id);
                 if (!actualField) return;
 
-                const value = expectedResultDropdown.value;
-                if (value === 'null') {
-                    actualField.expectedResult = null;
-                } else {
-                    actualField.expectedResult = value === 'true';
-                }
+                actualField.expectedResult = expectedResultDropdown.value === 'true';
                 this.fieldManager.saveToStorage();
             });
         }
