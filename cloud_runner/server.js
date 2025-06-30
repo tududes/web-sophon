@@ -1561,29 +1561,34 @@ async function processJob(jobId, jobData) {
 
             console.log(`[${jobId}] Navigating to ${sessionData.url}...`);
 
-            // Enhanced navigation with multiple wait conditions
-            // Increased timeout for slow-loading sites like TradingView
+            // Use less strict wait conditions - just wait for basic page load
+            // Sites like TradingView continuously stream data, so networkidle0 will never complete
             await page.goto(sessionData.url, {
-                waitUntil: ['load', 'domcontentloaded', 'networkidle0'],
+                waitUntil: 'domcontentloaded',  // Just wait for DOM to be ready
                 timeout: 120000 // 120 second timeout for slow sites
             });
 
-            // Additional wait for any dynamic content
-            await page.waitForTimeout(2000); // Increased delay for JS execution
+            // Wait a reasonable amount of time for dynamic content to load
+            // This is especially important for sites like TradingView that load indicators
+            const dynamicWaitTime = 5000; // 5 seconds for dynamic content
+            console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds for dynamic content to load...`);
+            await page.waitForTimeout(dynamicWaitTime);
 
-            console.log(`[${jobId}] Page fully loaded`);
+            console.log(`[${jobId}] Page loaded and dynamic content wait completed`);
         }
 
         // Handle page refresh if enabled
         if (captureSettings.refreshPageToggle && job.lastRun > 0) {
             console.log(`[${jobId}] Refreshing page before capture (refresh enabled)...`);
             await page.reload({
-                waitUntil: ['load', 'domcontentloaded', 'networkidle0'],
-                timeout: 120000 // Consistent timeout for reloads
+                waitUntil: 'domcontentloaded',  // Consistent with initial load
+                timeout: 120000
             });
 
-            // Additional wait after reload
-            await page.waitForTimeout(2000); // Increased delay
+            // Wait for dynamic content after reload
+            const dynamicWaitTime = 5000; // 5 seconds
+            console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds after refresh...`);
+            await page.waitForTimeout(dynamicWaitTime);
             console.log(`[${jobId}] Page refresh completed`);
         }
 
