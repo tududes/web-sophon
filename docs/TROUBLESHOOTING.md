@@ -153,4 +153,37 @@ If issues persist:
 | Slow responses | Reduce field count or try different model |
 | Settings not saving | Check Chrome storage permissions |
 
-Remember: WebSophon uses direct LLM API integration - no external services or webhooks required! 
+Remember: WebSophon uses direct LLM API integration - no external services or webhooks required!
+
+## Extension Issues
+
+### Popup Not Opening
+- Check if the extension icon is visible in the toolbar
+- Try reloading the extension from chrome://extensions/
+- Check browser console for errors
+
+### Settings Not Saving
+- Ensure you have proper permissions
+- Check if browser is in incognito mode
+- Try clearing extension storage and reconfiguring
+
+## URL Preservation in Cloud Runner
+
+### Issue: URLs Changing Between Interval Captures
+Some websites (like TradingView) may change the URL during a session (e.g., chart IDs changing from `/chart/mh0DEi5f/` to `/chart/op5q2lIL/`). This can cause issues with interval captures if not handled properly.
+
+### Solution: Automatic URL Preservation
+The cloud runner automatically preserves the original URL that was submitted when creating a job. When the extension updates session data (cookies, storage, etc.) before each interval capture, the original URL is maintained.
+
+**How it works:**
+1. When a job is created, the initial URL is stored with the job
+2. During session updates, only cookies and storage data are refreshed
+3. The original URL is always preserved, ensuring consistent captures
+
+**Logs indicating URL preservation:**
+```
+[jobId] Updating session data for domain www.tradingview.com, preserving original URL: https://www.tradingview.com/chart/mh0DEi5f/
+[jobId] Note: Incoming session data had different URL (https://www.tradingview.com/chart/op5q2lIL/), but keeping original URL (https://www.tradingview.com/chart/mh0DEi5f/)
+```
+
+This ensures that interval captures always use the same page, even if the browser tab navigates to a different URL variant. 
