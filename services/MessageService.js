@@ -34,7 +34,7 @@ export class MessageService {
                     'getRecentEvents', 'captureNow', 'captureLLM', 'testLLM',
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
                     'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
-                    'storeAuthToken', 'startAuthPolling'
+                    'storeAuthToken', 'startAuthPolling', 'getCloudJobs', 'startCloudInterval'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
