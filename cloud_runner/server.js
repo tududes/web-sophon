@@ -1676,10 +1676,15 @@ async function processJob(jobId, jobData) {
 
         // Fire field-level webhooks if response contains evaluation data
         let fieldWebhooks = [];
-        if (response && response.evaluation) {
+        // For SAPIENT responses, fields are at the top level. For legacy responses, they're in response.evaluation
+        const hasEvaluationData = response && (response.evaluation || fields.some(f => f.name in response));
+
+        if (hasEvaluationData) {
             try {
                 console.log(`[${jobId}] About to fire webhooks with domain: ${job.domain}`);
-                fieldWebhooks = await fireFieldWebhooks(jobId, job.domain, response, fields);
+                // Wrap SAPIENT responses in evaluation property for webhook firing
+                const webhookResponse = response.evaluation ? response : { evaluation: response };
+                fieldWebhooks = await fireFieldWebhooks(jobId, job.domain, webhookResponse, fields);
                 console.log(`[${jobId}] Webhooks fired successfully, results: ${fieldWebhooks.length} webhooks`);
             } catch (webhookError) {
                 console.error(`[${jobId}] Error firing webhooks:`, webhookError);
@@ -1705,13 +1710,24 @@ async function processJob(jobId, jobData) {
             }
         }
 
+        // Normalize response structure for storage (ensure evaluation property exists)
+        const normalizedResponse = response.evaluation ? response : { evaluation: response, summary: response.summary };
+        if (response.summary) {
+            normalizedResponse.summary = response.summary;
+        }
+
+        // Add webhook results to the normalized response if present
+        if (fieldWebhooks.length > 0) {
+            normalizedResponse.webhooks = fieldWebhooks;
+        }
+
         // Add the new result to the job's history
         job.results.push({
             resultId: uuidv4(),
             timestamp: new Date().toISOString(),
             screenshotData: screenshotData,
             llmRequestPayload: { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) },
-            llmResponse: response, // This now includes webhook results
+            llmResponse: normalizedResponse, // This now includes webhook results and normalized structure
             llmRawResponse: rawContent, // Store the raw SAPIENT response
             error: null,
             captureSettings: captureSettings, // Store settings used for this capture
