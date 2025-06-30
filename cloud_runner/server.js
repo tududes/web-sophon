@@ -489,6 +489,7 @@ const allowedEndpoints = [
     /^\/job\/[a-f0-9-]+$/,
     /^\/job\/[a-f0-9-]+\/results$/,
     /^\/job\/[a-f0-9-]+\/purge$/,
+    /^\/job\/[a-f0-9-]+\/session$/,
     /^\/auth\/job\/auth_[0-9]+_[a-z0-9]+$/
 ];
 
@@ -2106,5 +2107,40 @@ process.on('SIGINT', () => {
     app.close(() => {
         console.log('HTTP server closed');
         process.exit(0);
+    });
+});
+
+/**
+ * Endpoint to update session data for an existing job
+ * Used by extension to refresh session data before interval captures
+ */
+app.put('/job/:id/session', requireValidToken, async (req, res) => {
+    const jobId = req.params.id;
+    const { sessionData } = req.body;
+
+    const job = jobs[jobId];
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Security: Only allow the token owner to update their job
+    if (job.authToken !== req.authToken) {
+        console.warn(`[SECURITY] Token ${req.authToken.substring(0, 16)}... attempted to update session for job ${jobId} owned by different token`);
+        return res.status(403).json({ error: 'Unauthorized to update this job' });
+    }
+
+    if (!sessionData || !sessionData.url) {
+        return res.status(400).json({ error: 'Valid session data required' });
+    }
+
+    // Update the job's session data
+    console.log(`[${jobId}] Updating session data for domain ${job.domain}`);
+    job.jobData.sessionData = sessionData;
+    job.lastSessionUpdate = new Date().toISOString();
+
+    res.status(200).json({
+        success: true,
+        message: 'Session data updated',
+        lastUpdate: job.lastSessionUpdate
     });
 });

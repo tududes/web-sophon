@@ -997,6 +997,48 @@ export class MessageService {
             console.log(`[Sync] Syncing job ${jobId} for domain ${domain}...`);
 
             try {
+                // NEW: First, update session data for interval jobs
+                // Find a tab with the domain to get fresh session data
+                const tabs = await chrome.tabs.query({});
+                const domainTab = tabs.find(tab => {
+                    try {
+                        const url = new URL(tab.url);
+                        return url.hostname.includes(domain) || domain.includes(url.hostname);
+                    } catch {
+                        return false;
+                    }
+                });
+
+                if (domainTab) {
+                    console.log(`[Sync] Found active tab for domain ${domain}, refreshing session data...`);
+                    try {
+                        // Get fresh session data
+                        const [sessionData, cookies] = await Promise.all([
+                            this.getSessionData(domainTab.id),
+                            chrome.cookies.getAll({ url: domainTab.url })
+                        ]);
+
+                        // Update session data on cloud runner
+                        const sessionUpdateUrl = `${runnerEndpoint}/job/${jobId}/session`;
+                        const updateResponse = await this.makeAuthenticatedRequest(sessionUpdateUrl, {
+                            method: 'PUT',
+                            body: JSON.stringify({
+                                sessionData: { ...sessionData, cookies }
+                            })
+                        });
+
+                        if (updateResponse.ok) {
+                            console.log(`[Sync] Successfully updated session data for job ${jobId}`);
+                        } else {
+                            console.warn(`[Sync] Failed to update session data for job ${jobId}: ${updateResponse.status}`);
+                        }
+                    } catch (sessionError) {
+                        console.warn(`[Sync] Error updating session data for job ${jobId}:`, sessionError);
+                    }
+                } else {
+                    console.log(`[Sync] No active tab found for domain ${domain}, using existing session data`);
+                }
+
                 // 1. Fetch results with timeout
                 const resultsUrl = `${runnerEndpoint}/job/${jobId}/results`;
                 const controller = new AbortController();
