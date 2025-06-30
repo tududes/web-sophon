@@ -80,6 +80,17 @@ export class UIManager {
         <textarea class="field-description" 
                   placeholder="Describe the criteria for evaluating this field...">${field.description}</textarea>
         
+        <div class="confidence-threshold-group">
+          <label class="webhook-setting-label">Confidence Threshold: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
+          <input type="range" 
+                 class="webhook-confidence-slider" 
+                 min="0" max="100" step="5"
+                 value="${field.webhookMinConfidence || 75}">
+          <div class="confidence-help">
+            <small>Only evaluations above this confidence are trusted as TRUE in context snapshots</small>
+          </div>
+        </div>
+        
         <div class="field-webhook-config">
           <div class="webhook-toggle-group">
             <label class="toggle-switch">
@@ -90,10 +101,13 @@ export class UIManager {
             ${field.webhookLogs && field.webhookLogs.length > 0 ?
                 `<button class="view-logs-btn" title="View webhook logs">📋 Logs (${field.webhookLogs.length})</button>` : ''}
           </div>
+          <div class="webhook-help" style="${field.webhookEnabled ? '' : 'display: none;'}">
+            <small>Webhook fires when filtered result (confidence threshold applied) matches trigger condition</small>
+          </div>
           
           <div class="webhook-settings" style="${field.webhookEnabled ? '' : 'display: none;'}">
             <div class="webhook-trigger-group">
-              <label class="webhook-setting-label">Trigger when result is:</label>
+              <label class="webhook-setting-label">Trigger when filtered result is:</label>
               <select class="webhook-trigger-dropdown">
                 <option value="true" ${field.webhookTrigger !== false ? 'selected' : ''}>TRUE</option>
                 <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
@@ -110,17 +124,6 @@ export class UIManager {
             <button class="toggle-url-visibility" title="${field.showWebhookUrl ? 'Hide URL' : 'Show/Edit URL'}" style="${field.webhookUrlSaved ? '' : 'display: none;'}">
               ${field.showWebhookUrl ? '🙈' : '👁️'}
             </button>
-          </div>
-
-          <div class="confidence-threshold-group">
-            <label class="webhook-setting-label">Confidence Threshold: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
-            <input type="range" 
-                   class="webhook-confidence-slider" 
-                   min="0" max="100" step="5"
-                   value="${field.webhookMinConfidence || 75}">
-            <div class="confidence-help">
-              <small>Only evaluations above this confidence are trusted as TRUE in context snapshots</small>
-            </div>
           </div>
           
           <textarea class="webhook-payload-input" 
@@ -163,6 +166,7 @@ export class UIManager {
         const webhookTriggerDropdown = fieldEl.querySelector('.webhook-trigger-dropdown');
         const webhookSettings = fieldEl.querySelector('.webhook-settings');
         const webhookUrlGroup = fieldEl.querySelector('.webhook-url-group');
+        const webhookHelp = fieldEl.querySelector('.webhook-help');
         const confidenceThresholdGroup = fieldEl.querySelector('.confidence-threshold-group');
         const webhookConfidenceSlider = fieldEl.querySelector('.webhook-confidence-slider');
         const confidenceValueSpan = fieldEl.querySelector('.confidence-value');
@@ -235,11 +239,13 @@ export class UIManager {
 
             actualField.webhookEnabled = webhookToggle.checked;
 
-            // Show/hide webhook settings
+            // Show/hide webhook settings and help
             if (actualField.webhookEnabled) {
                 if (webhookSettings) webhookSettings.style.display = '';
+                if (webhookHelp) webhookHelp.style.display = '';
             } else {
                 if (webhookSettings) webhookSettings.style.display = 'none';
+                if (webhookHelp) webhookHelp.style.display = 'none';
             }
 
             // Show/hide URL group (show if enabled OR if URL exists)
