@@ -607,7 +607,7 @@ export class MessageService {
 
             // 3. Make initial POST request to cloud runner
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, ''); // Remove trailing slash
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, ''); // Remove trailing slash
             const runnerUrl = `${runnerEndpoint}/job`;
 
             const initialResponse = await this.makeAuthenticatedRequest(runnerUrl, {
@@ -677,7 +677,7 @@ export class MessageService {
 
             try {
                 const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, ''); // Remove trailing slash
+                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, ''); // Remove trailing slash
                 const jobStatusUrl = `${runnerEndpoint}/job/${jobId}`;
 
                 const response = await this.makeAuthenticatedRequest(jobStatusUrl, {
@@ -980,7 +980,7 @@ export class MessageService {
         }
 
         const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-        const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+        const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
 
         console.log(`[Sync] Found ${jobKeys.length} active cloud jobs to sync`);
 
@@ -1309,7 +1309,7 @@ export class MessageService {
 
             // 3. Make POST request to cloud runner's /job endpoint
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
             const runnerUrl = `${runnerEndpoint}/job`;
 
             const response = await this.makeAuthenticatedRequest(runnerUrl, {
@@ -1345,7 +1345,7 @@ export class MessageService {
             console.log(`[Cloud] Sending request to stop recurring job ${jobId} for domain ${domain}`);
 
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
             const runnerUrl = `${runnerEndpoint}/job/${jobId}`;
 
             const response = await this.makeAuthenticatedRequest(runnerUrl, { method: 'DELETE' });
@@ -1373,7 +1373,7 @@ export class MessageService {
     async verifyCaptchaAndGetToken(captchaResponse) {
         try {
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
 
             const response = await fetch(`${runnerEndpoint}/captcha/verify`, {
                 method: 'POST',
@@ -1491,7 +1491,7 @@ export class MessageService {
 
         try {
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
 
             const response = await this.makeAuthenticatedRequest(`${runnerEndpoint}/auth/token/stats`, {
                 method: 'GET'
@@ -1656,7 +1656,7 @@ export class MessageService {
 
             try {
                 const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
                 const jobUrl = `${runnerEndpoint}/auth/job/${jobId}`;
 
                 console.log(`[AUTH] Polling attempt ${pollCount} for job ${jobId}`);
@@ -1711,7 +1711,7 @@ export class MessageService {
     async getCaptchaChallenge() {
         try {
             const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
             const challengeUrl = `${runnerEndpoint}/captcha/challenge`;
 
             console.log('[CAPTCHA] Requesting challenge from:', challengeUrl);
@@ -1772,7 +1772,7 @@ export class MessageService {
             // Ensure we have a valid token
             await this.ensureValidToken();
 
-            const { cloudRunnerUrl = 'https://runner.websophon.tududes.com' } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const { cloudRunnerUrl = 'https://runner.websophon.ai' } = await chrome.storage.local.get(['cloudRunnerUrl']);
             const runnerEndpoint = cloudRunnerUrl.replace(/\/$/, '');
             const jobsUrl = `${runnerEndpoint}/jobs`; // New endpoint to get all jobs for token
 

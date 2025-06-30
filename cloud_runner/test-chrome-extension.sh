@@ -3,7 +3,7 @@
 # Test script that simulates Chrome Extension requests to Cloud Runner
 # Based on captured real request data
 
-API_URL="https://runner.websophon.tududes.com"
+API_URL="https://runner.websophon.ai"
 
 echo "🧪 WebSophon Chrome Extension Test Suite"
 echo "======================================="
@@ -14,7 +14,7 @@ if [ -z "$1" ]; then
     echo "⚠️  No authentication token provided!"
     echo ""
     echo "To get a valid token:"
-    echo "1. Open https://runner.websophon.tududes.com/auth in your browser"
+    echo "1. Open https://runner.websophon.ai/auth in your browser"
     echo "2. Complete the CAPTCHA"
     echo "3. Use the Chrome extension to authenticate"
     echo "4. The extension will retrieve the token"

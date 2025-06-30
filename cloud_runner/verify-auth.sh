@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-CLOUD_RUNNER_URL="${1:-https://runner.websophon.tududes.com}"
+CLOUD_RUNNER_URL="${1:-https://runner.websophon.ai}"
 
 echo "🔐 Verifying Cloud Runner Authentication"
 echo "========================================"

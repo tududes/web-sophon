@@ -2,6 +2,6 @@
     email {$ACME_EMAIL}
 }
 
-runner.websophon.tududes.com {
+runner.websophon.ai {
     reverse_proxy localhost:7113
 } 

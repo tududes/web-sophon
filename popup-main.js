@@ -632,7 +632,7 @@ class CleanPopupController {
             this.showCaptchaMessage('Testing connection to cloud runner...', 'info');
 
             // First, test if we can reach the cloud runner at all
-            const cloudRunnerUrl = this.elements.cloudRunnerUrl?.value || 'https://runner.websophon.tududes.com';
+            const cloudRunnerUrl = this.elements.cloudRunnerUrl?.value || 'https://runner.websophon.ai';
             const testUrl = `${cloudRunnerUrl.replace(/\/$/, '')}/health`;
 
             try {
@@ -660,7 +660,7 @@ class CleanPopupController {
                                     <strong>Troubleshooting:</strong><br>
                                     1. Check your internet connection<br>
                                     2. Verify the cloud runner URL is correct<br>
-                                    3. Try the default URL: https://runner.websophon.tududes.com<br>
+                                    3. Try the default URL: https://runner.websophon.ai<br>
                                     4. If using a custom server, ensure CORS is properly configured
                                 </p>
                                 <p style="margin-top: 10px; font-size: 12px;">
@@ -1483,7 +1483,7 @@ class CleanPopupController {
             // Load LLM configuration (global)
             const settingsData = await chrome.storage.local.get(['llmConfig_global', 'cloudRunnerUrl', 'includePremiumModels']);
             const llmConfig = settingsData.llmConfig_global || {};
-            const cloudRunnerUrl = settingsData.cloudRunnerUrl || 'https://runner.websophon.tududes.com';
+            const cloudRunnerUrl = settingsData.cloudRunnerUrl || 'https://runner.websophon.ai';
             const includePremium = settingsData.includePremiumModels || false;
 
             if (this.elements.includePremiumModelsToggle) {
@@ -1947,7 +1947,7 @@ class CleanPopupController {
     async getCloudJobInfo(jobId) {
         try {
             const { cloudRunnerUrl } = await chrome.storage.local.get('cloudRunnerUrl');
-            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
+            const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.ai').replace(/\/$/, '');
             const jobStatusUrl = `${runnerEndpoint}/job/${jobId}`;
 
             const response = await fetch(jobStatusUrl);

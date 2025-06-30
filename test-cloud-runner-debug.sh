@@ -8,7 +8,7 @@ echo "======================================="
 
 # Test 1: Check if cloud runner is accessible
 echo "Test 1: Cloud Runner Connectivity"
-RUNNER_URL="https://runner.websophon.tududes.com"
+RUNNER_URL="https://runner.websophon.ai"
 if curl -s -o /dev/null -w "%{http_code}" "$RUNNER_URL" | grep -q "200"; then
     echo "✅ Cloud runner is accessible"
 else

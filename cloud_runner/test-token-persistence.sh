@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Test script to verify token persistence and validation
-API_URL="https://runner.websophon.tududes.com"
+API_URL="https://runner.websophon.ai"
 
 echo "🔍 WebSophon Token Persistence Test"
 echo "==================================="
