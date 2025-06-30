@@ -178,6 +178,16 @@ export class MessageService {
                 } catch (error) {
                     res({ success: false, error: error.message });
                 }
+            },
+            'startCloudInterval': (req, sender, res) => {
+                this.startOrUpdateCloudJob(req)
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
+            },
+            'getCloudJobs': (req, sender, res) => {
+                this.getCloudJobs()
+                    .then(res)
+                    .catch(err => res({ success: false, error: err.message }));
             }
         };
         return handlers[action];
@@ -1660,6 +1670,42 @@ export class MessageService {
             return {
                 success: false,
                 error: error.message || 'Failed to get CAPTCHA challenge'
+            };
+        }
+    }
+
+    async getCloudJobs() {
+        try {
+            // Ensure we have a valid token
+            await this.ensureValidToken();
+
+            const { cloudRunnerUrl = 'https://runner.websophon.tududes.com' } = await chrome.storage.local.get(['cloudRunnerUrl']);
+            const runnerEndpoint = cloudRunnerUrl.replace(/\/$/, '');
+            const jobsUrl = `${runnerEndpoint}/jobs`; // New endpoint to get all jobs for token
+
+            const response = await this.makeAuthenticatedRequest(jobsUrl, {
+                method: 'GET'
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to get cloud jobs: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log(`[Cloud] Retrieved ${data.jobs?.length || 0} cloud jobs`);
+
+            return {
+                success: true,
+                jobs: data.jobs || []
+            };
+
+        } catch (error) {
+            console.error('[Cloud] Error getting cloud jobs:', error);
+            return {
+                success: false,
+                error: error.message,
+                jobs: []
             };
         }
     }

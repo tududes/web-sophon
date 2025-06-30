@@ -448,6 +448,7 @@ const allowedEndpoints = [
     '/captcha/verify',
     '/auth/token/stats',
     '/job',
+    '/jobs',
     '/test',
     /^\/job\/[a-f0-9-]+$/,
     /^\/job\/[a-f0-9-]+\/results$/,
@@ -1344,6 +1345,38 @@ app.post('/job/:id/purge', requireValidToken, (req, res) => {
     job.results = []; // Clear the results array
     console.log(`[${jobId}] Purged ${purgedCount} results for ${req.clientId}.`);
     res.status(200).json({ message: `Purged ${purgedCount} results.` });
+});
+
+/**
+ * Endpoint to get all jobs for the authenticated token
+ * Used for synchronization between extension and cloud runner
+ */
+app.get('/jobs', requireValidToken, (req, res) => {
+    try {
+        // Filter jobs that belong to this token
+        const userJobs = Object.values(jobs).filter(job => job.authToken === req.authToken);
+
+        // Return simplified job data for synchronization
+        const jobsData = userJobs.map(job => ({
+            id: job.id,
+            domain: job.domain,
+            status: job.status,
+            interval: job.interval,
+            createdAt: job.createdAt,
+            lastRun: job.lastRun,
+            runCount: job.results?.length || 0,
+            nextRun: job.nextRun,
+            error: job.error,
+            url: job.jobData?.sessionData?.url || `https://${job.domain}`
+        }));
+
+        console.log(`[SYNC] Returning ${jobsData.length} jobs for client ${req.tokenData.clientId}`);
+        res.json({ jobs: jobsData });
+
+    } catch (error) {
+        console.error('[SYNC] Error getting jobs:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 /**

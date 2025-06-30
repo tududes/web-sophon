@@ -58,6 +58,9 @@ class CleanPopupController {
             // 8. Load and display active jobs
             this.renderActiveJobs();
 
+            // 9. Start cloud runner synchronization
+            this.startCloudRunnerSync();
+
             // Populate models dynamically
             await this.populateLlmModels(this.elements.llmModel?.value);
 
@@ -67,6 +70,12 @@ class CleanPopupController {
             console.error('Failed to initialize popup controller:', error);
             throw error;
         }
+    }
+
+    // Cleanup method for when popup is closed
+    cleanup() {
+        console.log('Cleaning up popup controller');
+        this.stopCloudRunnerSync();
     }
 
     async pingBackgroundScriptWithRetry(retries = 3, delay = 100) {
@@ -968,46 +977,36 @@ class CleanPopupController {
         try {
             console.log('=== Starting manual capture ===');
 
-            // 1. Check if cloud runner is enabled
-            if (this.elements.cloudRunnerToggle?.checked) {
-                console.log('Cloud runner is enabled. Starting cloud capture flow.');
-                await this.handleCloudCapture();
-                return;
-            }
-
-            // 2. Validate domain consent for local capture
+            // Always validate domain consent first
             if (!this.elements.consentToggle?.checked) {
                 throw new Error('Please enable WebSophon for this domain first');
             }
 
-            // 3. Get fields directly from FieldManager (original manual capture flow)
+            // Get fields directly from FieldManager
             const fieldsForAPI = this.fieldManager.getFieldsForAPI();
 
-            // 4. Validate fields exist
+            // Validate fields exist
             if (!fieldsForAPI || fieldsForAPI.length === 0) {
                 throw new Error('No valid fields configured for this domain');
             }
 
-            // 5. Mark all fields as pending atomically (UI management)
+            // Mark all fields as pending atomically (UI management)
             const eventId = Date.now().toString();
             this.fieldManager.markFieldsPending(eventId);
             await this.fieldManager.saveToStorage();
 
-            // 6. Re-render to show pending state
+            // Re-render to show pending state
             this.renderFields();
 
-            // 7. Show capture status
-            this.showStatus('Starting local capture...', 'info');
-
-            // 8. Send capture request using original manual flow (not shared preparation)
-            const response = await this.sendCaptureRequest(fieldsForAPI, eventId, null);
-
-            // 9. Handle response
-            if (response.success) {
-                this.showStatus('Local capture in progress...', 'info');
-                console.log('Manual local capture initiated successfully');
+            // Check if cloud runner is enabled for this specific capture
+            if (this.elements.cloudRunnerToggle?.checked) {
+                console.log('Cloud runner is enabled. Starting cloud capture flow.');
+                this.showStatus('Starting cloud capture...', 'info');
+                await this.handleCloudCapture();
             } else {
-                throw new Error(response.error || 'Local capture failed');
+                console.log('Starting local capture flow.');
+                this.showStatus('Starting local capture...', 'info');
+                await this.handleLocalCapture(fieldsForAPI, eventId);
             }
 
         } catch (error) {
@@ -1019,6 +1018,23 @@ class CleanPopupController {
             this.renderFields();
 
             this.showError(error.message);
+        }
+    }
+
+    async handleLocalCapture(fieldsForAPI, eventId) {
+        try {
+            // Send capture request using local LLM flow
+            const response = await this.sendCaptureRequest(fieldsForAPI, eventId, null);
+
+            // Handle response
+            if (response.success) {
+                this.showStatus('Local capture in progress...', 'info');
+                console.log('Manual local capture initiated successfully');
+            } else {
+                throw new Error(response.error || 'Local capture failed');
+            }
+        } catch (error) {
+            throw new Error(`Local capture failed: ${error.message}`);
         }
     }
 
@@ -2159,83 +2175,140 @@ class CleanPopupController {
             const intervalKey = `interval_${this.currentDomain}`;
             await chrome.storage.local.set({ [intervalKey]: intervalValue });
 
-            // Get current tab
-            const tabId = await this.getCurrentTabId();
-            if (!tabId) {
-                throw new Error('Could not get current tab');
-            }
-
             if (intervalValue === 'manual') {
-                // Stop automatic capture
-                console.log('Stopping automatic capture');
-                await this.sendMessageToBackground({
-                    action: 'stopCapture',
-                    tabId: tabId,
-                    domain: this.currentDomain
-                });
-
-                // Remove job from JobManager
-                const existingJob = this.jobManager.getJobByDomain(this.currentDomain);
-                if (existingJob) {
-                    await this.jobManager.deleteJob(existingJob.id);
-                }
-
+                // Stop any existing automatic capture (both local and cloud)
+                await this.stopAllIntervalCaptures();
                 this.showStatus('Automatic capture stopped', 'info');
-
-                // Refresh job list
-                this.renderActiveJobs();
             } else {
-                // Validate domain consent and LLM config before starting
-                if (!this.elements.consentToggle?.checked) {
-                    // Reset to manual
-                    this.elements.captureInterval.value = 'manual';
-                    await chrome.storage.local.set({ [intervalKey]: 'manual' });
-                    throw new Error('Please enable WebSophon for this domain first');
-                }
-
-                const llmConfig = await this.getLlmConfig();
-                if (!llmConfig.apiUrl || !llmConfig.apiKey) {
-                    // Reset to manual
-                    this.elements.captureInterval.value = 'manual';
-                    await chrome.storage.local.set({ [intervalKey]: 'manual' });
-                    throw new Error('Please configure LLM API URL and API Key first');
-                }
-
-                // Start automatic capture
-                const intervalSeconds = parseInt(intervalValue);
-                console.log(`Starting automatic capture every ${intervalSeconds} seconds`);
-
-                // Get current URL for job tracking
-                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-                const currentUrl = tabs[0]?.url || `https://${this.currentDomain}`;
-
-                await this.sendMessageToBackground({
-                    action: 'startCapture',
-                    tabId: tabId,
-                    domain: this.currentDomain,
-                    interval: intervalSeconds
-                });
-
-                // Create job in JobManager
-                await this.jobManager.createJob({
-                    domain: this.currentDomain,
-                    url: currentUrl,
-                    interval: intervalSeconds,
-                    tabId: tabId,
-                    status: 'active',
-                    isCloudJob: this.elements.cloudRunnerToggle?.checked || false
-                });
-
-                this.showStatus(`Automatic capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
-
-                // Refresh job list
-                this.renderActiveJobs();
+                // Start interval capture - decide local vs cloud based on toggle
+                await this.startIntervalCapture(parseInt(intervalValue));
             }
+
+            // Refresh job list to show current state
+            this.renderActiveJobs();
 
         } catch (error) {
             console.error('Error handling capture interval change:', error);
             this.showError(error.message);
+
+            // Reset to manual on error
+            if (this.elements.captureInterval) {
+                this.elements.captureInterval.value = 'manual';
+                const intervalKey = `interval_${this.currentDomain}`;
+                await chrome.storage.local.set({ [intervalKey]: 'manual' });
+            }
         }
+    }
+
+    async stopAllIntervalCaptures() {
+        console.log('Stopping all interval captures for domain:', this.currentDomain);
+
+        // Get current tab
+        const tabId = await this.getCurrentTabId();
+
+        // Stop both local and cloud captures
+        await this.sendMessageToBackground({
+            action: 'stopCapture',
+            tabId: tabId,
+            domain: this.currentDomain
+        });
+
+        // Remove job from JobManager
+        const existingJob = this.jobManager.getJobByDomain(this.currentDomain);
+        if (existingJob) {
+            await this.jobManager.deleteJob(existingJob.id);
+            console.log(`Removed job ${existingJob.id} for domain ${this.currentDomain}`);
+        }
+    }
+
+    async startIntervalCapture(intervalSeconds) {
+        console.log(`Starting interval capture every ${intervalSeconds} seconds`);
+
+        // Validate domain consent and LLM config before starting
+        if (!this.elements.consentToggle?.checked) {
+            throw new Error('Please enable WebSophon for this domain first');
+        }
+
+        const llmConfig = await this.getLlmConfig();
+        if (!llmConfig.apiUrl || !llmConfig.apiKey) {
+            throw new Error('Please configure LLM API URL and API Key first');
+        }
+
+        // Get current tab info
+        const tabId = await this.getCurrentTabId();
+        if (!tabId) {
+            throw new Error('Could not get current tab');
+        }
+
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const currentUrl = tabs[0]?.url || `https://${this.currentDomain}`;
+
+        // Determine if using cloud runner
+        const isCloudJob = this.elements.cloudRunnerToggle?.checked || false;
+
+        if (isCloudJob) {
+            // For cloud jobs, validate authentication token
+            const tokenStats = await this.sendMessageToBackground({ action: 'getTokenStats' });
+            if (!tokenStats || !tokenStats.quotas || !tokenStats.expiresAt) {
+                throw new Error('Cloud runner requires valid authentication token. Complete CAPTCHA first.');
+            }
+
+            console.log('Starting cloud runner interval job');
+            await this.startCloudIntervalJob(tabId, intervalSeconds, currentUrl);
+        } else {
+            console.log('Starting local interval job');
+            await this.startLocalIntervalJob(tabId, intervalSeconds, currentUrl);
+        }
+    }
+
+    async startLocalIntervalJob(tabId, intervalSeconds, currentUrl) {
+        // Start local interval capture
+        await this.sendMessageToBackground({
+            action: 'startCapture',
+            tabId: tabId,
+            domain: this.currentDomain,
+            interval: intervalSeconds,
+            type: 'local'
+        });
+
+        // Create job in JobManager
+        await this.jobManager.createJob({
+            domain: this.currentDomain,
+            url: currentUrl,
+            interval: intervalSeconds,
+            tabId: tabId,
+            status: 'active',
+            isCloudJob: false
+        });
+
+        this.showStatus(`Local interval capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
+    }
+
+    async startCloudIntervalJob(tabId, intervalSeconds, currentUrl) {
+        // Start cloud interval capture
+        const response = await this.sendMessageToBackground({
+            action: 'startCloudInterval',
+            tabId: tabId,
+            domain: this.currentDomain,
+            interval: intervalSeconds
+        });
+
+        if (!response.success) {
+            throw new Error(response.error || 'Failed to start cloud interval job');
+        }
+
+        // Create job in JobManager with cloud runner job ID
+        await this.jobManager.createJob({
+            domain: this.currentDomain,
+            url: currentUrl,
+            interval: intervalSeconds,
+            tabId: tabId,
+            status: 'active',
+            isCloudJob: true,
+            jobId: response.jobId // Store cloud runner job ID
+        });
+
+        this.showStatus(`Cloud interval capture started (every ${this.formatInterval(intervalSeconds)})`, 'success');
     }
 
     formatInterval(seconds) {
@@ -2292,11 +2365,8 @@ class CleanPopupController {
                             ${cloudBadge}
                         </div>
                     </div>
-                    <div class="job-controls">
-                        ${job.status === 'active' ?
-                '<button class="job-control-btn" data-action="pause" data-job-id="' + job.id + '">⏸️ Pause</button>' :
-                '<button class="job-control-btn primary" data-action="resume" data-job-id="' + job.id + '">▶️ Resume</button>'
-            }
+                                        <div class="job-controls">
+                        ${this.getJobControlButtons(job)}
                         <button class="job-control-btn danger" data-action="delete" data-job-id="${job.id}">🗑️ Delete</button>
                     </div>
                 </div>
@@ -2311,6 +2381,25 @@ class CleanPopupController {
                 ${job.lastError ? `<div class="job-error" style="color: var(--danger); font-size: var(--text-xs); margin-top: var(--space-xs);">Error: ${job.lastError}</div>` : ''}
             </div>
         `;
+    }
+
+    getJobControlButtons(job) {
+        switch (job.status) {
+            case 'active':
+                return `<button class="job-control-btn" data-action="pause" data-job-id="${job.id}">⏸️ Pause</button>`;
+
+            case 'paused':
+                return `<button class="job-control-btn primary" data-action="resume" data-job-id="${job.id}">▶️ Resume</button>`;
+
+            case 'disconnected':
+                return `<button class="job-control-btn primary" data-action="reconnect" data-job-id="${job.id}">🔄 Reconnect</button>`;
+
+            case 'error':
+                return `<button class="job-control-btn primary" data-action="restart" data-job-id="${job.id}">🔄 Restart</button>`;
+
+            default:
+                return `<button class="job-control-btn primary" data-action="resume" data-job-id="${job.id}">▶️ Resume</button>`;
+        }
     }
 
     setupJobControlListeners() {
@@ -2420,6 +2509,48 @@ class CleanPopupController {
                 this.showStatus(`Deleted job for ${job.domain}`, 'success');
                 break;
 
+            case 'reconnect':
+            case 'restart':
+                // For disconnected or error jobs, attempt to restart them
+                if (job.isCloudJob) {
+                    // Restart cloud job
+                    const response = await this.sendMessageToBackground({
+                        action: 'startCloudInterval',
+                        tabId: job.tabId || await this.getCurrentTabId(),
+                        domain: job.domain,
+                        interval: job.interval
+                    });
+
+                    if (response.success) {
+                        await this.jobManager.updateJob(jobId, {
+                            status: 'active',
+                            jobId: response.jobId,
+                            lastError: null,
+                            errorCount: 0
+                        });
+                        this.showStatus(`Reconnected cloud job for ${job.domain}`, 'success');
+                    } else {
+                        throw new Error(response.error || 'Failed to reconnect cloud job');
+                    }
+                } else {
+                    // Restart local job
+                    await this.sendMessageToBackground({
+                        action: 'startCapture',
+                        tabId: job.tabId || await this.getCurrentTabId(),
+                        domain: job.domain,
+                        interval: job.interval,
+                        type: 'local'
+                    });
+
+                    await this.jobManager.updateJob(jobId, {
+                        status: 'active',
+                        lastError: null,
+                        errorCount: 0
+                    });
+                    this.showStatus(`Restarted local job for ${job.domain}`, 'success');
+                }
+                break;
+
             default:
                 throw new Error(`Unknown action: ${action}`);
         }
@@ -2435,6 +2566,150 @@ class CleanPopupController {
 
     openUrl(url) {
         chrome.tabs.create({ url });
+    }
+
+    // === CLOUD RUNNER SYNCHRONIZATION ===
+
+    startCloudRunnerSync() {
+        // Sync immediately on startup
+        this.syncWithCloudRunner();
+
+        // Set up periodic sync every 30 seconds
+        if (this.cloudSyncInterval) {
+            clearInterval(this.cloudSyncInterval);
+        }
+
+        this.cloudSyncInterval = setInterval(() => {
+            this.syncWithCloudRunner();
+        }, 30000); // 30 seconds
+
+        console.log('Cloud runner synchronization started');
+    }
+
+    stopCloudRunnerSync() {
+        if (this.cloudSyncInterval) {
+            clearInterval(this.cloudSyncInterval);
+            this.cloudSyncInterval = null;
+            console.log('Cloud runner synchronization stopped');
+        }
+    }
+
+    async syncWithCloudRunner() {
+        try {
+            // Check if we have a valid token
+            const tokenStats = await this.sendMessageToBackground({ action: 'getTokenStats' });
+            if (!tokenStats || !tokenStats.quotas || !tokenStats.expiresAt) {
+                // No valid token, skip sync
+                return;
+            }
+
+            // Get cloud runner jobs for our token
+            const response = await this.sendMessageToBackground({
+                action: 'getCloudJobs'
+            });
+
+            if (response.success) {
+                await this.processCloudJobSync(response.jobs || []);
+            } else {
+                console.warn('Failed to sync with cloud runner:', response.error);
+                await this.handleCloudSyncError(response.error);
+            }
+
+        } catch (error) {
+            console.warn('Cloud runner sync error:', error);
+            await this.handleCloudSyncError(error.message);
+        }
+    }
+
+    async processCloudJobSync(cloudJobs) {
+        console.log(`Syncing with ${cloudJobs.length} cloud runner jobs`);
+
+        // Get current local jobs
+        const localJobs = this.jobManager.getActiveJobs();
+        const localCloudJobs = localJobs.filter(job => job.isCloudJob);
+
+        // Check for cloud jobs that don't exist locally
+        for (const cloudJob of cloudJobs) {
+            const localJob = localCloudJobs.find(lj => lj.jobId === cloudJob.id);
+
+            if (!localJob) {
+                // Cloud job exists but not locally - add it
+                console.log(`Found cloud job ${cloudJob.id} not in local state, adding...`);
+
+                await this.jobManager.createJob({
+                    domain: cloudJob.domain,
+                    url: cloudJob.url || `https://${cloudJob.domain}`,
+                    interval: cloudJob.interval,
+                    tabId: null, // No local tab for cloud-only jobs
+                    status: this.mapCloudStatus(cloudJob.status),
+                    isCloudJob: true,
+                    jobId: cloudJob.id
+                });
+            } else {
+                // Update existing local job with cloud status
+                const mappedStatus = this.mapCloudStatus(cloudJob.status);
+                if (localJob.status !== mappedStatus) {
+                    console.log(`Updating job ${cloudJob.id} status from ${localJob.status} to ${mappedStatus}`);
+                    await this.jobManager.updateJob(localJob.id, {
+                        status: mappedStatus,
+                        lastRun: cloudJob.lastRun || localJob.lastRun,
+                        runCount: cloudJob.runCount || localJob.runCount
+                    });
+                }
+            }
+        }
+
+        // Check for local cloud jobs that don't exist on cloud runner
+        for (const localJob of localCloudJobs) {
+            const cloudJob = cloudJobs.find(cj => cj.id === localJob.jobId);
+
+            if (!cloudJob) {
+                // Local job exists but not on cloud runner - mark as disconnected
+                console.log(`Local job ${localJob.id} not found on cloud runner, marking as disconnected`);
+                await this.jobManager.updateJob(localJob.id, {
+                    status: 'disconnected',
+                    lastError: 'Job not found on cloud runner (may have been restarted)'
+                });
+            }
+        }
+
+        // Refresh job list if we made changes
+        this.renderActiveJobs();
+    }
+
+    mapCloudStatus(cloudStatus) {
+        switch (cloudStatus) {
+            case 'idle':
+            case 'running':
+                return 'active';
+            case 'failed':
+                return 'error';
+            case 'stopped':
+                return 'stopped';
+            default:
+                return cloudStatus;
+        }
+    }
+
+    async handleCloudSyncError(error) {
+        // Mark all cloud jobs as potentially disconnected
+        const localJobs = this.jobManager.getActiveJobs();
+        const localCloudJobs = localJobs.filter(job => job.isCloudJob && job.status === 'active');
+
+        let hasChanges = false;
+        for (const job of localCloudJobs) {
+            if (job.status !== 'disconnected') {
+                await this.jobManager.updateJob(job.id, {
+                    status: 'disconnected',
+                    lastError: `Cloud runner sync failed: ${error}`
+                });
+                hasChanges = true;
+            }
+        }
+
+        if (hasChanges) {
+            this.renderActiveJobs();
+        }
     }
 }
 

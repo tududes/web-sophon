@@ -2400,6 +2400,24 @@ input:checked+.slider:hover {
     background-color: var(--text-muted);
 }
 
+.job-status-indicator.disconnected {
+    background-color: var(--warning);
+    animation: flash 2s infinite;
+}
+
+@keyframes flash {
+
+    0%,
+    50% {
+        opacity: 1;
+    }
+
+    25%,
+    75% {
+        opacity: 0.3;
+    }
+}
+
 .job-controls {
     display: flex;
     gap: var(--space-xs);

@@ -86,12 +86,15 @@ export class JobManager {
     }
 
     /**
-     * Get all active jobs
+     * Get all active jobs (including paused, disconnected, and error jobs for UI display)
      * @returns {Array} Array of job objects
      */
     getActiveJobs() {
         return Array.from(this.jobs.values()).filter(job =>
-            job.status === 'active' || job.status === 'paused'
+            job.status === 'active' ||
+            job.status === 'paused' ||
+            job.status === 'disconnected' ||
+            job.status === 'error'
         );
     }
 
