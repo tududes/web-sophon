@@ -1681,6 +1681,26 @@ async function processJob(jobId, jobData) {
                 console.log(`[${jobId}] Filtered previous evaluation for context:`, filteredEvaluation);
             }
         }
+
+        // Also ensure the initial previousEvaluation from frontend is in the correct format
+        if (previousEvaluation && !previousEvaluation.results && typeof previousEvaluation === 'object') {
+            // If frontend sent the old format with full field data, convert it
+            const filteredResults = {};
+
+            Object.keys(previousEvaluation).forEach(fieldName => {
+                const fieldData = previousEvaluation[fieldName];
+                if (fieldData && typeof fieldData.result === 'boolean') {
+                    filteredResults[fieldName] = fieldData.result;
+                } else if (typeof fieldData === 'boolean') {
+                    filteredResults[fieldName] = fieldData;
+                }
+            });
+
+            previousEvaluation = Object.keys(filteredResults).length > 0
+                ? { results: filteredResults }
+                : null;
+        }
+
         // Use original uncompressed screenshot for LLM analysis (better quality)
         // but store the compressed version for storage efficiency
         const { response, requestPayload, rawContent } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);

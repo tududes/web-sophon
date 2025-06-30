@@ -192,13 +192,55 @@ WebSophon automatically enhances the system prompt with previous evaluation cont
 Analyze this screenshot for the following criteria:
 [Field definitions...]
 
-PREVIOUS EVALUATION CONTEXT (for change detection):
-Previous results from [timestamp]:
-- field_name_1: TRUE (confidence: 95%) 
-- field_name_2: FALSE (confidence: 78%)
+### Previous Evaluation Context
+The following shows results from a previous evaluation (after confidence filtering). Use this to detect changes:
+- "field_name_1": true
+- "field_name_2": false
 
-Use this context to better detect changes and improvements.
 ```
+
+### Confidence Threshold and Context Flow
+
+WebSophon implements a sophisticated confidence filtering system that ensures both webhook accuracy and unbiased LLM evaluations:
+
+**Evaluation → Confidence Threshold → Webhook → Context**
+
+1. **LLM Evaluation**: The LLM evaluates each field and returns a boolean result with confidence score (0-1)
+
+2. **Confidence Threshold Filtering**: Each field has a configurable confidence threshold (default 75%)
+   - **TRUE with low confidence**: If confidence < threshold, result is treated as FALSE
+   - **FALSE results**: Always remain FALSE regardless of confidence
+
+3. **Webhook Triggering**: Webhooks fire based on the filtered result
+   - Example: LLM returns TRUE with 70% confidence, threshold is 75%
+     - Filtered result: FALSE (70% < 75%)
+     - Webhook set to TRUE: Does NOT fire
+     - Webhook set to FALSE: DOES fire
+
+4. **Context for Next Evaluation**: Only filtered boolean values are passed to the LLM
+   - **No confidence scores**: The LLM never sees confidence thresholds or scores
+   - **Simple format**: `"field_name": true` or `"field_name": false`
+   - **Unbiased evaluation**: Prevents the LLM from being influenced by user-set thresholds
+
+**Example Flow**:
+```
+Iteration 1:
+- LLM evaluates "price_alert" → [true, 0.70]
+- Threshold: 75%
+- Filtered result: false (70% < 75%)
+- Webhook (if set to TRUE): Does not fire
+- Context stored: {"price_alert": false}
+
+Iteration 2:
+- LLM receives context: "price_alert": false
+- Makes fresh evaluation without bias
+```
+
+This design ensures that:
+- Webhooks only fire when results meet confidence requirements
+- The LLM makes unbiased evaluations based solely on visual evidence
+- Previous results provide context without revealing confidence levels
+- Both frontend and cloud runner use identical filtering logic
 
 ### API Response Format
 WebSophon expects responses in this JSON format:

@@ -2151,7 +2151,26 @@ class CleanPopupController {
         try {
             const storageKey = `previousEvaluation_${this.currentDomain}`;
             const data = await chrome.storage.local.get([storageKey]);
-            return data[storageKey] || null;
+            const storedData = data[storageKey];
+
+            if (!storedData) return null;
+
+            // Convert stored format to simple format for LLM
+            // Only return field names and filtered boolean values
+            const simplifiedResults = {};
+
+            Object.keys(storedData).forEach(fieldName => {
+                const fieldData = storedData[fieldName];
+                if (fieldData && typeof fieldData.result === 'boolean') {
+                    simplifiedResults[fieldName] = fieldData.result;
+                }
+            });
+
+            // Return in the format expected by the prompt formatter
+            return Object.keys(simplifiedResults).length > 0
+                ? { results: simplifiedResults }
+                : null;
+
         } catch (error) {
             console.error('Error getting previous evaluation:', error);
             return null;

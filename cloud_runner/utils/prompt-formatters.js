@@ -41,13 +41,13 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
     previousContext = `\n\n### Previous Evaluation Context\nThe following shows results from a previous evaluation (after confidence filtering). Use this to detect changes:\n`;
 
     for (const [fieldName, result] of Object.entries(previousEvaluation.results)) {
-      // Handle both array format (legacy) and boolean format (new)
-      if (Array.isArray(result) && result.length >= 2) {
-        const [value, confidence] = result;
-        previousContext += `- "${fieldName}": ${value} (confidence: ${confidence})\n`;
-      } else if (typeof result === 'boolean') {
-        // New format: just boolean values after confidence filtering
+      // Only include the boolean value, no confidence scores
+      if (typeof result === 'boolean') {
+        // Already filtered format
         previousContext += `- "${fieldName}": ${result}\n`;
+      } else {
+        // Skip any non-boolean results (shouldn't happen with proper filtering)
+        console.warn(`Skipping non-boolean result for field "${fieldName}":`, result);
       }
     }
   }
