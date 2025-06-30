@@ -30,34 +30,13 @@ export async function fireFieldWebhook(fieldName, webhookUrl, customPayload, fie
 
         if (customPayload) {
             // POST request with custom JSON payload
-            let parsedPayload;
-            try {
-                parsedPayload = JSON.parse(customPayload);
-            } catch (e) {
-                // If custom payload is invalid JSON, create a default payload
-                parsedPayload = {
-                    error: 'Invalid JSON payload provided',
-                    raw: customPayload,
-                    field: fieldName,
-                    result: result,
-                    probability: probability,
-                    timestamp: timestamp,
-                    ...context
-                };
-            }
-
-            // Check if this is a Discord webhook
-            if (webhookUrl.includes('discord.com/api/webhooks')) {
-                // Format payload for Discord
-                parsedPayload = formatDiscordPayload(fieldName, result, probability, parsedPayload, context);
-            }
-
+            // Send the exact string the user configured, no matter what
             response = await fetch(webhookUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(parsedPayload),
+                body: customPayload, // Send exactly what the user configured
                 signal: controller.signal
             });
         } else {
