@@ -431,9 +431,8 @@ export class EventService {
             const eventAge = now - new Date(event.timestamp).getTime();
 
             // Remove base64 screenshot data if event is older than 72 hours OR beyond first 300 events
-            // Keep screenshotUrl for on-demand loading
-            if (event.screenshot && event.source === 'local' && (eventAge > seventyTwoHours || index >= 300)) {
-                delete event.screenshot;
+            if (event.screenshot && event.source === 'local' && event.screenshot.startsWith('data:image/') && (eventAge > seventyTwoHours || index >= 300)) {
+                event.screenshot = 'SCREENSHOT_CLEANED_UP'; // Mark as cleaned up instead of deleting
                 cleanedCount++;
             }
         });
@@ -447,11 +446,11 @@ export class EventService {
     async handleStorageQuotaExceeded() {
         console.log('Performing aggressive storage cleanup...');
 
-        // Step 1: Remove all base64 screenshots (but keep URLs for on-demand loading)
+        // Step 1: Remove all base64 screenshots (but keep markers for display)
         let removedScreenshots = 0;
         this.recentEvents.forEach(event => {
-            if (event.screenshot && event.source === 'local') {
-                delete event.screenshot;
+            if (event.screenshot && event.source === 'local' && event.screenshot.startsWith('data:image/')) {
+                event.screenshot = 'SCREENSHOT_CLEANED_UP'; // Mark as cleaned up instead of deleting
                 removedScreenshots++;
             }
         });
@@ -508,11 +507,11 @@ export class EventService {
         const beforeInfo = await this.getStorageInfo();
         const beforeEvents = this.recentEvents.length;
 
-        // Remove all base64 screenshots (but keep URLs for on-demand loading)
+        // Remove all base64 screenshots (but keep markers for display)
         let removedScreenshots = 0;
         this.recentEvents.forEach(event => {
-            if (event.screenshot && event.source === 'local') {
-                delete event.screenshot;
+            if (event.screenshot && event.source === 'local' && event.screenshot.startsWith('data:image/')) {
+                event.screenshot = 'SCREENSHOT_CLEANED_UP'; // Mark as cleaned up instead of deleting
                 removedScreenshots++;
             }
         });
@@ -610,11 +609,8 @@ export class EventService {
             return `cloud://${domain}/${eventId}/screenshot`;
         }
 
-        // For local events, only create URL if we have screenshot data
-        if (source === 'local' && screenshot) {
-            return `local://${eventId}/screenshot`;
-        }
-
+        // For local events, don't create URL since screenshots are stored locally or discarded
+        // Local events either have the screenshot data immediately or it's gone permanently
         return null;
     }
 
@@ -625,8 +621,8 @@ export class EventService {
         // Store screenshots for local events, subject to cleanup
         const maxSize = 100000; // ~100KB limit for thumbnails
         if (base64Image.length > maxSize) {
-            console.log(`Image large (${base64Image.length} bytes), storing reference only`);
-            return null; // Store reference only, will be cleaned up
+            console.log(`Image large (${base64Image.length} bytes), too large to store`);
+            return 'SCREENSHOT_TOO_LARGE'; // Special marker for too large screenshots
         }
 
         return base64Image;

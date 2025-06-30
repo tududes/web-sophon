@@ -1321,13 +1321,8 @@ export class HistoryManager {
 
     // Render screenshot section with lazy loading support
     renderScreenshotSection(event) {
-        // If no screenshot data or URL, don't show section
-        if (!event.screenshot && !event.screenshotUrl) {
-            return '';
-        }
-
-        // If we have immediate screenshot data (local thumbnails), show it
-        if (event.screenshot) {
+        // If we have immediate screenshot data, show it
+        if (event.screenshot && event.screenshot.startsWith('data:image/')) {
             return `
                 <div class="detail-item screenshot-detail">
                     <div class="screenshot-header">
@@ -1343,8 +1338,37 @@ export class HistoryManager {
             `;
         }
 
-        // If we have a screenshot URL but no data, show lazy loading UI
-        if (event.screenshotUrl) {
+        // For local events with special markers, show appropriate messages
+        if (event.source === 'local' && event.screenshot) {
+            let message, icon;
+            if (event.screenshot === 'SCREENSHOT_CLEANED_UP') {
+                icon = '❌';
+                message = 'Local screenshot was removed during storage cleanup';
+            } else if (event.screenshot === 'SCREENSHOT_TOO_LARGE') {
+                icon = '📏';
+                message = 'Screenshot was too large to store (over 100KB limit)';
+            }
+
+            if (message) {
+                return `
+                    <div class="detail-item screenshot-detail">
+                        <div class="screenshot-header">
+                            <strong>Screenshot:</strong>
+                        </div>
+                        <div class="screenshot-container">
+                            <div class="screenshot-placeholder">
+                                <div class="placeholder-icon">${icon}</div>
+                                <div class="placeholder-text">Screenshot unavailable</div>
+                                <div class="placeholder-source">${message}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // For cloud events with screenshot URL but no data, show lazy loading UI
+        if (event.source === 'cloud' && event.screenshotUrl && (!event.screenshot || !event.screenshot.startsWith('data:image/'))) {
             const loadingId = `screenshot-loading-${event.id}`;
             const containerId = `screenshot-container-${event.id}`;
 
@@ -1361,13 +1385,14 @@ export class HistoryManager {
                         <div class="screenshot-placeholder" id="${loadingId}">
                             <div class="placeholder-icon">📸</div>
                             <div class="placeholder-text">Click "Load Screenshot" to view</div>
-                            <div class="placeholder-source">${event.source === 'cloud' ? 'Stored on cloud runner' : 'Available on demand'}</div>
+                            <div class="placeholder-source">Available on demand</div>
                         </div>
                     </div>
                 </div>
             `;
         }
 
+        // If no screenshot data or URL, don't show section
         return '';
     }
 
