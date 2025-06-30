@@ -1156,25 +1156,45 @@ export class MessageService {
                 }
 
                 if (syncedCount > 0) {
-                    // 3. Purge results from server after successful sync
+                    // 3. Only purge results for one-time jobs (no interval)
+                    // Interval jobs need to keep results for context between runs
                     try {
-                        const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
-                        const purgeController = new AbortController();
-                        const purgeTimeoutId = setTimeout(() => purgeController.abort(), 5000);
-
-                        const purgeResponse = await this.makeAuthenticatedRequest(purgeUrl, {
-                            method: 'POST',
-                            signal: purgeController.signal
+                        // Check if this is an interval job by looking at the job info
+                        const jobInfoUrl = `${runnerEndpoint}/job/${jobId}`;
+                        const jobInfoResponse = await this.makeAuthenticatedRequest(jobInfoUrl, {
+                            method: 'GET'
                         });
-                        clearTimeout(purgeTimeoutId);
 
-                        if (!purgeResponse.ok) {
-                            console.error(`[Sync] Failed to purge results for job ${jobId} on server.`);
+                        if (jobInfoResponse.ok) {
+                            const jobInfo = await jobInfoResponse.json();
+
+                            // Only purge if it's NOT an interval job
+                            if (!jobInfo.interval || jobInfo.interval === 0) {
+                                console.log(`[Sync] Job ${jobId} is a one-time job, purging results...`);
+
+                                const purgeUrl = `${runnerEndpoint}/job/${jobId}/purge`;
+                                const purgeController = new AbortController();
+                                const purgeTimeoutId = setTimeout(() => purgeController.abort(), 5000);
+
+                                const purgeResponse = await this.makeAuthenticatedRequest(purgeUrl, {
+                                    method: 'POST',
+                                    signal: purgeController.signal
+                                });
+                                clearTimeout(purgeTimeoutId);
+
+                                if (!purgeResponse.ok) {
+                                    console.error(`[Sync] Failed to purge results for job ${jobId} on server.`);
+                                } else {
+                                    console.log(`[Sync] Successfully purged ${syncedCount} results from server for job ${jobId}.`);
+                                }
+                            } else {
+                                console.log(`[Sync] Job ${jobId} is an interval job (${jobInfo.interval}s), keeping results for context.`);
+                            }
                         } else {
-                            console.log(`[Sync] Successfully purged ${syncedCount} results from server for job ${jobId}.`);
+                            console.warn(`[Sync] Could not get job info for ${jobId}, skipping purge.`);
                         }
                     } catch (purgeError) {
-                        console.error(`[Sync] Error purging results for job ${jobId}:`, purgeError);
+                        console.error(`[Sync] Error during purge check/operation for job ${jobId}:`, purgeError);
                     }
 
                     // 4. Notify popup about new events if it's open
