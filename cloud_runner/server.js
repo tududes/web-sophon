@@ -4,6 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import puppeteer from 'puppeteer';
 import cors from 'cors';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { getSystemPrompt } from './utils/prompt-formatters.js';
 import { parseSAPIENTResponse } from './utils/sapient-parser.js';
 import { fireFieldWebhooks } from './utils/webhook-utils.js';
@@ -453,7 +455,8 @@ const allowedEndpoints = [
     /^\/job\/[a-f0-9-]+$/,
     /^\/job\/[a-f0-9-]+\/results$/,
     /^\/job\/[a-f0-9-]+\/purge$/,
-    /^\/auth\/job\/auth_[0-9]+_[a-z0-9]+$/
+    /^\/auth\/job\/auth_[0-9]+_[a-z0-9]+$/,
+    /^\/screenshots\/[a-f0-9-]+_[0-9]+\.png$/
 ];
 
 app.use((req, res, next) => {
@@ -491,6 +494,13 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(bodyParser.json({ limit: SECURITY_CONFIG.MAX_PAYLOAD_SIZE }));
+
+// Create screenshots directory if it doesn't exist
+const screenshotsDir = path.join(process.cwd(), 'screenshots');
+if (!fs.existsSync(screenshotsDir)) {
+    fs.mkdirSync(screenshotsDir, { recursive: true });
+    console.log(`[INIT] Created screenshots directory: ${screenshotsDir}`);
+}
 
 // --- CAPTCHA and Authentication Endpoints ---
 
@@ -1327,6 +1337,7 @@ app.get('/job/:id/results', requireValidToken, (req, res) => {
 /**
  * NEW: Endpoint to purge results after the extension has synced them.
  * Requires valid authentication token.
+ * NOTE: This only clears the results metadata - screenshot files remain on disk for on-demand access.
  */
 app.post('/job/:id/purge', requireValidToken, (req, res) => {
     const jobId = req.params.id;
@@ -1342,9 +1353,16 @@ app.post('/job/:id/purge', requireValidToken, (req, res) => {
     }
 
     const purgedCount = job.results.length;
-    job.results = []; // Clear the results array
-    console.log(`[${jobId}] Purged ${purgedCount} results for ${req.clientId}.`);
-    res.status(200).json({ message: `Purged ${purgedCount} results.` });
+    const screenshotFiles = job.results.map(r => r.screenshotFilename).filter(Boolean);
+
+    // Clear only the results metadata - keep screenshot files on disk for on-demand access
+    job.results = [];
+
+    console.log(`[${jobId}] Purged ${purgedCount} results metadata for ${req.clientId}. Screenshot files preserved: ${screenshotFiles.length}`);
+    res.status(200).json({
+        message: `Purged ${purgedCount} results.`,
+        screenshotsPreserved: screenshotFiles.length
+    });
 });
 
 /**
@@ -1406,6 +1424,36 @@ app.post('/test', requireValidToken, (req, res) => {
         timestamp: new Date().toISOString(),
         quotas: tokenStats ? tokenStats.quotas : null
     });
+});
+
+/**
+ * Endpoint to serve screenshot files
+ * Requires valid authentication token and serves files from screenshots directory
+ */
+app.get('/screenshots/:filename', requireValidToken, (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(screenshotsDir, filename);
+
+    // Security: Validate filename format (jobId_timestamp.png)
+    if (!/^[a-f0-9-]+_[0-9]+\.png$/.test(filename)) {
+        console.warn(`[SECURITY] Invalid screenshot filename requested: ${filename}`);
+        return res.status(400).json({ error: 'Invalid filename format' });
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+        console.log(`[SCREENSHOTS] File not found: ${filename}`);
+        return res.status(404).json({ error: 'Screenshot not found' });
+    }
+
+    console.log(`[SCREENSHOTS] Serving ${filename} to client ${req.clientId}`);
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+
+    // Send the file
+    res.sendFile(filePath);
 });
 
 /**
@@ -1474,8 +1522,23 @@ async function processJob(jobId, jobData) {
             fullPage: fullPageCapture,
             type: 'png'
         });
-        const screenshotData = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
-        console.log(`[${jobId}] Screenshot captured (full page: ${fullPageCapture}), size: ${screenshotBuffer.length} bytes`);
+
+        // Save screenshot to disk instead of storing as base64
+        const timestamp = Date.now();
+        const screenshotFilename = `${jobId}_${timestamp}.png`;
+        const screenshotPath = path.join(screenshotsDir, screenshotFilename);
+
+        try {
+            fs.writeFileSync(screenshotPath, screenshotBuffer);
+            console.log(`[${jobId}] Screenshot saved to disk: ${screenshotFilename} (full page: ${fullPageCapture}), size: ${screenshotBuffer.length} bytes`);
+        } catch (saveError) {
+            console.error(`[${jobId}] Failed to save screenshot to disk:`, saveError);
+            throw new Error(`Failed to save screenshot: ${saveError.message}`);
+        }
+
+        // Create screenshot URL instead of base64 data
+        const screenshotUrl = `/screenshots/${screenshotFilename}`;
+        console.log(`[${jobId}] Screenshot URL created: ${screenshotUrl}`);
 
         console.log(`[${jobId}] Sending to LLM...`);
         // Use the job's last result as context for the next one
@@ -1526,7 +1589,8 @@ async function processJob(jobId, jobData) {
         job.results.push({
             resultId: uuidv4(),
             timestamp: new Date().toISOString(),
-            screenshotData: screenshotData,
+            screenshotUrl: screenshotUrl, // Store URL instead of base64 data
+            screenshotFilename: screenshotFilename, // Store filename for reference
             llmRequestPayload: { ...requestPayload, messages: requestPayload.messages.map(m => (m.role === 'user' ? { ...m, content: [{ type: 'text', text: 'Please analyze this screenshot.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,REDACTED' } }] } : m)) },
             llmResponse: response, // This now includes webhook results
             llmRawResponse: rawContent, // Store the raw SAPIENT response
@@ -1766,6 +1830,35 @@ function cleanup() {
                 console.log(`[CLEANUP] Removed expired job ${jobId}`);
             }
         }
+    }
+
+    // Clean up old screenshot files (keep for 2 weeks)
+    const screenshotMaxAge = 14 * 24 * 60 * 60 * 1000; // 2 weeks
+    try {
+        if (fs.existsSync(screenshotsDir)) {
+            const files = fs.readdirSync(screenshotsDir);
+            let cleanedCount = 0;
+
+            for (const file of files) {
+                if (file.endsWith('.png')) {
+                    const filePath = path.join(screenshotsDir, file);
+                    const stats = fs.statSync(filePath);
+                    const fileAge = now - stats.mtime.getTime();
+
+                    if (fileAge > screenshotMaxAge) {
+                        fs.unlinkSync(filePath);
+                        cleanedCount++;
+                        console.log(`[CLEANUP] Removed old screenshot: ${file}`);
+                    }
+                }
+            }
+
+            if (cleanedCount > 0) {
+                console.log(`[CLEANUP] Removed ${cleanedCount} old screenshot files`);
+            }
+        }
+    } catch (error) {
+        console.error('[CLEANUP] Error cleaning up screenshot files:', error);
     }
 
     // Clear blocked IPs periodically (reset every 24 hours)
