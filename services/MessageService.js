@@ -247,16 +247,19 @@ export class MessageService {
             console.log(`Storing automatic capture results for domain ${domain}:`, results);
 
             // Store the results as previous evaluation for next capture
+            // Apply confidence filtering to create reliable context
             if (results && typeof results === 'object') {
                 const prevEvalKey = `previousEvaluation_${domain}`;
+                const filteredResults = await this.applyConfidenceFilteringToResults(domain, results);
+
                 const evaluationData = {
-                    results: results,
+                    results: filteredResults,
                     timestamp: new Date().toISOString(),
                     eventId: eventId
                 };
 
                 await chrome.storage.local.set({ [prevEvalKey]: evaluationData });
-                console.log(`Stored automatic capture results as previous evaluation for ${domain}`);
+                console.log(`Stored filtered automatic capture results as previous evaluation for ${domain}:`, filteredResults);
             }
 
             // Update field results in storage for when popup reopens
@@ -307,6 +310,54 @@ export class MessageService {
 
         } catch (error) {
             console.error('Error storing automatic capture results:', error);
+        }
+    }
+
+    /**
+     * Apply confidence filtering to results for reliable state snapshots
+     * @param {string} domain - Domain to get field configurations
+     * @param {Object} results - Raw LLM results
+     * @returns {Object} Filtered results with confidence threshold applied
+     */
+    async applyConfidenceFilteringToResults(domain, results) {
+        try {
+            // Get field configurations to get confidence thresholds
+            const domainKey = `fields_${domain}`;
+            const storage = await chrome.storage.local.get([domainKey]);
+            const domainFields = storage[domainKey] || [];
+
+            const filteredResults = {};
+
+            // Process each result
+            Object.keys(results).forEach(fieldName => {
+                if (fieldName === 'reason') return; // Skip metadata
+
+                const fieldResult = results[fieldName];
+                if (!Array.isArray(fieldResult) || fieldResult.length < 1) return;
+
+                const result = fieldResult[0]; // boolean
+                const probability = fieldResult.length > 1 ? fieldResult[1] : 0.8;
+
+                // Find field configuration for confidence threshold
+                const fieldConfig = domainFields.find(f => f.name === fieldName);
+                const threshold = fieldConfig?.webhookMinConfidence || 75;
+
+                // Apply confidence filtering
+                let filteredResult = result;
+                if (result === true) {
+                    const confidencePercent = probability * 100;
+                    filteredResult = confidencePercent >= threshold;
+                }
+                // FALSE results stay FALSE regardless of confidence
+
+                filteredResults[fieldName] = [filteredResult, probability];
+            });
+
+            return filteredResults;
+
+        } catch (error) {
+            console.error('Error applying confidence filtering to results:', error);
+            return results; // Return raw results if filtering fails
         }
     }
 

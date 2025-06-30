@@ -48,10 +48,6 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
     }
   }
 
-  // Note: Field state (expectedResult/confidenceThreshold) is used only for filtering previous context
-  // We do NOT pass confidence thresholds to the LLM to avoid biasing decisions
-  let fieldStateContext = '';
-
   return `You are an AI assistant that communicates exclusively using the SAPIENT protocol. Your task is to analyze web page screenshots and evaluate specific boolean conditions.
 
 ## SAPIENT Communication Rules:
@@ -83,7 +79,7 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
 
 Analyze the screenshot and evaluate these boolean conditions:
 
-${fieldsJson}${previousContext}${fieldStateContext}
+${fieldsJson}${previousContext}
 
 ## Required Response Format:
 

@@ -196,21 +196,23 @@ export async function fireFieldWebhooks(jobId, domain, responseData, fields) {
 
         console.log(`[${jobId}] Field "${fieldName}" result: ${result}, probability: ${probability}`);
 
-        // Check minimum confidence threshold (default to 75% if not set)
+        // Apply confidence threshold filtering to get the filtered result
         const minConfidence = field.webhookMinConfidence !== undefined ? field.webhookMinConfidence : 75;
         const confidencePercent = probability * 100;
 
-        if (confidencePercent < minConfidence) {
-            console.log(`[${jobId}] Field "${fieldName}" confidence ${confidencePercent.toFixed(1)}% is below minimum ${minConfidence}% - skipping webhook`);
-            continue;
+        // Calculate filtered result (confidence threshold applied)
+        let filteredResult = result;
+        if (result === true && confidencePercent < minConfidence) {
+            filteredResult = false; // Demote low-confidence TRUE to FALSE
+            console.log(`[${jobId}] Field "${fieldName}" TRUE result demoted to FALSE due to low confidence ${confidencePercent.toFixed(1)}% < ${minConfidence}%`);
         }
 
-        // Check webhookTrigger setting (defaults to true for backward compatibility)
+        // Check webhookTrigger setting against the FILTERED result (defaults to true for backward compatibility)
         const shouldTriggerOnTrue = field.webhookTrigger !== false; // Default to true if undefined
-        const shouldFireWebhook = shouldTriggerOnTrue ? result === true : result === false;
+        const shouldFireWebhook = shouldTriggerOnTrue ? filteredResult === true : filteredResult === false;
 
         if (!shouldFireWebhook) {
-            console.log(`[${jobId}] Field "${fieldName}" result ${result} does not match trigger condition (trigger on ${shouldTriggerOnTrue ? 'TRUE' : 'FALSE'})`);
+            console.log(`[${jobId}] Field "${fieldName}" filtered result ${filteredResult} does not match trigger condition (trigger on ${shouldTriggerOnTrue ? 'TRUE' : 'FALSE'})`);
             continue;
         }
 

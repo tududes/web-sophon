@@ -2066,42 +2066,7 @@ class CleanPopupController {
         try {
             const storageKey = `previousEvaluation_${this.currentDomain}`;
             const data = await chrome.storage.local.get([storageKey]);
-            const rawPreviousEvaluation = data[storageKey];
-
-            if (!rawPreviousEvaluation) {
-                return null;
-            }
-
-            // Filter results based on confidence thresholds set for each field
-            const filteredResults = {};
-
-            // Create field lookup by name for confidence thresholds
-            const fieldThresholds = {};
-            this.fieldManager.fields.forEach(field => {
-                fieldThresholds[field.name] = field.confidenceThreshold || 75;
-            });
-
-            // Filter previous evaluation results
-            for (const [fieldName, fieldData] of Object.entries(rawPreviousEvaluation)) {
-                if (fieldData && typeof fieldData.confidence === 'number') {
-                    const threshold = fieldThresholds[fieldName] || 75; // Default threshold if field not found
-                    const confidencePercentage = fieldData.confidence * 100; // Convert to percentage
-
-                    // Only include TRUE results that meet the confidence threshold
-                    if (fieldData.result === true && confidencePercentage >= threshold) {
-                        // Convert back to [boolean, confidence] format for LLM prompt
-                        filteredResults[fieldName] = [fieldData.result, fieldData.confidence];
-                        console.log(`Including field "${fieldName}" - TRUE result with ${confidencePercentage.toFixed(1)}% confidence (>= ${threshold}%)`);
-                    } else if (fieldData.result === true) {
-                        console.log(`Filtering out field "${fieldName}" - TRUE result but confidence ${confidencePercentage.toFixed(1)}% below threshold ${threshold}%`);
-                    } else {
-                        console.log(`Filtering out field "${fieldName}" - FALSE result`);
-                    }
-                }
-            }
-
-            return Object.keys(filteredResults).length > 0 ? { results: filteredResults } : null;
-
+            return data[storageKey] || null;
         } catch (error) {
             console.error('Error getting previous evaluation:', error);
             return null;
@@ -2113,29 +2078,29 @@ class CleanPopupController {
             const storageKey = `previousEvaluation_${this.currentDomain}`;
             const timestamp = new Date().toISOString();
 
-            // Convert results to previous evaluation format
+            // Use filtered state snapshot instead of raw results
+            const filteredSnapshot = this.fieldManager.getFilteredStateSnapshot();
             const previousEvaluation = {};
 
-            // Handle results from LLM response
-            if (results && typeof results === 'object') {
-                Object.keys(results).forEach(fieldName => {
-                    if (fieldName !== 'reason' && Array.isArray(results[fieldName]) && results[fieldName].length >= 1) {
-                        const result = results[fieldName][0]; // boolean
-                        const confidence = results[fieldName].length > 1 ? results[fieldName][1] : 0.8;
-
-                        previousEvaluation[fieldName] = {
-                            result: result,
-                            confidence: confidence,
-                            timestamp: timestamp,
-                            eventId: eventId
-                        };
-                    }
-                });
-            }
+            // Convert filtered snapshot to previous evaluation format
+            Object.keys(filteredSnapshot).forEach(fieldName => {
+                // Find the field to get its confidence and raw result
+                const field = this.fieldManager.fields.find(f => f.name === fieldName);
+                if (field && field.result !== null) {
+                    previousEvaluation[fieldName] = {
+                        result: filteredSnapshot[fieldName], // Use filtered result (confidence threshold applied)
+                        confidence: field.probability || 0.8,
+                        rawResult: field.result, // Store raw result for debugging
+                        threshold: field.webhookMinConfidence || 75,
+                        timestamp: timestamp,
+                        eventId: eventId
+                    };
+                }
+            });
 
             if (Object.keys(previousEvaluation).length > 0) {
                 await chrome.storage.local.set({ [storageKey]: previousEvaluation });
-                console.log('Stored previous evaluation for domain', this.currentDomain, ':', previousEvaluation);
+                console.log('Stored filtered previous evaluation for domain', this.currentDomain, ':', previousEvaluation);
             }
         } catch (error) {
             console.error('Error storing previous evaluation:', error);
@@ -2280,9 +2245,6 @@ class FieldManagerLLM {
             lastEventId: null,
             lastResultTime: null,
             isPending: false,
-            // Field state management (for previous context filtering)
-            confidenceThreshold: data.confidenceThreshold !== undefined ? data.confidenceThreshold : 75,
-            // Webhook properties (separate from field state)
             webhookEnabled: data.webhookEnabled || false,
             webhookTrigger: data.webhookTrigger !== undefined ? data.webhookTrigger : true,
             webhookUrl: data.webhookUrl || '',
@@ -2342,8 +2304,6 @@ class FieldManagerLLM {
             .map(f => ({
                 name: f.name,  // Use the sanitized name for LLM communication
                 criteria: f.description.trim()
-                // Note: expectedResult and confidenceThreshold are NOT passed to LLM
-                // They are used only for filtering previous context results
             }));
     }
 
@@ -2392,6 +2352,9 @@ class FieldManagerLLM {
                     field.probability = null;
                 }
 
+                // Apply confidence threshold filtering for state snapshot
+                field.filteredResult = this.applyConfidenceFilter(field.result, field.probability, field.webhookMinConfidence);
+
                 // Update field status
                 field.isPending = false;
                 field.lastStatus = 'success';
@@ -2399,6 +2362,29 @@ class FieldManagerLLM {
                 field.lastError = null;
             }
         });
+    }
+
+    /**
+     * Apply confidence threshold filtering
+     * @param {boolean} result - Raw LLM result
+     * @param {number} probability - Confidence score (0-1)
+     * @param {number} threshold - Confidence threshold percentage (0-100)
+     * @returns {boolean} Filtered result
+     */
+    applyConfidenceFilter(result, probability, threshold = 75) {
+        if (result !== true) {
+            return false; // FALSE results remain FALSE regardless of confidence
+        }
+
+        if (probability === null || probability === undefined) {
+            return false; // No confidence data means we can't trust it
+        }
+
+        const confidencePercent = probability * 100;
+        const minConfidence = threshold || 75;
+
+        // Only TRUE results with sufficient confidence pass as TRUE
+        return confidencePercent >= minConfidence;
     }
 
     markFieldsError(error, httpStatus = null, eventId = null) {
@@ -2438,9 +2424,6 @@ class FieldManagerLLM {
                 name: field.name,
                 friendlyName: field.friendlyName,
                 description: field.description,
-                // Field state management
-                confidenceThreshold: field.confidenceThreshold,
-                // Webhook properties
                 webhookEnabled: field.webhookEnabled,
                 webhookTrigger: field.webhookTrigger,
                 webhookUrl: field.webhookUrl,
@@ -2466,14 +2449,13 @@ class FieldManagerLLM {
             id: this.generateFieldId(),
             result: null,
             probability: null,
+            filteredResult: null,
             lastStatus: null,
             lastError: null,
             lastEventId: null,
             lastResultTime: null,
             isPending: false,
-            // Field state management (for backwards compatibility)
-            confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
-            // Webhook properties (for backwards compatibility)
+            // Add webhook properties for backwards compatibility
             webhookEnabled: fieldData.webhookEnabled || false,
             webhookTrigger: fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true,
             webhookUrl: fieldData.webhookUrl || '',
@@ -2534,14 +2516,13 @@ class FieldManagerLLM {
                 // Ensure result and status fields exist (may have been updated by automatic captures)
                 result: fieldData.result !== undefined ? fieldData.result : null,
                 probability: fieldData.probability !== undefined ? fieldData.probability : null,
+                filteredResult: fieldData.filteredResult !== undefined ? fieldData.filteredResult : null,
                 lastStatus: fieldData.lastStatus || null,
                 lastError: fieldData.lastError || null,
                 lastEventId: fieldData.lastEventId || null,
                 lastResultTime: fieldData.lastResponseTime || fieldData.lastResultTime || null,
                 isPending: fieldData.isPending || false,
-                // Field state management (for backwards compatibility)
-                confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
-                // Webhook properties (for backwards compatibility)
+                // Ensure webhook properties exist for backwards compatibility
                 webhookEnabled: fieldData.webhookEnabled || false,
                 webhookTrigger: fieldData.webhookTrigger !== undefined ? fieldData.webhookTrigger : true,
                 webhookUrl: fieldData.webhookUrl || '',
@@ -2604,6 +2585,25 @@ class FieldManagerLLM {
             errors: errorFields.length,
             presets: Object.keys(this.presets).length
         };
+    }
+
+    /**
+     * Get filtered state snapshot for previous evaluation context
+     * Only includes fields that have been evaluated with sufficient confidence
+     * @returns {Object} Filtered evaluation results for context
+     */
+    getFilteredStateSnapshot() {
+        const snapshot = {};
+
+        this.fields.forEach(field => {
+            if (field.result !== null && field.probability !== null) {
+                // Use the filtered result (confidence threshold applied)
+                snapshot[field.name] = field.filteredResult;
+            }
+        });
+
+        console.log('Generated filtered state snapshot:', snapshot);
+        return snapshot;
     }
 }
 

@@ -80,31 +80,6 @@ export class UIManager {
         <textarea class="field-description" 
                   placeholder="Describe the criteria for evaluating this field...">${field.description}</textarea>
         
-        <div class="field-state-config">
-          <div class="field-state-header">
-            <span>Field Configuration</span>
-          </div>
-          
-          <div class="field-state-controls">
-            <div class="webhook-trigger-group">
-              <label class="state-setting-label">Webhook Trigger:</label>
-              <select class="webhook-trigger-dropdown">
-                <option value="true" ${field.webhookTrigger !== false ? 'selected' : ''}>TRUE</option>
-                <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
-              </select>
-            </div>
-            
-            <div class="confidence-threshold-group">
-              <label class="state-setting-label">Confidence Threshold: <span class="threshold-value">${field.confidenceThreshold || 75}%</span></label>
-              <input type="range" 
-                     class="confidence-threshold-slider" 
-                     min="0" max="100" step="5"
-                     value="${field.confidenceThreshold || 75}">
-              <div class="threshold-help">TRUE results above this confidence will be included in previous context</div>
-            </div>
-          </div>
-        </div>
-        
         <div class="field-webhook-config">
           <div class="webhook-toggle-group">
             <label class="toggle-switch">
@@ -117,7 +92,13 @@ export class UIManager {
           </div>
           
           <div class="webhook-settings" style="${field.webhookEnabled ? '' : 'display: none;'}">
-            <!-- Webhook trigger setting moved to always-visible field configuration section above -->
+            <div class="webhook-trigger-group">
+              <label class="webhook-setting-label">Trigger when result is:</label>
+              <select class="webhook-trigger-dropdown">
+                <option value="true" ${field.webhookTrigger !== false ? 'selected' : ''}>TRUE</option>
+                <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
+              </select>
+            </div>
           </div>
           
           <div class="webhook-url-group" style="${field.webhookEnabled || field.webhookUrl ? '' : 'display: none;'}">
@@ -131,12 +112,15 @@ export class UIManager {
             </button>
           </div>
 
-          <div class="webhook-confidence-group" style="${field.webhookEnabled || field.webhookUrl ? '' : 'display: none;'}">
-            <label class="webhook-setting-label">Minimum Confidence: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
+          <div class="confidence-threshold-group">
+            <label class="webhook-setting-label">Confidence Threshold: <span class="confidence-value">${field.webhookMinConfidence || 75}%</span></label>
             <input type="range" 
                    class="webhook-confidence-slider" 
                    min="0" max="100" step="5"
                    value="${field.webhookMinConfidence || 75}">
+            <div class="confidence-help">
+              <small>Only evaluations above this confidence are trusted as TRUE in context snapshots</small>
+            </div>
           </div>
           
           <textarea class="webhook-payload-input" 
@@ -175,15 +159,11 @@ export class UIManager {
         const sanitizedSpan = fieldEl.querySelector('.field-name-sanitized');
         const descInput = fieldEl.querySelector('.field-description');
         const removeBtn = fieldEl.querySelector('.remove-field-btn');
-        // Field state controls  
-        const confidenceThresholdSlider = fieldEl.querySelector('.confidence-threshold-slider');
-        const thresholdValueSpan = fieldEl.querySelector('.threshold-value');
-        // Webhook controls
         const webhookToggle = fieldEl.querySelector('.webhook-toggle');
         const webhookTriggerDropdown = fieldEl.querySelector('.webhook-trigger-dropdown');
         const webhookSettings = fieldEl.querySelector('.webhook-settings');
         const webhookUrlGroup = fieldEl.querySelector('.webhook-url-group');
-        const webhookConfidenceGroup = fieldEl.querySelector('.webhook-confidence-group');
+        const confidenceThresholdGroup = fieldEl.querySelector('.confidence-threshold-group');
         const webhookConfidenceSlider = fieldEl.querySelector('.webhook-confidence-slider');
         const confidenceValueSpan = fieldEl.querySelector('.confidence-value');
         const webhookUrlInput = fieldEl.querySelector('.webhook-url-input');
@@ -247,20 +227,6 @@ export class UIManager {
             }
         });
 
-        // Field state controls
-        // Update confidence threshold
-        if (confidenceThresholdSlider && thresholdValueSpan) {
-            confidenceThresholdSlider.addEventListener('input', () => {
-                const actualField = this.fieldManager.getField(field.id);
-                if (!actualField) return;
-
-                const threshold = parseInt(confidenceThresholdSlider.value);
-                actualField.confidenceThreshold = threshold;
-                thresholdValueSpan.textContent = `${threshold}%`;
-                this.fieldManager.saveToStorage();
-            });
-        }
-
         // Toggle webhook
         webhookToggle.addEventListener('change', () => {
             // Get the actual field from the manager to ensure we're updating the right reference
@@ -276,14 +242,14 @@ export class UIManager {
                 if (webhookSettings) webhookSettings.style.display = 'none';
             }
 
-            // Show/hide URL and confidence groups (show if enabled OR if URL exists)
+            // Show/hide URL group (show if enabled OR if URL exists)
             if (actualField.webhookEnabled || actualField.webhookUrl) {
                 webhookUrlGroup.style.display = '';
-                webhookConfidenceGroup.style.display = '';
             } else {
                 webhookUrlGroup.style.display = 'none';
-                webhookConfidenceGroup.style.display = 'none';
             }
+
+            // Confidence threshold is always visible (no hiding logic needed)
 
             // Show/hide payload input (only when enabled)
             if (actualField.webhookEnabled) {
