@@ -1480,9 +1480,12 @@ async function processJob(jobId, jobData) {
     // ALWAYS use the latest jobData from the job object, not the parameter
     // This ensures we get fresh session data if the job was updated
     const latestJobData = job.jobData || jobData;
-    const { sessionData, llmConfig, fields, captureSettings = {} } = latestJobData;
+    const { sessionData, llmConfig, fields, previousEvaluation, captureSettings = {} } = latestJobData;
 
     console.log(`[${jobId}] Using ${latestJobData === job.jobData ? 'latest' : 'provided'} job data`);
+    if (previousEvaluation) {
+        console.log(`[${jobId}] Initial previousEvaluation provided:`, previousEvaluation);
+    }
 
     let browser;
 
@@ -1584,7 +1587,14 @@ async function processJob(jobId, jobData) {
         console.log(`[${jobId}] Sending to LLM...`);
         // Use the job's last result as context for the next one
         let previousEvaluation = latestJobData.previousEvaluation; // Start with initial context
+
+        // Log initial context if provided
+        if (previousEvaluation) {
+            console.log(`[${jobId}] Initial previousEvaluation from job creation:`, previousEvaluation);
+        }
+
         if (job.results.length > 0) {
+            console.log(`[${jobId}] Job has ${job.results.length} previous results, using latest for context`);
             const lastResult = job.results[job.results.length - 1];
             if (lastResult.llmResponse && lastResult.llmResponse.evaluation) {
                 // Apply confidence threshold filtering before passing to next iteration
@@ -1619,6 +1629,8 @@ async function processJob(jobId, jobData) {
                 };
                 console.log(`[${jobId}] Filtered previous evaluation for context:`, filteredEvaluation);
             }
+        } else {
+            console.log(`[${jobId}] No previous results in job history, using initial context if provided`);
         }
 
         // Also ensure the initial previousEvaluation from frontend is in the correct format
@@ -1642,6 +1654,7 @@ async function processJob(jobId, jobData) {
 
         // Use original uncompressed screenshot for LLM analysis (better quality)
         // but store the compressed version for storage efficiency
+        console.log(`[${jobId}] Calling LLM service with previousEvaluation:`, previousEvaluation ? JSON.stringify(previousEvaluation) : 'none');
         const { response, requestPayload, rawContent } = await callLlmService(screenshotBuffer.toString('base64'), llmConfig, fields, previousEvaluation);
 
         // Fire field-level webhooks if response contains evaluation data
