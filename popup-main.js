@@ -2392,7 +2392,7 @@ class CleanPopupController {
         const activeJobs = this.jobManager.getActiveJobs();
 
         if (activeJobs.length === 0) {
-            this.elements.activeJobsList.innerHTML = '<div class="no-active-jobs">No active interval captures</div>';
+            this.elements.activeJobsList.innerHTML = '<div class="no-active-jobs">No active captures</div>';
             return;
         }
 
@@ -2415,9 +2415,10 @@ class CleanPopupController {
     renderJobItem(job) {
         const statusClass = job.status.toLowerCase();
         const statusText = job.status.charAt(0).toUpperCase() + job.status.slice(1);
-        const intervalText = this.formatInterval(job.interval);
+        const intervalText = job.interval && job.interval > 0 ? this.formatInterval(job.interval) : 'Manual';
         const lastRun = job.lastRun ? new Date(job.lastRun).toLocaleString() : 'Never';
         const cloudBadge = job.isCloudJob ? '<span class="job-cloud-badge">Cloud</span>' : '';
+        const isManual = !job.interval || job.interval === 0;
 
         return `
             <div class="job-item" data-job-id="${job.id}">
@@ -2437,11 +2438,13 @@ class CleanPopupController {
                     </div>
                                         <div class="job-controls">
                         ${this.getJobControlButtons(job)}
-                        <button class="job-control-btn danger" data-action="delete" data-job-id="${job.id}">🗑️ Delete</button>
+                        <button class="job-control-btn danger" data-action="delete" data-job-id="${job.id}">
+                            ${job.status === 'running' ? '⏹️ Cancel' : '🗑️ Delete'}
+                        </button>
                     </div>
                 </div>
                 <div class="job-details">
-                    <div class="job-interval">Every ${intervalText}</div>
+                    <div class="job-interval">${isManual ? 'Manual capture' : `Every ${intervalText}`}</div>
                     <div class="job-stats">
                         <span>Runs: ${job.runCount}</span>
                         <span>Last: ${lastRun}</span>
@@ -2556,7 +2559,18 @@ class CleanPopupController {
                 break;
 
             case 'delete':
-                const confirmMessage = `Delete interval capture job for "${job.domain}"?\n\nThis will stop the ${this.formatInterval(job.interval)} capture schedule.`;
+                const isRunning = job.status === 'running';
+                const isManual = !job.interval || job.interval === 0;
+
+                let confirmMessage;
+                if (isRunning) {
+                    confirmMessage = `Cancel the running capture for "${job.domain}"?`;
+                } else if (isManual) {
+                    confirmMessage = `Delete manual capture job for "${job.domain}"?`;
+                } else {
+                    confirmMessage = `Delete interval capture job for "${job.domain}"?\n\nThis will stop the ${this.formatInterval(job.interval)} capture schedule.`;
+                }
+
                 if (!confirm(confirmMessage)) return;
 
                 // Stop the actual capture
@@ -2569,14 +2583,14 @@ class CleanPopupController {
                 // Remove from job manager
                 await this.jobManager.deleteJob(jobId);
 
-                // Reset interval selector if this is the current domain
-                if (job.domain === this.currentDomain && this.elements.captureInterval) {
+                // Reset interval selector if this is the current domain and it's an interval job
+                if (!isManual && job.domain === this.currentDomain && this.elements.captureInterval) {
                     this.elements.captureInterval.value = 'manual';
                     const intervalKey = `interval_${this.currentDomain}`;
                     await chrome.storage.local.set({ [intervalKey]: 'manual' });
                 }
 
-                this.showStatus(`Deleted job for ${job.domain}`, 'success');
+                this.showStatus(`${isRunning ? 'Cancelled' : 'Deleted'} ${isManual ? 'manual' : 'interval'} job for ${job.domain}`, 'success');
                 break;
 
             case 'reconnect':
@@ -2707,17 +2721,13 @@ class CleanPopupController {
         console.log(`Syncing with ${cloudJobs.length} cloud runner jobs`);
         console.log('Cloud jobs data:', JSON.stringify(cloudJobs, null, 2));
 
-        // Filter out manual jobs (jobs without valid intervals)
-        const intervalJobs = cloudJobs.filter(job => job.interval && job.interval > 0);
-        console.log(`Filtered to ${intervalJobs.length} interval jobs from ${cloudJobs.length} total cloud jobs`);
-
         // Get current local jobs
         const localJobs = this.jobManager.getActiveJobs();
         const localCloudJobs = localJobs.filter(job => job.isCloudJob);
         console.log(`Current local cloud jobs: ${localCloudJobs.length}`, localCloudJobs.map(j => ({ id: j.id, jobId: j.jobId, domain: j.domain })));
 
-        // Check for cloud interval jobs that don't exist locally
-        for (const cloudJob of intervalJobs) {
+        // Process all cloud jobs (both interval and manual)
+        for (const cloudJob of cloudJobs) {
             console.log(`Processing cloud job:`, cloudJob);
             const localJob = localCloudJobs.find(lj => lj.jobId === cloudJob.id);
 
@@ -2728,11 +2738,12 @@ class CleanPopupController {
                 const newJobData = {
                     domain: cloudJob.domain,
                     url: cloudJob.url || `https://${cloudJob.domain}`,
-                    interval: cloudJob.interval,
+                    interval: cloudJob.interval || 0,  // 0 for manual jobs
                     tabId: null, // No local tab for cloud-only jobs
                     status: this.mapCloudStatus(cloudJob.status),
                     isCloudJob: true,
-                    jobId: cloudJob.id
+                    jobId: cloudJob.id,
+                    isManual: cloudJob.isManual || false
                 };
                 console.log('Creating job with data:', newJobData);
 
@@ -2742,7 +2753,7 @@ class CleanPopupController {
                 // Update existing local job with cloud status
                 const mappedStatus = this.mapCloudStatus(cloudJob.status);
                 console.log(`Found existing local job ${localJob.id} for cloud job ${cloudJob.id}`);
-                if (localJob.status !== mappedStatus) {
+                if (localJob.status !== mappedStatus || localJob.runCount !== cloudJob.runCount) {
                     console.log(`Updating job ${cloudJob.id} status from ${localJob.status} to ${mappedStatus}`);
                     await this.jobManager.updateJob(localJob.id, {
                         status: mappedStatus,
@@ -2755,7 +2766,7 @@ class CleanPopupController {
 
         // Check for local cloud jobs that don't exist on cloud runner
         for (const localJob of localCloudJobs) {
-            const cloudJob = intervalJobs.find(cj => cj.id === localJob.jobId);
+            const cloudJob = cloudJobs.find(cj => cj.id === localJob.jobId);
 
             if (!cloudJob) {
                 // Local job exists but not on cloud runner - mark as disconnected

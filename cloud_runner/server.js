@@ -1381,14 +1381,13 @@ app.get('/jobs', requireValidToken, (req, res) => {
         // Filter jobs that belong to this token
         const userJobs = Object.values(jobs).filter(job => job.authToken === req.authToken);
 
-        // Only return interval jobs or manual jobs that are still running
-        // Exclude completed/failed manual jobs from sync
+        // Include all active jobs: interval jobs and running manual jobs
         const activeJobs = userJobs.filter(job => {
             // Always include interval jobs
             if (job.interval && job.interval > 0) {
                 return true;
             }
-            // Only include manual jobs if they're still running
+            // Include manual jobs that are still running
             if (!job.interval && job.status === 'running') {
                 return true;
             }
@@ -1400,13 +1399,14 @@ app.get('/jobs', requireValidToken, (req, res) => {
             id: job.id,
             domain: job.domain,
             status: job.status,
-            interval: job.interval,
+            interval: job.interval || 0,  // Default to 0 for manual jobs
             createdAt: job.createdAt,
             lastRun: job.lastRun,
             runCount: job.results?.length || 0,
             nextRun: job.nextRun,
             error: job.error,
-            url: job.jobData?.sessionData?.url || `https://${job.domain}`
+            url: job.jobData?.sessionData?.url || `https://${job.domain}`,
+            isManual: !job.interval  // Add flag to identify manual jobs
         }));
 
         console.log(`[SYNC] Returning ${jobsData.length} active jobs for client ${req.tokenData.clientId} (filtered from ${userJobs.length} total)`);
@@ -1572,7 +1572,7 @@ async function processJob(jobId, jobData) {
             // This is especially important for sites like TradingView that load indicators
             const dynamicWaitTime = 5000; // 5 seconds for dynamic content
             console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds for dynamic content to load...`);
-            await page.waitForTimeout(dynamicWaitTime);
+            await new Promise(resolve => setTimeout(resolve, dynamicWaitTime));
 
             console.log(`[${jobId}] Page loaded and dynamic content wait completed`);
         }
@@ -1588,7 +1588,7 @@ async function processJob(jobId, jobData) {
             // Wait for dynamic content after reload
             const dynamicWaitTime = 5000; // 5 seconds
             console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds after refresh...`);
-            await page.waitForTimeout(dynamicWaitTime);
+            await new Promise(resolve => setTimeout(resolve, dynamicWaitTime));
             console.log(`[${jobId}] Page refresh completed`);
         }
 
