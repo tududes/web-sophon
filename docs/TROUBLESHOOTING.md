@@ -173,12 +173,29 @@ Remember: WebSophon uses direct LLM API integration - no external services or we
 Some websites (like TradingView) may change the URL during a session (e.g., chart IDs changing from `/chart/mh0DEi5f/` to `/chart/op5q2lIL/`). This can cause issues with interval captures if not handled properly.
 
 ### Solution: Automatic URL Preservation
-The cloud runner automatically preserves the original URL that was submitted when creating a job. When the extension updates session data (cookies, storage, etc.) before each interval capture, the original URL is maintained.
+The cloud runner automatically preserves the original URL that was submitted when creating a job. When the extension updates session data (cookies, localStorage, etc.), the original URL is maintained.
 
-**How it works:**
-1. When a job is created, the initial URL is stored with the job
-2. During session updates, only cookies and storage data are refreshed
-3. The original URL is always preserved, ensuring consistent captures
+## Context Preservation in Interval Jobs
+
+### Issue: Previous Evaluation Context Lost Between Runs
+Interval jobs need to maintain context from previous captures to track state changes (e.g., position states, entry/exit signals). If results are purged after each sync, the cloud runner loses this context.
+
+### Solution: Smart Result Management
+The extension now intelligently manages cloud runner results:
+- **Interval Jobs**: Results are kept on the cloud runner to maintain context between captures
+- **One-time Jobs**: Results are purged after sync to save memory
+- **Automatic Detection**: The extension checks job type before deciding whether to purge
+
+This ensures that interval jobs can properly track state transitions like:
+- Position states (long_position_state, short_position_state)
+- Entry/exit conditions that depend on previous state
+- Any field that requires knowledge of previous evaluations
+
+### Debugging Context Issues
+If you suspect context is not being passed correctly:
+1. Check cloud runner logs for "previousEvaluation" messages
+2. Verify the extension is not purging interval job results
+3. Look for "keeping results for context" in extension console logs
 
 **Logs indicating URL preservation:**
 ```
