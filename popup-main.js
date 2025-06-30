@@ -2087,11 +2087,15 @@ class CleanPopupController {
                     const threshold = fieldThresholds[fieldName] || 75; // Default threshold if field not found
                     const confidencePercentage = fieldData.confidence * 100; // Convert to percentage
 
-                    if (confidencePercentage >= threshold) {
+                    // Only include TRUE results that meet the confidence threshold
+                    if (fieldData.result === true && confidencePercentage >= threshold) {
                         // Convert back to [boolean, confidence] format for LLM prompt
                         filteredResults[fieldName] = [fieldData.result, fieldData.confidence];
+                        console.log(`Including field "${fieldName}" - TRUE result with ${confidencePercentage.toFixed(1)}% confidence (>= ${threshold}%)`);
+                    } else if (fieldData.result === true) {
+                        console.log(`Filtering out field "${fieldName}" - TRUE result but confidence ${confidencePercentage.toFixed(1)}% below threshold ${threshold}%`);
                     } else {
-                        console.log(`Filtering out field "${fieldName}" - confidence ${confidencePercentage.toFixed(1)}% below threshold ${threshold}%`);
+                        console.log(`Filtering out field "${fieldName}" - FALSE result`);
                     }
                 }
             }
@@ -2277,7 +2281,6 @@ class FieldManagerLLM {
             lastResultTime: null,
             isPending: false,
             // Field state management (for previous context filtering)
-            expectedResult: data.expectedResult !== undefined ? data.expectedResult : true, // true/false - defaults to true
             confidenceThreshold: data.confidenceThreshold !== undefined ? data.confidenceThreshold : 75,
             // Webhook properties (separate from field state)
             webhookEnabled: data.webhookEnabled || false,
@@ -2436,7 +2439,6 @@ class FieldManagerLLM {
                 friendlyName: field.friendlyName,
                 description: field.description,
                 // Field state management
-                expectedResult: field.expectedResult,
                 confidenceThreshold: field.confidenceThreshold,
                 // Webhook properties
                 webhookEnabled: field.webhookEnabled,
@@ -2470,7 +2472,6 @@ class FieldManagerLLM {
             lastResultTime: null,
             isPending: false,
             // Field state management (for backwards compatibility)
-            expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : true,
             confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
             // Webhook properties (for backwards compatibility)
             webhookEnabled: fieldData.webhookEnabled || false,
@@ -2539,7 +2540,6 @@ class FieldManagerLLM {
                 lastResultTime: fieldData.lastResponseTime || fieldData.lastResultTime || null,
                 isPending: fieldData.isPending || false,
                 // Field state management (for backwards compatibility)
-                expectedResult: fieldData.expectedResult !== undefined ? fieldData.expectedResult : true,
                 confidenceThreshold: fieldData.confidenceThreshold !== undefined ? fieldData.confidenceThreshold : 75,
                 // Webhook properties (for backwards compatibility)
                 webhookEnabled: fieldData.webhookEnabled || false,

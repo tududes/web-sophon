@@ -82,15 +82,15 @@ export class UIManager {
         
         <div class="field-state-config">
           <div class="field-state-header">
-            <span>Previous Context Configuration</span>
+            <span>Field Configuration</span>
           </div>
           
           <div class="field-state-controls">
-            <div class="expected-result-group">
-              <label class="state-setting-label">Expected Result:</label>
-              <select class="expected-result-dropdown">
-                <option value="true" ${field.expectedResult !== false ? 'selected' : ''}>TRUE</option>
-                <option value="false" ${field.expectedResult === false ? 'selected' : ''}>FALSE</option>
+            <div class="webhook-trigger-group">
+              <label class="state-setting-label">Webhook Trigger:</label>
+              <select class="webhook-trigger-dropdown">
+                <option value="true" ${field.webhookTrigger !== false ? 'selected' : ''}>TRUE</option>
+                <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
               </select>
             </div>
             
@@ -100,7 +100,7 @@ export class UIManager {
                      class="confidence-threshold-slider" 
                      min="0" max="100" step="5"
                      value="${field.confidenceThreshold || 75}">
-              <div class="threshold-help">Only results above this confidence will be included in previous context</div>
+              <div class="threshold-help">TRUE results above this confidence will be included in previous context</div>
             </div>
           </div>
         </div>
@@ -117,13 +117,7 @@ export class UIManager {
           </div>
           
           <div class="webhook-settings" style="${field.webhookEnabled ? '' : 'display: none;'}">
-            <div class="webhook-trigger-group">
-              <label class="webhook-setting-label">Trigger when result is:</label>
-              <select class="webhook-trigger-dropdown">
-                <option value="true" ${field.webhookTrigger !== false ? 'selected' : ''}>TRUE</option>
-                <option value="false" ${field.webhookTrigger === false ? 'selected' : ''}>FALSE</option>
-              </select>
-            </div>
+            <!-- Webhook trigger setting moved to always-visible field configuration section above -->
           </div>
           
           <div class="webhook-url-group" style="${field.webhookEnabled || field.webhookUrl ? '' : 'display: none;'}">
@@ -181,8 +175,7 @@ export class UIManager {
         const sanitizedSpan = fieldEl.querySelector('.field-name-sanitized');
         const descInput = fieldEl.querySelector('.field-description');
         const removeBtn = fieldEl.querySelector('.remove-field-btn');
-        // Field state controls
-        const expectedResultDropdown = fieldEl.querySelector('.expected-result-dropdown');
+        // Field state controls  
         const confidenceThresholdSlider = fieldEl.querySelector('.confidence-threshold-slider');
         const thresholdValueSpan = fieldEl.querySelector('.threshold-value');
         // Webhook controls
@@ -255,17 +248,6 @@ export class UIManager {
         });
 
         // Field state controls
-        // Update expected result
-        if (expectedResultDropdown) {
-            expectedResultDropdown.addEventListener('change', () => {
-                const actualField = this.fieldManager.getField(field.id);
-                if (!actualField) return;
-
-                actualField.expectedResult = expectedResultDropdown.value === 'true';
-                this.fieldManager.saveToStorage();
-            });
-        }
-
         // Update confidence threshold
         if (confidenceThresholdSlider && thresholdValueSpan) {
             confidenceThresholdSlider.addEventListener('input', () => {

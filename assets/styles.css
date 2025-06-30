@@ -866,7 +866,7 @@ input:checked+.slider:hover {
     gap: var(--space-md);
 }
 
-.expected-result-group,
+.webhook-trigger-group,
 .confidence-threshold-group {
     display: flex;
     flex-direction: column;
@@ -880,22 +880,7 @@ input:checked+.slider:hover {
     margin-bottom: var(--space-xs);
 }
 
-.expected-result-dropdown {
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--border-secondary);
-    border-radius: var(--radius-sm);
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: border-color 0.2s ease;
-}
 
-.expected-result-dropdown:focus {
-    outline: none;
-    border-color: var(--border-focus);
-    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
-}
 
 .confidence-threshold-slider {
     width: 100%;
