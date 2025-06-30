@@ -2769,12 +2769,18 @@ class CleanPopupController {
             const cloudJob = cloudJobs.find(cj => cj.id === localJob.jobId);
 
             if (!cloudJob) {
-                // Local job exists but not on cloud runner - mark as disconnected
-                console.log(`Local job ${localJob.id} not found on cloud runner, marking as disconnected`);
-                await this.jobManager.updateJob(localJob.id, {
-                    status: 'disconnected',
-                    lastError: 'Job not found on cloud runner (may have been restarted)'
-                });
+                // For manual captures, remove them when they're no longer on cloud runner (completed/cleaned up)
+                if (localJob.isManual) {
+                    console.log(`Local manual job ${localJob.id} completed/cleaned up on cloud runner, removing from active list`);
+                    await this.jobManager.deleteJob(localJob.id);
+                } else {
+                    // For interval jobs, mark as disconnected
+                    console.log(`Local job ${localJob.id} not found on cloud runner, marking as disconnected`);
+                    await this.jobManager.updateJob(localJob.id, {
+                        status: 'disconnected',
+                        lastError: 'Job not found on cloud runner (may have been restarted)'
+                    });
+                }
             }
         }
 
