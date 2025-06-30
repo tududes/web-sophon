@@ -115,7 +115,7 @@ export class UIManager {
             </div>
           </div>
           
-          <div class="webhook-url-group" style="${field.webhookEnabled || field.webhookUrl ? '' : 'display: none;'}">
+          <div class="webhook-url-group" style="${field.webhookEnabled ? '' : 'display: none;'}">
             <input type="url" 
                    class="webhook-url-input ${(field.showWebhookUrl || !field.webhookUrlSaved) ? '' : 'masked'}" 
                    placeholder="https://webhook.url/endpoint" 
@@ -248,8 +248,8 @@ export class UIManager {
                 if (webhookHelp) webhookHelp.style.display = 'none';
             }
 
-            // Show/hide URL group (show if enabled OR if URL exists)
-            if (actualField.webhookEnabled || actualField.webhookUrl) {
+            // Show/hide URL group (only when webhook is enabled)
+            if (actualField.webhookEnabled) {
                 webhookUrlGroup.style.display = '';
             } else {
                 webhookUrlGroup.style.display = 'none';
