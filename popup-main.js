@@ -1255,27 +1255,29 @@ class CleanPopupController {
                     if (this.historyManager && this.currentTab === 'history') {
                         this.historyManager.updateEvent(request.eventId, request.event);
                     }
-                    // Only reload history if it's currently empty AND we're actually on the history tab
-                    if (this.historyManager && this.historyManager.recentEvents.length === 0 && this.currentTab === 'history') {
-                        console.log('History empty and on history tab, gentle reload after event update...');
-                        this.historyManager.loadHistory(false); // gentle reload
+                    // Also reload history if it's currently empty (might have been a race condition)
+                    if (this.historyManager && this.historyManager.recentEvents.length === 0) {
+                        console.log('History empty, reloading after event update...');
+                        this.historyManager.loadHistory();
                     }
-                    // If we're on the settings tab, refresh domain statistics (debounced)
+                    // If we're on the settings tab, refresh domain statistics
                     if (this.currentTab === 'settings' && request.event) {
-                        this.debouncedRefreshSettings();
+                        console.log('Refreshing settings tab after event update...');
+                        this.loadKnownDomains();
                     }
                     break;
 
                 case 'cloudResultsSynced':
                     console.log('Cloud results synced:', request);
-                    // Only refresh history if we're actively on the history tab
+                    // Refresh history if we're on the history tab
                     if (this.historyManager && this.currentTab === 'history') {
-                        console.log('On history tab, gentle refresh due to cloud sync...');
-                        this.historyManager.loadHistory(false); // gentle reload
+                        console.log('Refreshing history due to cloud sync...');
+                        this.historyManager.loadHistory();
                     }
-                    // Refresh settings tab to update domain statistics (debounced)
+                    // Refresh settings tab to update domain statistics
                     if (this.currentTab === 'settings') {
-                        this.debouncedRefreshSettings();
+                        console.log('Refreshing settings tab after cloud sync...');
+                        this.loadKnownDomains();
                     }
                     // Show toast notification about new results
                     this.showStatus(`${request.resultCount} new cloud results synced for ${request.domain}`, 'success');
@@ -1721,14 +1723,6 @@ class CleanPopupController {
         }, 500);
     }
 
-    debouncedRefreshSettings() {
-        clearTimeout(this.settingsRefreshTimer);
-        this.settingsRefreshTimer = setTimeout(() => {
-            console.log('Debounced settings refresh...');
-            this.loadKnownDomains();
-        }, 750); // Slightly longer delay for settings refresh
-    }
-
     async sendMessageToBackground(message) {
         return new Promise((resolve, reject) => {
             try {
@@ -2120,8 +2114,8 @@ class CleanPopupController {
             await this.loadKnownDomains();
 
             // Refresh history if we're on the history tab
-            if (this.historyManager && this.historyManager.loadHistory && this.currentTab === 'history') {
-                this.historyManager.loadHistory(false); // gentle reload
+            if (this.historyManager && this.historyManager.loadHistory) {
+                this.historyManager.loadHistory();
             }
 
             this.showStatus(`All settings for "${domain}" have been deleted`, 'success');

@@ -35,7 +35,7 @@ export class MessageService {
                     'prepareCaptureData', 'startCloudJob', 'startCapture', 'stopCapture',
                     'getCaptchaChallenge', 'verifyCaptcha', 'getTokenStats', 'clearToken', 'testCloudRunner',
                     'storeAuthToken', 'startAuthPolling', 'getCloudJobs', 'startCloudInterval',
-                    'getStorageInfo', 'performManualCleanup', 'makeAuthenticatedRequest', 'fetchScreenshot'
+                    'getStorageInfo', 'performManualCleanup'
                 ];
                 const isAsync = asyncActions.includes(request.action);
                 if (isAsync) {
@@ -199,54 +199,6 @@ export class MessageService {
                 this.eventService.performManualCleanup()
                     .then(res)
                     .catch(err => res({ success: false, error: err.message }));
-            },
-            'makeAuthenticatedRequest': (req, sender, res) => {
-                this.makeAuthenticatedRequest(req.url, req.options)
-                    .then(response => res({ success: true, data: response }))
-                    .catch(err => res({ success: false, error: err.message }));
-            },
-            'fetchScreenshot': (req, sender, res) => {
-                console.log('fetchScreenshot handler called for eventId:', req.eventId);
-
-                const event = this.eventService.getEventById(req.eventId);
-                if (!event) {
-                    console.error('Event not found in fetchScreenshot handler:', req.eventId);
-                    res({ success: false, error: 'Event not found' });
-                    return;
-                }
-
-                console.log('Event found for screenshot fetch:', {
-                    id: event.id,
-                    source: event.source,
-                    hasScreenshot: !!event.screenshot,
-                    hasScreenshotUrl: !!event.screenshotUrl,
-                    screenshotUrl: event.screenshotUrl
-                });
-
-                this.eventService.fetchScreenshot(event)
-                    .then(screenshotData => {
-                        console.log('fetchScreenshot result:', {
-                            hasData: !!screenshotData,
-                            dataType: typeof screenshotData,
-                            isValidDataUrl: screenshotData ? screenshotData.startsWith('data:image/') : false,
-                            dataLength: screenshotData ? screenshotData.length : 0
-                        });
-
-                        if (screenshotData && screenshotData.startsWith('data:image/')) {
-                            // Return the screenshot data directly for consistency
-                            res(screenshotData);
-                        } else {
-                            const errorMsg = screenshotData ?
-                                'Invalid screenshot data format' :
-                                `No screenshot available for ${event.source} event (ID: ${event.id})`;
-                            console.warn('fetchScreenshot failed:', errorMsg);
-                            res({ success: false, error: errorMsg });
-                        }
-                    })
-                    .catch(err => {
-                        console.error('fetchScreenshot error:', err);
-                        res({ success: false, error: err.message || 'Failed to fetch screenshot' });
-                    });
             }
         };
         return handlers[action];
@@ -1104,10 +1056,7 @@ export class MessageService {
 
                             // Debug the data we're about to process
                             console.log(`[Sync] Processing result ${eventId}:`, {
-                                hasScreenshotData: !!result.screenshotData,
-                                hasScreenshotUrl: !!result.screenshotUrl,
-                                screenshotUrl: result.screenshotUrl,
-                                screenshotFilename: result.screenshotFilename,
+                                hasScreenshot: !!result.screenshotData,
                                 screenshotSize: result.screenshotData ? result.screenshotData.length : 0,
                                 hasLlmResponse: !!llmResponse,
                                 llmResponseKeys: Object.keys(llmResponse),
@@ -1126,7 +1075,7 @@ export class MessageService {
                                 true,
                                 200,
                                 null,
-                                result.screenshotData || null, // Pass screenshot data if available (for backwards compatibility)
+                                result.screenshotData, // Pass screenshot data
                                 {
                                     jobId: jobId,
                                     captureSettings: result.captureSettings,
@@ -1140,21 +1089,6 @@ export class MessageService {
                                 'cloud',
                                 result.timestamp // Use server timestamp
                             );
-
-                            // Add screenshot URL for cloud events if available (new format)
-                            if (result.screenshotUrl && !result.screenshotData) {
-                                const { cloudRunnerUrl } = await chrome.storage.local.get(['cloudRunnerUrl']);
-                                const runnerEndpoint = (cloudRunnerUrl || 'https://runner.websophon.tududes.com').replace(/\/$/, '');
-                                const fullScreenshotUrl = `${runnerEndpoint}${result.screenshotUrl}`;
-
-                                // Update the event with screenshot URL
-                                const event = this.eventService.getEventById(eventId);
-                                if (event) {
-                                    event.screenshotUrl = fullScreenshotUrl;
-                                    event.screenshotFilename = result.screenshotFilename;
-                                    console.log(`[Sync] Added screenshot URL to event ${eventId}: ${fullScreenshotUrl}`);
-                                }
-                            }
 
                             // If the result includes field webhooks fired by cloud runner, add them to the event
                             if (result.fieldWebhooks && result.fieldWebhooks.length > 0) {

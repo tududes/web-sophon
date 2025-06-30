@@ -64,22 +64,6 @@ export function formatResponseData(responseText) {
 // Download screenshot with timestamped filename
 export function downloadScreenshot(screenshotData, timestamp) {
     try {
-        console.log('Downloading screenshot:', {
-            dataType: typeof screenshotData,
-            dataLength: screenshotData ? screenshotData.length : 0,
-            isDataUrl: screenshotData ? screenshotData.startsWith('data:image/') : false,
-            timestamp: timestamp
-        });
-
-        // Validate screenshot data
-        if (!screenshotData || typeof screenshotData !== 'string') {
-            throw new Error('Invalid screenshot data - not a string');
-        }
-
-        if (!screenshotData.startsWith('data:image/')) {
-            throw new Error('Invalid screenshot data - not a data URL');
-        }
-
         // Create download link
         const link = document.createElement('a');
         link.href = screenshotData;
@@ -89,21 +73,14 @@ export function downloadScreenshot(screenshotData, timestamp) {
         const filename = `websophon-screenshot-${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}-${date.getHours().toString().padStart(2, '0')}-${date.getMinutes().toString().padStart(2, '0')}-${date.getSeconds().toString().padStart(2, '0')}.png`;
 
         link.download = filename;
-
-        // Add to document temporarily
         document.body.appendChild(link);
-
-        // Trigger download
         link.click();
-
-        // Clean up
         document.body.removeChild(link);
 
-        console.log('Screenshot download triggered successfully:', filename);
         return { success: true, message: 'Screenshot downloaded' };
     } catch (error) {
         console.error('Error downloading screenshot:', error);
-        return { success: false, message: `Failed to download screenshot: ${error.message}` };
+        return { success: false, message: 'Failed to download screenshot' };
     }
 }
 
