@@ -1541,11 +1541,6 @@ async function processJob(jobId, jobData) {
                             waitUntil: 'domcontentloaded',
                             timeout: 120000
                         });
-
-                        // Wait for dynamic content
-                        const dynamicWaitTime = 5000;
-                        console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds for dynamic content to load...`);
-                        await new Promise(resolve => setTimeout(resolve, dynamicWaitTime));
                     } else {
                         console.log(`[${jobId}] Page still on correct URL, proceeding with screenshot`);
                     }
@@ -1611,13 +1606,7 @@ async function processJob(jobId, jobData) {
                 timeout: 120000 // 120 second timeout for slow sites
             });
 
-            // Wait a reasonable amount of time for dynamic content to load
-            // This is especially important for sites like TradingView that load indicators
-            const dynamicWaitTime = 5000; // 5 seconds for dynamic content
-            console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds for dynamic content to load...`);
-            await new Promise(resolve => setTimeout(resolve, dynamicWaitTime));
-
-            console.log(`[${jobId}] Page loaded and dynamic content wait completed`);
+            console.log(`[${jobId}] Page loaded`);
         }
 
         // Handle page refresh if enabled
@@ -1627,11 +1616,6 @@ async function processJob(jobId, jobData) {
                 waitUntil: 'domcontentloaded',  // Consistent with initial load
                 timeout: 120000
             });
-
-            // Wait for dynamic content after reload
-            const dynamicWaitTime = 5000; // 5 seconds
-            console.log(`[${jobId}] Waiting ${dynamicWaitTime / 1000} seconds after refresh...`);
-            await new Promise(resolve => setTimeout(resolve, dynamicWaitTime));
             console.log(`[${jobId}] Page refresh completed`);
         }
 
