@@ -256,7 +256,26 @@ class CleanPopupController {
             this.debouncedSaveLlmConfig();
         });
 
-        this.elements.llmModel?.addEventListener('change', () => {
+        this.elements.llmModel?.addEventListener('change', (e) => {
+            // Show/hide custom model input based on selection
+            const customModelGroup = document.getElementById('customModelGroup');
+            if (customModelGroup) {
+                customModelGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
+            }
+            this.debouncedSaveLlmConfig();
+        });
+
+        // Add listener for custom model input
+        const customModelInput = document.getElementById('llmCustomModel');
+        customModelInput?.addEventListener('input', () => {
+            this.debouncedSaveLlmConfig();
+        });
+
+        this.elements.llmTemperature?.addEventListener('input', () => {
+            this.debouncedSaveLlmConfig();
+        });
+
+        this.elements.llmMaxTokens?.addEventListener('input', () => {
             this.debouncedSaveLlmConfig();
         });
 
@@ -1573,22 +1592,41 @@ class CleanPopupController {
                 });
                 select.appendChild(modelsGroup);
 
-                // Add the other groups for local/custom models
-                const otherGroupsHtml = `
-                        <optgroup label="🏠 Local/Self-hosted">
-                            <option value="llava">LLaVA (Local)</option>
-                        </optgroup>
-                        <optgroup label="⚙️ Custom">
-                             <option value="custom">Other/Custom Model...</option>
-                        </optgroup>
-                    `;
-                select.insertAdjacentHTML('beforeend', otherGroupsHtml);
+                // Add custom model option only
+                const customOptionHtml = `
+                    <optgroup label="⚙️ Custom">
+                        <option value="custom">Other/Custom Model...</option>
+                    </optgroup>
+                `;
+                select.insertAdjacentHTML('beforeend', customOptionHtml);
 
                 // Set the selected model
-                if (savedModel && models.some(m => m.slug === savedModel)) {
-                    select.value = savedModel;
+                if (savedModel) {
+                    // Check if the saved model exists in the fetched models
+                    if (models.some(m => m.slug === savedModel)) {
+                        select.value = savedModel;
+                    } else if (savedModel !== 'custom') {
+                        // If saved model is not in the list and not already 'custom', 
+                        // it's a custom model, so select 'custom' and populate the input
+                        select.value = 'custom';
+                        const customModelInput = document.getElementById('llmCustomModel');
+                        const customModelGroup = document.getElementById('customModelGroup');
+                        if (customModelInput) {
+                            customModelInput.value = savedModel;
+                        }
+                        if (customModelGroup) {
+                            customModelGroup.style.display = 'block';
+                        }
+                    } else {
+                        // savedModel is 'custom', so just select it
+                        select.value = 'custom';
+                        const customModelGroup = document.getElementById('customModelGroup');
+                        if (customModelGroup) {
+                            customModelGroup.style.display = 'block';
+                        }
+                    }
                 } else if (models.length > 0) {
-                    // Default to the first model (highest context) if no valid model was saved
+                    // Default to the first model if no valid model was saved
                     select.value = models[0].slug;
                 }
             } else {
@@ -1639,10 +1677,18 @@ class CleanPopupController {
 
     async saveLlmConfig() {
         try {
+            let modelValue = this.elements.llmModel?.value;
+
+            // If custom model is selected, use the value from the custom model input
+            if (modelValue === 'custom') {
+                const customModelInput = document.getElementById('llmCustomModel');
+                modelValue = customModelInput?.value || 'custom';
+            }
+
             const config = {
                 apiUrl: this.elements.llmApiUrl?.value || '',
                 apiKey: this.elements.llmApiKey?.value || '',
-                model: this.elements.llmModel?.value,
+                model: modelValue,
                 temperature: parseFloat(this.elements.llmTemperature?.value) || 0.1,
                 maxTokens: parseInt(this.elements.llmMaxTokens?.value) || 5000 // Increased from 2000 to 5000
             };
