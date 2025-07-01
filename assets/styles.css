@@ -2427,6 +2427,61 @@ input:checked+.slider:hover {
     font-weight: 600;
 }
 
+/* Sync Button Styling */
+.sync-btn {
+    padding: 6px 12px;
+    font-size: var(--text-xs);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+}
+
+.sync-btn:hover {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.sync-btn:active {
+    transform: translateY(0);
+}
+
+.sync-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.sync-btn.syncing {
+    background-color: var(--accent);
+    color: white;
+    cursor: wait;
+}
+
+.sync-btn.syncing::before {
+    content: '🔄';
+    display: inline-block;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .active-jobs-section h3 {
     margin: 0 0 var(--space-md) 0;
     color: var(--text-primary);

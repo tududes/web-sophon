@@ -2522,9 +2522,22 @@ class CleanPopupController {
         // Manual cloud sync button
         this.elements.syncCloudJobsBtn = document.getElementById('syncCloudJobsBtn');
         if (this.elements.syncCloudJobsBtn) {
-            this.elements.syncCloudJobsBtn.addEventListener('click', () => {
+            this.elements.syncCloudJobsBtn.addEventListener('click', async () => {
                 console.log('Manual cloud sync triggered');
-                this.syncWithCloudRunner();
+
+                // Disable button and show syncing state
+                this.elements.syncCloudJobsBtn.disabled = true;
+                this.elements.syncCloudJobsBtn.classList.add('syncing');
+                this.elements.syncCloudJobsBtn.innerHTML = '🔄 Syncing...';
+
+                try {
+                    await this.syncWithCloudRunner();
+                } finally {
+                    // Re-enable button and restore normal state
+                    this.elements.syncCloudJobsBtn.disabled = false;
+                    this.elements.syncCloudJobsBtn.classList.remove('syncing');
+                    this.elements.syncCloudJobsBtn.innerHTML = '🔄 Sync';
+                }
             });
         }
     }
