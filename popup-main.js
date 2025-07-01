@@ -2690,15 +2690,33 @@ class CleanPopupController {
 
                 if (!confirm(confirmMessage)) return;
 
-                // Stop the actual capture
-                await this.sendMessageToBackground({
-                    action: 'stopCapture',
-                    tabId: job.tabId,
-                    domain: job.domain
-                });
+                // For cloud jobs, we need to ensure proper cleanup
+                if (job.isCloudJob) {
+                    // First, remove from local job manager to update UI immediately
+                    await this.jobManager.deleteJob(jobId);
 
-                // Remove from job manager
-                await this.jobManager.deleteJob(jobId);
+                    // Then send the delete request to cloud runner
+                    // This ensures UI updates even if cloud request fails
+                    try {
+                        await this.sendMessageToBackground({
+                            action: 'stopCapture',
+                            tabId: job.tabId,
+                            domain: job.domain
+                        });
+                    } catch (error) {
+                        console.error('Error deleting cloud job:', error);
+                        // Job already removed from UI, just log the error
+                    }
+                } else {
+                    // For local jobs, stop capture first then remove from manager
+                    await this.sendMessageToBackground({
+                        action: 'stopCapture',
+                        tabId: job.tabId,
+                        domain: job.domain
+                    });
+
+                    await this.jobManager.deleteJob(jobId);
+                }
 
                 // Reset interval selector if this is the current domain and it's an interval job
                 if (!isManual && job.domain === this.currentDomain && this.elements.captureInterval) {
@@ -2708,6 +2726,13 @@ class CleanPopupController {
                 }
 
                 this.showStatus(`${isRunning ? 'Cancelled' : 'Deleted'} ${isManual ? 'manual' : 'interval'} job for ${job.domain}`, 'success');
+
+                // Force immediate cloud sync if it was a cloud job to ensure consistency
+                if (job.isCloudJob) {
+                    setTimeout(() => {
+                        this.syncWithCloudRunner();
+                    }, 1000); // Small delay to ensure cloud deletion completes
+                }
                 break;
 
             case 'reconnect':
