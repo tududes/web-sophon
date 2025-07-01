@@ -1562,11 +1562,26 @@ class CleanPopupController {
                 const hasTextInput = inputs.includes('text');
                 const hasTextOutput = outputs.includes('text');
 
-                // When premium is unchecked, also verify price is 0
+                // When premium is unchecked, verify ALL prices are exactly 0
                 if (!includePremiumModels) {
-                    const promptPrice = parseFloat(model.pricing?.prompt || 0);
-                    const completionPrice = parseFloat(model.pricing?.completion || 0);
-                    const isFree = promptPrice === 0 && completionPrice === 0;
+                    const pricing = model.pricing || {};
+
+                    // Check all possible pricing fields to ensure they are exactly 0
+                    const promptPrice = parseFloat(pricing.prompt || 0);
+                    const completionPrice = parseFloat(pricing.completion || 0);
+                    const imagePrice = parseFloat(pricing.image || 0);
+                    const requestPrice = parseFloat(pricing.request || 0);
+                    const webSearchPrice = parseFloat(pricing.web_search || 0);
+                    const internalReasoningPrice = parseFloat(pricing.internal_reasoning || 0);
+
+                    // Only consider it free if ALL prices are exactly 0
+                    const isFree = promptPrice === 0 &&
+                        completionPrice === 0 &&
+                        imagePrice === 0 &&
+                        requestPrice === 0 &&
+                        webSearchPrice === 0 &&
+                        internalReasoningPrice === 0;
+
                     return hasImageInput && hasTextInput && hasTextOutput && isFree;
                 }
 
