@@ -1727,7 +1727,11 @@ async function processJob(jobId, jobData) {
         }
 
         // Normalize response structure for storage (ensure evaluation property exists)
-        const normalizedResponse = response.evaluation ? response : { evaluation: response, summary: response.summary };
+        // For SAPIENT responses, separate the summary from field evaluations
+        const normalizedResponse = response.evaluation ? response : (() => {
+            const { summary, ...fieldEvaluations } = response;
+            return { evaluation: fieldEvaluations, summary: summary };
+        })();
         if (response.summary) {
             normalizedResponse.summary = response.summary;
         }
