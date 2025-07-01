@@ -1,0 +1,6 @@
+{
+    "name": "websophon-utils",
+    "version": "1.0.0",
+    "description": "Shared utilities for WebSophon Chrome extension and cloud runner",
+    "type": "module"
+}
