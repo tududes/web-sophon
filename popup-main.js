@@ -1562,20 +1562,35 @@ class CleanPopupController {
                 const hasTextInput = inputs.includes('text');
                 const hasTextOutput = outputs.includes('text');
 
+                // Filter out deprecated models
+                if (model.slug === 'openai/gpt-4-vision-preview' ||
+                    model.deprecated === true ||
+                    model.status === 'deprecated') {
+                    console.log(`Filtering out deprecated model: ${model.slug}`);
+                    return false;
+                }
+
                 // When premium is unchecked, verify ALL prices are exactly 0
                 if (!includePremiumModels) {
                     // Pricing is nested under endpoint.pricing in the API response
-                    const pricing = model.endpoint?.pricing || model.pricing || {};
+                    const pricing = model.endpoint?.pricing || model.pricing || null;
+
+                    // If pricing data is missing entirely, treat as NOT free
+                    if (!pricing) {
+                        console.log(`Filtering out model with missing pricing: ${model.slug}`);
+                        return false;
+                    }
 
                     // Check all possible pricing fields to ensure they are exactly 0
-                    const promptPrice = parseFloat(pricing.prompt || 0);
-                    const completionPrice = parseFloat(pricing.completion || 0);
-                    const imagePrice = parseFloat(pricing.image || 0);
-                    const requestPrice = parseFloat(pricing.request || 0);
-                    const webSearchPrice = parseFloat(pricing.web_search || 0);
-                    const internalReasoningPrice = parseFloat(pricing.internal_reasoning || 0);
+                    // Important: treat undefined/null as non-zero (not free)
+                    const promptPrice = pricing.prompt !== undefined ? parseFloat(pricing.prompt) : -1;
+                    const completionPrice = pricing.completion !== undefined ? parseFloat(pricing.completion) : -1;
+                    const imagePrice = pricing.image !== undefined ? parseFloat(pricing.image) : -1;
+                    const requestPrice = pricing.request !== undefined ? parseFloat(pricing.request) : -1;
+                    const webSearchPrice = pricing.web_search !== undefined ? parseFloat(pricing.web_search) : -1;
+                    const internalReasoningPrice = pricing.internal_reasoning !== undefined ? parseFloat(pricing.internal_reasoning) : -1;
 
-                    // Only consider it free if ALL prices are exactly 0
+                    // Only consider it free if ALL prices exist AND are exactly 0
                     const isFree = promptPrice === 0 &&
                         completionPrice === 0 &&
                         imagePrice === 0 &&
