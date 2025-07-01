@@ -1520,7 +1520,10 @@ class CleanPopupController {
 
         try {
             const { includePremiumModels } = await chrome.storage.local.get(['includePremiumModels']);
-            let apiUrl = 'https://openrouter.ai/api/frontend/models/find?fmt=json&input_modalities=image&order=context-high-to-low';
+            // Updated API URL to specify both image and text input modalities, and text output
+            let apiUrl = 'https://openrouter.ai/api/frontend/models/find?fmt=json&input_modalities=image,text&output_modalities=text';
+
+            // Apply price filter when premium is unchecked
             if (!includePremiumModels) {
                 apiUrl += '&max_price=0';
             }
@@ -1532,21 +1535,33 @@ class CleanPopupController {
             const data = await response.json();
             let models = data?.data?.models || [];
 
-            // Add more specific client-side filtering for modalities
+            // Additional client-side filtering to ensure we have the exact modalities we need
             models = models.filter(model => {
                 const inputs = model.input_modalities || [];
                 const outputs = model.output_modalities || [];
                 const hasImageInput = inputs.includes('image');
                 const hasTextInput = inputs.includes('text');
                 const hasTextOutput = outputs.includes('text');
+
+                // When premium is unchecked, also verify price is 0
+                if (!includePremiumModels) {
+                    const promptPrice = parseFloat(model.pricing?.prompt || 0);
+                    const completionPrice = parseFloat(model.pricing?.completion || 0);
+                    const isFree = promptPrice === 0 && completionPrice === 0;
+                    return hasImageInput && hasTextInput && hasTextOutput && isFree;
+                }
+
                 return hasImageInput && hasTextInput && hasTextOutput;
             });
+
+            // Sort models by name instead of context length
+            models.sort((a, b) => a.name.localeCompare(b.name));
 
             select.innerHTML = ''; // Clear placeholder
 
             if (models.length > 0) {
                 const modelsGroup = document.createElement('optgroup');
-                modelsGroup.label = includePremiumModels ? '📈 All Vision Models (Highest Context First)' : '📈 Free Vision Models (Highest Context First)';
+                modelsGroup.label = includePremiumModels ? '🔤 All Vision Models (A-Z)' : '🆓 Free Vision Models (A-Z)';
 
                 models.forEach(model => {
                     const option = document.createElement('option');
