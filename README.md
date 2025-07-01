@@ -8,399 +8,320 @@ Like a subatomic particle that can expand to observe entire systems, WebSophon m
 
 WebSophon doesn't just watch—it understands. By defining fields of truth, you create quantum observers that collapse possibilities into certainties. When truth is detected, WebSophon can instantly trigger events across any system, creating a web of intelligent automation that responds to the changing state of your digital reality.
 
-## Features
+## 🚀 Key Features
 
-### Core Features (v2.0+)
-- **LLM-Powered Analysis**: Advanced AI evaluation using OpenAI GPT-4 Vision or compatible models
-- **Domain-based Management**: Each domain maintains its own independent field configurations
-- **Intelligent Field Evaluation**: Define unlimited custom criteria evaluated with confidence scores
-- **Manual & Automated Capture**: On-demand capture with configurable intervals (5 seconds to 1 day)
-- **Full-Page Screenshots**: Optional full-page capture using Chrome DevTools Protocol (CDP)
-- **Page Refresh Control**: Optionally refresh pages before capture with configurable delays
-- **Previous Evaluation Context**: LLM receives previous results for enhanced change detection
+### Core Capabilities
+- **🤖 AI-Powered Analysis**: Supports any vision-capable LLM (GPT-4V, Claude, Gemini, Qwen, etc.)
+- **☁️ Cloud Runner**: Offload captures to remote headless browsers for 24/7 monitoring
+- **🔄 Webhooks**: Trigger external actions with confidence-based filtering
+- **📊 SAPIENT Protocol**: Structured AI response format for reliable parsing
+- **🎯 Smart Field System**: Define unlimited criteria with confidence thresholds
+- **⏰ Flexible Scheduling**: From 10 seconds to daily intervals, or manual-only
+- **🔐 Secure Authentication**: CAPTCHA-based token system for cloud runner access
 
-### Advanced Field System (v2.0+)
-- **Custom Fields**: Define unlimited evaluation criteria with human-friendly names
-- **AI-Powered Analysis**: Each field evaluated to true/false with confidence percentages
-- **Visual Results**: Green/red indicators show results with probability scores
-- **Real-time Status**: Live pending/success/error states for each field
-- **Field History Integration**: Click field results to jump to corresponding events
-- **Smart Field Naming**: Automatic sanitization of field names for API compatibility
-- **Validation System**: Comprehensive validation prevents duplicate or invalid fields
-- **Previous Context Display**: Collapsible sections showing previous evaluation results
+### Cloud Runner (v3.0+)
+- **Remote Execution**: Run captures on dedicated servers without keeping browser open
+- **Token-Based Access**: Secure authentication with 24-hour tokens via CAPTCHA
+- **Quota Management**: Track recurring domains (10) and manual captures (2)
+- **Job Synchronization**: Automatic sync between local extension and cloud jobs
+- **Persistent Monitoring**: Captures continue even when your computer is off
+- **Easy Deployment**: Docker-based setup with security hardening scripts
+- **Result Caching**: Cloud stores results until extension retrieves them
 
-### Capture Configuration (v2.7+)
-- **Organized Capture Controls**: All capture settings grouped in dedicated Capture tab
-- **Flexible Intervals**: Choose from 5 seconds to 1 day, or manual-only
-- **Conditional Settings**: Delay options appear only when page refresh is enabled
-- **Previous Evaluation Toggle**: Enable/disable context sharing with ON by default
-- **Clear Context Control**: Manual button to clear previous evaluation history
-- **Real-time Validation**: Automatic validation before starting automatic captures
+### Advanced Field & Webhook System
+- **Confidence Thresholds**: Set minimum confidence (0-100%) for TRUE results
+- **Webhook Triggers**: Fire on TRUE, FALSE, or both conditions
+- **Custom Payloads**: Template system with field values and metadata
+- **Masked URLs**: Security-conscious display of webhook endpoints
+- **Per-Field Configuration**: Each field has independent webhook settings
+- **Confidence Filtering**: Low-confidence TRUE results demoted to FALSE
+- **Smart Retry Logic**: Automatic retries for failed webhook calls
 
-### Event History & Notifications (v2.2+)
-- **Badge Notifications**: Extension icon shows count of unread TRUE events
-- **Complete Event Tracking**: ALL capture attempts logged (success, failure, errors)
-- **Expandable Event Details**: Click events to see full details including URLs and errors
-- **Smart Filtering**: Toggle to show only events with TRUE results
-- **Unread Management**: Highlights new TRUE events until viewed in history
-- **Time-based Display**: Human-readable timestamps ("5 minutes ago")
-- **Persistent Storage**: Events stored locally with automatic cleanup
-- **Clear History**: Option to clear all stored events
-- **Previous Context Display**: Shows previous evaluation data used for each capture
+### SAPIENT Protocol Support
+- **Structured Responses**: AI responses in standardized format for reliability
+- **Natural Summaries**: Human-readable explanations alongside field results
+- **Multi-Model Support**: Works with GPT-4, Claude, Gemini, and others
+- **Automatic Detection**: Seamlessly handles both JSON and SAPIENT responses
+- **Enhanced Parsing**: Robust handling of truncated or malformed responses
 
-### Domain Management (v2.3+)
-- **Domain-Specific Configuration**: Each domain maintains independent settings and fields
-- **Known Domains Dashboard**: View all configured domains with statistics
-- **Domain Statistics**: Shows accurate last run time and total event count per domain
-- **Quick Domain Access**: Click to open any configured domain in new tab
-- **Domain Cleanup**: Delete all settings and history for a domain
-- **Current Domain Highlighting**: Visual indication of currently active domain
-- **Automatic Domain Detection**: Extension automatically switches context based on current tab
+### Capture Configuration
+- **Full-Page Screenshots**: Optional capture of entire page vs viewport only
+- **Page Refresh**: Optionally refresh before capture with configurable delay
+- **Previous Context**: Share previous results with AI for change detection
+- **Manual Override**: Test captures before enabling automation
+- **Smart Validation**: Prevents invalid configurations before starting
 
-### Enhanced Debugging (v2.4+)
-- **Field Status Tracking**: Each field shows last evaluation result with timestamp
-- **History Integration**: Click field results to navigate to corresponding events
-- **Screenshot Storage**: Captured screenshots stored with events for review
-- **Request/Response Logs**: Full request and response data for debugging
-- **Visual Screenshot Tools**: Click to zoom, mouse-following 2x magnification
-- **Smart Event Highlighting**: Events highlighted when accessed from field results
-- **Debug Mode**: Enable additional testing features and detailed logging
-- **Race Condition Prevention**: Robust loading mechanisms prevent empty history displays
+### Job Management & Active Captures
+- **Live Status Display**: See all active capture jobs in one place
+- **Pause/Resume**: Temporarily pause interval captures without losing config
+- **Error Recovery**: Automatic restart options for failed jobs
+- **Cloud/Local Indicators**: Visual distinction between capture types
+- **One-Click Actions**: Stop, pause, resume, or delete jobs instantly
+- **Run Statistics**: Track successful runs and error counts
+- **Domain Navigation**: Quick links to monitored domains
+- **Manual Sync**: Force sync with cloud runner to update job status
 
-### Long-Running Request Support (v2.5+)
-- **Extended Timeouts**: LLM requests can run up to 2 minutes (120 seconds)
-- **Pending Status Tracking**: Events show "⏳ Waiting for response..." during processing
-- **Real-time Updates**: Events update automatically when responses arrive
-- **Concurrent Processing**: Multiple captures can run simultaneously
-- **Progressive Loading**: Screenshots visible immediately, responses when ready
-- **Resilient Design**: Failed requests properly update with error details
+### Preset System
+- **Save Configurations**: Store field setups as reusable presets
+- **Quick Loading**: Apply saved configurations with one click
+- **Domain-Specific**: Presets stored per domain for organization
+- **Validation**: Ensures preset integrity before saving
+- **Management UI**: Easy preset selection and deletion
 
-### Enhanced User Control (v2.6+)
-- **Request Cancellation**: Cancel pending LLM requests with cancel button
-- **Smart Response Display**: JSON responses formatted, raw text for non-JSON
-- **Screenshot Downloads**: Download screenshots with timestamped filenames
-- **Advanced Image Zoom**: Mouse-following 2x zoom for detailed screenshot inspection
-- **Cancelled Request Tracking**: Properly logs cancelled requests in history
-- **Improved Error Handling**: Better error messages and status reporting
-- **Unified Capture Logic**: DRY principle implementation ensures consistent behavior
+### Enhanced UI & Storage
+- **📦 Storage Management**: Monitor space usage with cleanup tools
+- **🎨 Theme Support**: Light/dark mode with system preference detection
+- **📊 Domain Dashboard**: Statistics and management for all configured domains
+- **🔍 History Search**: Filter events by TRUE results or other criteria
+- **📸 Screenshot Tools**: Zoom, download, and inspect captured images
+- **⚡ Real-time Updates**: Live status updates during captures
+- **🎯 Smart Defaults**: Suggests free Qwen model for new users
 
-### Previous Evaluation Context System (v2.7+)
-- **Automatic Context Tracking**: Previous field results automatically stored per domain
-- **Enhanced Change Detection**: LLM receives previous results to better detect changes
-- **Confidence-Based Storage**: Only stores results with sufficient confidence scores
-- **Timestamped Context**: Previous results include evaluation timestamps and event IDs
-- **Visual Context Display**: Collapsible UI sections show previous evaluation data
-- **User Control**: Toggle to enable/disable context sharing (ON by default)
-- **Context Management**: Clear previous context button for fresh starts
-- **Color-Coded Display**: TRUE/FALSE indicators with confidence percentages
+## 📦 Installation
 
-### Developer Features
-- **Clean, Modern UI**: Intuitive tabbed interface for all functionality
-- **LLM Integration**: Direct integration with OpenAI or compatible APIs
-- **Comprehensive Logging**: Detailed console logs for troubleshooting
-- **Modular Architecture**: Clean separation of concerns across services
-- **Cross-Extension Sync**: Settings sync across Chrome instances via chrome.storage
-- **Shared Capture Logic**: DRY principle prevents code duplication
-- **Robust Error Handling**: Comprehensive error tracking and recovery
-
-## Installation
-
+### Extension Installation
 1. Clone or download this repository
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
 4. Click "Load unpacked" and select this directory
 5. The extension icon will appear in your toolbar
 
-## Quick Setup
+### Cloud Runner Setup (Optional)
+1. **Deploy Server**: Use `cloud_runner/deploy-secure.sh` on your server
+2. **Configure Security**: Set up CAPTCHA keys and authentication
+3. **Get Token**: Complete CAPTCHA in extension settings
+4. **Start Monitoring**: Cloud captures work even when browser is closed
 
-1. **Configure LLM API**: Enter your OpenAI API URL and key in Settings tab
-2. **Test Configuration**: Use "Test Configuration" button to verify connection
-3. **Define Fields**: Add evaluation criteria in Fields tab with descriptions
-4. **Configure Capture**: In Capture tab, enable domain and set capture preferences
-5. **Enable Previous Context**: Ensure "Use Previous Evaluation Context" is ON (default)
-6. **Test**: Click "Capture Now" to test or enable automatic intervals
+See [Cloud Runner Documentation](cloud_runner/README.md) for detailed setup.
 
-## Architecture
+## 🎯 Quick Start Guide
 
-### Core Components
+### Basic Setup (Local Captures)
+1. **Configure LLM**: Settings → Enter OpenRouter API key
+2. **Define Fields**: Fields tab → Add evaluation criteria
+3. **Enable Domain**: Capture tab → Toggle domain consent
+4. **Test Capture**: Click "Capture Screenshot Now"
+5. **View Results**: Check History tab for results
 
-**Entry Points:**
-- `manifest.json` - Extension configuration (v3)
-- `background-main.js` - Service worker initialization
-- `popup.html` - Main interface
-- `popup-main.js` - Main controller and embedded FieldManagerLLM class
-- `content.js` - Page navigation monitoring
+### Cloud Runner Setup
+1. **Set URL**: Settings → Cloud Runner URL (or use default)
+2. **Authenticate**: Click "🔐 Authenticate with Cloud Runner"
+3. **Complete CAPTCHA**: Token valid for 24 hours
+4. **Enable Cloud**: Capture tab → Toggle "☁️ Use Cloud Runner"
+5. **Start Capture**: Works even after closing browser
 
-**Background Services:**
-- `services/CaptureService.js` - Screenshot capture using Chrome DevTools Protocol
-- `services/LLMService.js` - LLM API integration and response processing
-- `services/EventService.js` - Event tracking and history management
-- `services/MessageService.js` - Inter-component communication with shared capture logic
-- `services/WebhookService.js` - Legacy webhook support (unused in LLM mode)
+### Webhook Configuration
+1. **Enable Webhook**: Toggle webhook for specific field
+2. **Set Trigger**: Choose TRUE, FALSE, or both
+3. **Enter URL**: Your webhook endpoint
+4. **Set Confidence**: Minimum confidence threshold (default 75%)
+5. **Custom Payload**: Optional JSON template with variables
 
-**UI Components:**
-- `components/HistoryManager.js` - Event history display and interaction
-- `components/UIManager.js` - UI state management and field rendering
-- `utils/formatters.js` - Date formatting, data display utilities
+## 🏗️ Architecture
 
-**Assets:**
-- `assets/styles.css` - Complete styling (consolidated from all inline styles)
-- `assets/icon_*.png` - Extension icons (16, 32, 48, 128, 256px)
+### Extension Components
+```
+tv-eyes/
+├── manifest.json                    # Chrome extension v3 manifest
+├── background-main.js              # Service worker entry
+├── popup.html                      # Main UI
+├── popup-main.js                   # Controller + FieldManagerLLM
+├── content.js                      # Page monitoring
+├── components/
+│   ├── HistoryManager.js          # Event history UI
+│   └── UIManager.js               # Field rendering
+├── services/
+│   ├── CaptureService.js          # CDP screenshot capture
+│   ├── LLMService.js              # AI integration
+│   ├── EventService.js            # Event storage
+│   ├── MessageService.js          # IPC + cloud sync
+│   ├── WebhookService.js          # Webhook execution
+│   └── JobManager.js              # Active job tracking
+├── utils/
+│   ├── formatters.js              # Display utilities
+│   ├── prompt-formatters.js       # AI prompt generation
+│   ├── sapient-parser.js          # SAPIENT protocol parser
+│   └── webhook-utils.js           # Webhook templating
+└── assets/                         # Icons and styles
+```
+
+### Cloud Runner Components
+```
+cloud_runner/
+├── server.js                       # Express server with auth
+├── Dockerfile                      # Container definition
+├── docker-compose.yaml            # Service orchestration
+├── deploy-secure.sh               # Security setup script
+├── Caddyfile                      # HTTPS reverse proxy
+└── utils/                         # Shared utilities
+```
 
 ### Data Flow
 
-1. **Field Definition**: Users define evaluation criteria in Fields tab
-2. **Capture Configuration**: Settings configured in Capture tab (intervals, refresh, context)
-3. **Capture Trigger**: Manual capture or automatic intervals
-4. **Context Retrieval**: Previous evaluation results loaded for enhanced analysis
-5. **Screenshot Capture**: Full-page or viewport screenshots via CDP
-6. **LLM Analysis**: Screenshots, field criteria, and previous context sent to configured LLM API
-7. **Result Processing**: LLM responses parsed and field results updated
-8. **Context Storage**: Results automatically stored as context for next evaluation
-9. **Event Storage**: All capture attempts stored in local history
-10. **UI Updates**: Real-time status updates across all tabs
+1. **Configuration** → User defines fields with webhooks
+2. **Scheduling** → Manual trigger or interval timer
+3. **Capture** → Local Chrome or cloud Puppeteer
+4. **Analysis** → LLM evaluates against criteria
+5. **Filtering** → Confidence thresholds applied
+6. **Webhooks** → External actions triggered
+7. **Storage** → Results saved with context
+8. **Display** → Real-time UI updates
 
-### Storage Architecture
+## 🧠 Advanced Features
 
-WebSophon uses domain-specific storage for complete isolation:
-
+### Confidence System
 ```javascript
-// Domain-specific storage keys
-consent_${domain}          // Domain enablement
-interval_${domain}         // Capture interval setting
-fields_${domain}           // Field definitions
-previousEvaluation_${domain} // Previous results context
-
-// Global storage
-llmConfig_global           // LLM API configuration
-recentEvents              // Cross-domain event history
-usePreviousEvaluation     // Global context toggle
-```
-
-## LLM API Configuration
-
-### Supported APIs
-- **OpenAI GPT-4 Vision** (recommended)
-- **Any OpenAI-compatible API** with vision capabilities
-- **Custom deployments** following OpenAI message format
-
-### Enhanced System Prompt
-
-WebSophon automatically enhances the system prompt with previous evaluation context:
-
-```
-Analyze this screenshot for the following criteria:
-[Field definitions...]
-
-### Previous Evaluation Context
-The following shows results from a previous evaluation (after confidence filtering). Use this to detect changes:
-- "field_name_1": true
-- "field_name_2": false
-
-```
-
-### Confidence Threshold and Context Flow
-
-WebSophon implements a sophisticated confidence filtering system that ensures both webhook accuracy and unbiased LLM evaluations:
-
-**Evaluation → Confidence Threshold → Webhook → Context**
-
-1. **LLM Evaluation**: The LLM evaluates each field and returns a boolean result with confidence score (0-1)
-
-2. **Confidence Threshold Filtering**: Each field has a configurable confidence threshold (default 75%)
-   - **TRUE with low confidence**: If confidence < threshold, result is treated as FALSE
-   - **FALSE results**: Always remain FALSE regardless of confidence
-
-3. **Webhook Triggering**: Webhooks fire based on the filtered result
-   - Example: LLM returns TRUE with 70% confidence, threshold is 75%
-     - Filtered result: FALSE (70% < 75%)
-     - Webhook set to TRUE: Does NOT fire
-     - Webhook set to FALSE: DOES fire
-
-4. **Context for Next Evaluation**: Only filtered boolean values are passed to the LLM
-   - **No confidence scores**: The LLM never sees confidence thresholds or scores
-   - **Simple format**: `"field_name": true` or `"field_name": false`
-   - **Unbiased evaluation**: Prevents the LLM from being influenced by user-set thresholds
-
-**Example Flow**:
-```
-Iteration 1:
-- LLM evaluates "price_alert" → [true, 0.70]
-- Threshold: 75%
-- Filtered result: false (70% < 75%)
-- Webhook (if set to TRUE): Does not fire
-- Context stored: {"price_alert": false}
-
-Iteration 2:
-- LLM receives context: "price_alert": false
-- Makes fresh evaluation without bias
-```
-
-This design ensures that:
-- Webhooks only fire when results meet confidence requirements
-- The LLM makes unbiased evaluations based solely on visual evidence
-- Previous results provide context without revealing confidence levels
-- Both frontend and cloud runner use identical filtering logic
-
-### API Response Format
-WebSophon expects responses in this JSON format:
-```json
+// Example: Field with 75% confidence threshold
 {
-  "field_name_1": [true, 0.95],
-  "field_name_2": [false, 0.23],
-  "reason": "Optional explanation of what was detected"
+  "price_below_100": {
+    result: true,      // LLM says TRUE
+    confidence: 0.72,  // 72% confident
+    filtered: false    // Below 75% threshold → FALSE
+  }
 }
 ```
 
-### Field Name Mapping
-Field names are automatically sanitized for API compatibility:
-- `"Stock Price Alert"` → `"stock_price_alert"`
-- `"Login Page Detected"` → `"login_page_detected"`
-- Special characters converted to underscores, duplicates prevented
+### Webhook Variables
+Available in custom payload templates:
+- `{{domain}}` - Current domain
+- `{{url}}` - Full page URL  
+- `{{timestamp}}` - ISO timestamp
+- `{{field_name}}` - Triggering field
+- `{{field_value}}` - Boolean result
+- `{{confidence}}` - Confidence score
+- `{{eventId}}` - Unique event ID
 
-## Usage Guide
-
-### Basic Workflow
-1. **Open popup** on the target website
-2. **Switch to Fields tab**, add evaluation criteria
-3. **Switch to Capture tab**, enable for domain and configure settings
-4. **Configure LLM settings** in Settings tab
-5. **Test with manual capture** or enable automatic intervals
-6. **View results** in History tab with previous context
-
-### Capture Configuration Best Practices
-- **Start with Manual**: Test field definitions before enabling automatic intervals
-- **Use Previous Context**: Keep "Use Previous Evaluation Context" enabled for better change detection
-- **Choose Appropriate Intervals**: Balance frequency with API costs and resource usage
-- **Enable Page Refresh**: For dynamic sites that need fresh content
-- **Configure Delays**: Allow time for content loading after page refresh
-
-### Field Definition Best Practices
-- **Be specific**: "Red error message visible" vs "There's an error"
-- **Use measurable criteria**: "Price below $100" vs "Good deal"
-- **Single responsibility**: One concept per field
-- **Clear language**: Avoid ambiguous terms
-- **Test thoroughly**: Use manual captures to validate field definitions
-
-### Previous Evaluation Context Usage
-- **Automatic Context**: Results automatically stored after successful evaluations
-- **Change Detection**: LLM can better detect when things change between captures
-- **Confidence Tracking**: Only high-confidence results stored as context
-- **Context Management**: Clear context button for fresh starts
-- **Visual Feedback**: Collapsible sections show what context was used
-
-### History Management
-- **View all events**: Complete capture history with status indicators
-- **Filter by success**: Toggle "Show only TRUE results"
-- **Event details**: Click events to expand full information
-- **Field navigation**: Click field results to jump to corresponding events
-- **Screenshot review**: Click screenshots to zoom and inspect details
-- **Context review**: See what previous evaluation data was used
-
-## Storage & Privacy
-
-- **Local Storage**: All data stored locally in browser
-- **No External Transmission**: Data only sent to your configured LLM API
-- **Domain Isolation**: Each domain's settings and context stored separately
-- **Automatic Cleanup**: Old events automatically pruned to prevent storage overflow
-- **User Control**: Complete control over data retention and deletion
-- **Context Privacy**: Previous evaluation results stored locally only
-
-## Documentation
-
-📁 **[Complete Documentation](docs/)** - Comprehensive guides and technical documentation:
-
-- **[Setup Guide](docs/SETUP_GUIDE.md)** - Installation and configuration
-- **[Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md)** - Creating effective evaluation criteria
-- **[Interaction Guide](docs/INTERACTION_GUIDE.md)** - UI workflows and best practices
-- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[Debug Guide](docs/DEBUG_STEPS.md)** - Developer debugging procedures
-- **[Architecture Guide](docs/MODULAR_ARCHITECTURE.md)** - Technical implementation details
-
-## Development
-
-### File Organization
+### SAPIENT Protocol Example
 ```
-tv-eyes/
-├── manifest.json                    # Extension configuration
-├── background-main.js              # Service worker entry point
-├── popup.html                      # Main interface
-├── popup-main.js                   # Main controller + FieldManagerLLM
-├── content.js                      # Navigation monitoring
-├── components/
-│   ├── HistoryManager.js          # Event history management
-│   └── UIManager.js               # UI state management
-├── services/
-│   ├── CaptureService.js          # Screenshot capture
-│   ├── LLMService.js              # LLM API integration
-│   ├── EventService.js            # Event tracking
-│   └── MessageService.js          # Communication + shared logic
-├── utils/
-│   └── formatters.js              # Utilities
-└── assets/
-    ├── styles.css                 # Complete styling
-    └── icon_*.png                 # Extension icons
+::SAPIENT v:1.0 from:gpt-4 to:websophon trace:eval-123::
+The login button is clearly visible in the top right corner
+of the page, displayed in blue with white text.
+
+::DATA:response format:json::
+{
+  "login_button_visible": [true, 0.95],
+  "error_message_shown": [false, 0.88]
+}
+::END:response::
+::END:SAPIENT::
 ```
 
-### Key Classes
-- **CleanPopupController** (popup-main.js): Main application controller
-- **FieldManagerLLM** (popup-main.js): Field definition and result management  
-- **HistoryManager**: Event history display and interaction
-- **UIManager**: Field rendering and status display
-- **CaptureService**: Screenshot capture via Chrome DevTools Protocol
-- **LLMService**: LLM API communication and response processing
-- **EventService**: Event storage and retrieval
-- **MessageService**: Shared capture logic and inter-component communication
+## 💾 Storage Schema
 
-### Debug Mode
-Enable additional debugging features:
+### Domain-Specific Keys
 ```javascript
-// In Chrome DevTools console
-localStorage.setItem('websophon-debug', 'true');
-// Reload extension popup to see debug features
+consent_${domain}              // Domain enabled
+interval_${domain}             // Capture interval
+fields_${domain}               // Field definitions
+presets_${domain}              // Saved presets
+previousEvaluation_${domain}   // Context data
+cloud_job_${domain}            // Cloud job ID
 ```
 
-## Troubleshooting
+### Global Keys
+```javascript
+llmConfig_global              // LLM settings
+cloudRunnerUrl                // Cloud runner URL
+websophon_auth_token          // Auth token
+websophon_token_expires       // Token expiry
+recentEvents                  // Event history
+includePremiumModels          // Model filter
+theme                         // UI theme
+```
+
+## 🤖 API Configuration
+
+### Supported LLM Providers
+- **OpenRouter** (recommended) - Access to 100+ models
+- **OpenAI** - GPT-4 Vision models
+- **Anthropic** - Claude with vision
+- **Google** - Gemini models
+- **Local** - Ollama, LM Studio, etc.
+
+### Model Selection
+- Default suggestion: `qwen/qwen2.5-vl-72b-instruct:free`
+- Premium models available with toggle
+- Custom model input for unlisted options
+- Temperature: 0.1 (low for consistency)
+- Max tokens: 5000 (supports detailed analysis)
+
+## 🔧 Troubleshooting
 
 ### Common Issues
-- **"No fields configured"**: Add field definitions in Fields tab
-- **"Please configure LLM API"**: Set API URL and key in Settings tab
-- **"Request failed"**: Check API credentials and internet connection
-- **Empty history**: Ensure background service worker is running
-- **Settings not saving**: Check Chrome storage permissions
-- **"Failed to fetch" in automatic captures**: LLM configuration missing or invalid
 
-### Debug Steps
-1. **Check console logs**: Open DevTools on extension popup
-2. **Verify API**: Use "Test Configuration" button
-3. **Enable debug mode**: See debug mode instructions above
-4. **Clear storage**: Reset extension state if needed
-5. **Check background script**: Inspect service worker in chrome://extensions
-6. **Test manual capture**: Verify configuration before enabling automatic intervals
+**"No fields configured"**
+- Add at least one field in Fields tab
+- Ensure field has name and description
 
-### Performance Notes
-- **Storage Management**: Automatic cleanup prevents storage overflow
-- **Concurrent Requests**: Multiple captures supported simultaneously
-- **Memory Efficient**: Screenshots stored compressed in Chrome storage
-- **Timeout Handling**: 2-minute maximum for LLM requests
-- **Context Efficiency**: Previous evaluation context stored per-domain
-- **Interval Management**: Proper cleanup prevents resource leaks
+**"Authentication required"**
+- Complete CAPTCHA for cloud runner
+- Token expires after 24 hours
 
-## Version History
+**"Webhook failed"**
+- Check webhook URL is accessible
+- Verify payload format is valid JSON
+- Review webhook logs in console
 
-- **v2.7**: Previous evaluation context system, UI organization improvements
-- **v2.6**: Enhanced user controls, request cancellation, screenshot downloads
-- **v2.5**: Long-running request support, real-time updates
-- **v2.4**: Enhanced debugging, field-history integration
-- **v2.3**: Domain management, statistics tracking
-- **v2.2**: Event history, notifications, filtering
+**Empty History**
+- Wait for background service to initialize
+- Check if domain is enabled
+- Verify LLM configuration
+
+**Cloud Job Not Syncing**
+- Ensure valid authentication token
+- Check cloud runner URL is correct
+- Verify network connectivity
+
+### Debug Mode
+```javascript
+// Enable in Chrome console
+localStorage.setItem('websophon-debug', 'true');
+// Reload extension
+```
+
+### Performance Tips
+- Use appropriate intervals (avoid < 30s for API limits)
+- Enable page refresh only when needed
+- Set reasonable confidence thresholds
+- Clean up old events periodically
+- Monitor storage usage in settings
+
+## 🔒 Security & Privacy
+
+- **Local First**: Data stays in browser unless using cloud runner
+- **Token Security**: CAPTCHA-based authentication
+- **No Telemetry**: Zero tracking or analytics
+- **Webhook Privacy**: URLs masked in UI
+- **Secure Storage**: Chrome's encrypted storage
+- **User Control**: Complete data ownership
+
+## 📚 Documentation
+
+📁 **[Complete Documentation](docs/)** - Detailed guides:
+
+- **[Setup Guide](docs/SETUP_GUIDE.md)** - Installation and configuration
+- **[Cloud Runner Guide](cloud_runner/README.md)** - Remote execution setup
+- **[Field Evaluation Guide](docs/FIELD_EVALUATION_GUIDE.md)** - Writing effective criteria
+- **[Webhook Guide](docs/WEBHOOK_ARCHITECTURE.md)** - Webhook system details
+- **[Security Guide](docs/SECURITY_GUIDE.md)** - Security best practices
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues
+- **[Architecture](docs/MODULAR_ARCHITECTURE.md)** - Technical details
+
+## 📈 Version History
+
+- **v3.0**: Cloud runner, CAPTCHA auth, job management
+- **v2.9**: Webhook system, confidence thresholds, SAPIENT protocol
+- **v2.8**: Preset system, storage management, UI improvements
+- **v2.7**: Previous evaluation context, organized UI
+- **v2.6**: Enhanced controls, cancellation, downloads
+- **v2.5**: Long-running requests, real-time updates
 - **v2.0**: LLM integration, advanced field system
-- **v1.0**: Basic screenshot capture and webhook support
+- **v1.0**: Basic screenshot and webhook support
 
-## License & Privacy
+## 📄 License
 
-- **Local Processing**: All data processing occurs locally or via your configured APIs
-- **No Telemetry**: No usage data collected or transmitted
-- **Open Source**: Full source code available for review
-- **User Control**: Complete control over data storage and API usage
-- **Context Privacy**: Previous evaluation results stored locally only 
+MIT License - See LICENSE file for details
+
+---
+
+*WebSophon - Where observation becomes intelligence* 
