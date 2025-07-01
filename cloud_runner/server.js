@@ -1461,7 +1461,13 @@ app.post('/test', requireValidToken, (req, res) => {
         message: 'Cloud runner is running with valid token.',
         clientId: req.clientId,
         timestamp: new Date().toISOString(),
-        quotas: tokenStats ? tokenStats.quotas : null
+        quotas: tokenStats ? tokenStats.quotas : null,
+        // Include configuration information
+        config: {
+            defaultLlmModel: process.env.DEFAULT_LLM_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free',
+            version: process.env.RUNNER_VERSION || '1.0.0',
+            captchaEnabled: !!SECURITY_CONFIG.CAPTCHA_SECRET_KEY && SECURITY_CONFIG.CAPTCHA_SECRET_KEY !== 'dev_captcha_secret'
+        }
     });
 });
 
@@ -1819,7 +1825,7 @@ async function processJob(jobId, jobData) {
 }
 
 async function callLlmService(base64Image, llmConfig, fields, previousEvaluation) {
-    const modelName = llmConfig.model || 'gpt-4-vision-preview';
+    const modelName = llmConfig.model || process.env.DEFAULT_LLM_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free';
     const systemPrompt = getSystemPrompt(fields, previousEvaluation, modelName);
     const requestPayload = {
         model: modelName,

@@ -79,6 +79,25 @@ if [ -z "$CAPTCHA_SITE_KEY" ] || [ -z "$CAPTCHA_SECRET_KEY" ]; then
     CAPTCHA_SECRET_KEY="dev_captcha_secret"
 fi
 
+# Get default LLM model
+echo ""
+echo "🤖 LLM Model Configuration"
+echo "========================="
+echo "The cloud runner needs a default LLM model for analyzing screenshots."
+echo "We recommend using the free Qwen vision model for best results."
+echo ""
+echo "Suggested: qwen/qwen2.5-vl-72b-instruct:free"
+echo ""
+
+read -p "Enter default LLM model [qwen/qwen2.5-vl-72b-instruct:free]: " DEFAULT_LLM_MODEL
+
+if [ -z "$DEFAULT_LLM_MODEL" ]; then
+    DEFAULT_LLM_MODEL="qwen/qwen2.5-vl-72b-instruct:free"
+    echo "✅ Using recommended model: $DEFAULT_LLM_MODEL"
+else
+    echo "✅ Default model set: $DEFAULT_LLM_MODEL"
+fi
+
 # Create environment file
 echo ""
 echo "📝 Creating Environment Configuration..."
@@ -97,6 +116,9 @@ WEBSOPHON_SIGNING_SECRET=${SIGNING_SECRET}
 # Required: CAPTCHA Configuration (hCaptcha)
 CAPTCHA_SITE_KEY=${CAPTCHA_SITE_KEY}
 CAPTCHA_SECRET_KEY=${CAPTCHA_SECRET_KEY}
+
+# Required: Default LLM Model
+DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL}
 
 # Optional: IP Whitelisting (comma-separated IPs, leave empty to allow all)
 # ALLOWED_IPs=192.168.1.100,10.0.0.50
@@ -206,6 +228,7 @@ services:
       - WEBSOPHON_SIGNING_SECRET=${SIGNING_SECRET}
       - CAPTCHA_SITE_KEY=${CAPTCHA_SITE_KEY}
       - CAPTCHA_SECRET_KEY=${CAPTCHA_SECRET_KEY}
+      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL}
       - NODE_ENV=production
     restart: unless-stopped
     healthcheck:
