@@ -94,6 +94,17 @@ export class EventService {
             }
         }
 
+        // Extract summary - handle both local and cloud response formats
+        let summaryText = '';
+        if (results) {
+            // Cloud format: { evaluation: {...}, summary: "..." }
+            // Local format: { field1: [...], field2: [...], summary: "..." }
+            summaryText = results.summary ||
+                (results.llmResponse && results.llmResponse.summary) ||
+                results.reason || // Legacy format
+                '';
+        }
+
         // Create event record
         const event = {
             id: eventId || Date.now(),
@@ -104,7 +115,7 @@ export class EventService {
             httpStatus: httpStatus,
             error: error,
             fields: fieldResults,
-            summary: results ? (results.summary || '') : '',
+            summary: summaryText,
             hasTrueResult: hasTrueResult,
             read: false,
             screenshot: screenshot, // Store the base64 screenshot
@@ -245,11 +256,16 @@ export class EventService {
             }
 
             event.hasTrueResult = hasTrueResult;
-            event.summary = results.summary || '';
+
+            // Extract summary - handle both local and cloud response formats
+            event.summary = results.summary ||
+                (results.llmResponse && results.llmResponse.summary) ||
+                results.reason || // Legacy format
+                '';
 
             console.log('EventService: Setting summary from results:', {
-                hasSummary: !!results.summary,
-                summaryText: results.summary,
+                hasSummary: !!event.summary,
+                summaryText: event.summary,
                 resultsStructure: Object.keys(results)
             });
 

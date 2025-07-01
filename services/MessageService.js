@@ -1120,25 +1120,9 @@ export class MessageService {
                             // Use raw response if available, otherwise stringify the parsed response
                             const responseText = result.llmRawResponse || JSON.stringify(llmResponse);
 
-                            // Debug logging to trace summary issue
-                            console.log(`[Sync] llmResponse structure:`, {
-                                hasEvaluation: !!llmResponse.evaluation,
-                                hasSummary: !!llmResponse.summary,
-                                summaryValue: llmResponse.summary,
-                                topLevelKeys: Object.keys(llmResponse)
-                            });
-
-                            // Ensure summary is at the top level for EventService
-                            const resultsForEvent = {
-                                ...llmResponse,
-                                summary: llmResponse.summary || llmResponse.reason || ''
-                            };
-
-                            console.log(`[Sync] resultsForEvent summary: "${resultsForEvent.summary}"`);
-
                             // Track the event with all data including field webhooks
                             const eventData = this.eventService.trackEvent(
-                                resultsForEvent, // Pass the response with summary at top level
+                                llmResponse, // Pass the full response - EventService will handle format differences
                                 domain,
                                 `https://${domain}`, // Provide a reasonable URL for cloud runs
                                 true,
