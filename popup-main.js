@@ -1556,24 +1556,28 @@ class CleanPopupController {
 
             // Additional client-side filtering to ensure we have the exact modalities we need
             models = models.filter(model => {
+                // Filter out models with no endpoint - these cause 404 errors
+                if (!model.endpoint) {
+                    console.log(`Filtering out model with no endpoint: ${model.slug}`);
+                    return false;
+                }
+
+                // Check if the endpoint is disabled
+                if (model.endpoint.is_disabled === true) {
+                    console.log(`Filtering out disabled model: ${model.slug}`);
+                    return false;
+                }
+
                 const inputs = model.input_modalities || [];
                 const outputs = model.output_modalities || [];
                 const hasImageInput = inputs.includes('image');
                 const hasTextInput = inputs.includes('text');
                 const hasTextOutput = outputs.includes('text');
 
-                // Filter out deprecated models
-                if (model.slug === 'openai/gpt-4-vision-preview' ||
-                    model.deprecated === true ||
-                    model.status === 'deprecated') {
-                    console.log(`Filtering out deprecated model: ${model.slug}`);
-                    return false;
-                }
-
                 // When premium is unchecked, verify ALL prices are exactly 0
                 if (!includePremiumModels) {
-                    // Pricing is nested under endpoint.pricing in the API response
-                    const pricing = model.endpoint?.pricing || model.pricing || null;
+                    // Pricing is always in endpoint.pricing based on API structure
+                    const pricing = model.endpoint?.pricing || null;
 
                     // If pricing data is missing entirely, treat as NOT free
                     if (!pricing) {
@@ -1615,8 +1619,8 @@ class CleanPopupController {
 
                 models.forEach(model => {
                     const option = document.createElement('option');
-                    // Look for pricing in endpoint.pricing first, then fall back to model.pricing
-                    const pricing = model.endpoint?.pricing || model.pricing || {};
+                    // Pricing is always in endpoint.pricing based on API structure
+                    const pricing = model.endpoint?.pricing || {};
                     const price = pricing.prompt ? parseFloat(pricing.prompt) * 1000000 : 0;
                     const priceString = price > 0 ? ` ($${price.toFixed(2)}/M)` : ' (Free)';
                     option.value = model.slug;
