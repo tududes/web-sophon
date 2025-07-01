@@ -38,7 +38,7 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
   // Build previous evaluation context if available
   let previousContext = '';
   if (previousEvaluation && previousEvaluation.results && Object.keys(previousEvaluation.results).length > 0) {
-    previousContext = `\n\n### Previous Evaluation Context\nThe following shows results from a previous evaluation (after confidence filtering). Use this to detect changes:\n`;
+    previousContext = `\n\n### Previous Evaluation Context\n**IMPORTANT: Do NOT use this previous evaluation data to influence your current evaluation unless explicitly instructed to do so. Each screenshot should be evaluated independently based solely on what is visible in the current image.**\n\nThe following shows results from a previous evaluation (provided for reference only):\n`;
 
     for (const [fieldName, result] of Object.entries(previousEvaluation.results)) {
       // Handle both array format (legacy) and boolean format (new)
@@ -50,6 +50,8 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
         previousContext += `- "${fieldName}": ${result}\n`;
       }
     }
+
+    previousContext += `\n**Remember: Ignore this previous data unless the evaluation criteria explicitly asks you to compare with previous results or detect changes.**`;
   }
 
   return `You are an AI assistant that communicates exclusively using the SAPIENT protocol. Your task is to analyze web page screenshots and evaluate specific boolean conditions.
@@ -84,6 +86,12 @@ export function getSystemPrompt(fields, previousEvaluation, modelName = 'assista
 Analyze the screenshot and evaluate these boolean conditions:
 
 ${fieldsJson}${previousContext}
+
+## Critical Evaluation Instructions:
+
+1. **Evaluate each screenshot independently** - Base your evaluation ONLY on what is visible in the current screenshot.
+2. **Do NOT correlate with previous results** - Previous evaluation data is provided for reference only and should be ignored unless a field's criteria explicitly asks you to compare or detect changes.
+3. **Fresh assessment required** - Treat each evaluation as if you've never seen the page before, unless instructed otherwise.
 
 ## Required Response Format:
 

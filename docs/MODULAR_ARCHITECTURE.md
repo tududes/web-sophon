@@ -90,3 +90,33 @@ The extension now uses ES6 modules with:
 - All user settings and history preserved
 - Identical user interface and functionality
 - Same Chrome extension APIs and permissions 
+
+## Core Services
+
+## Shared Utilities
+
+The project uses shared utility functions between the Chrome extension and the cloud runner to maintain DRY principles:
+
+### Utils Directory Structure
+- `utils/` - Main shared utilities directory
+  - `prompt-formatters.js` - LLM prompt formatting functions (single source of truth)
+  - `webhook-utils.js` - Webhook handling utilities
+  - `formatters.js` - General formatting utilities
+  - `sapient-parser.js` - SAPIENT protocol parser
+
+- `cloud_runner/utils/` - Cloud runner specific utilities
+  - `webhook-utils.js` - Cloud-specific version with additional logging
+  - `sapient-parser.js` - Cloud-specific parser implementation
+
+### Important Architecture Decision
+To avoid code duplication while supporting both local development and Docker deployment:
+- The main `utils/prompt-formatters.js` is the single source of truth
+- Cloud runner imports use relative paths (`../utils/prompt-formatters.js`)
+- The Docker build maintains the directory structure properly with cloud_runner as a subdirectory
+- This approach maintains consistency while avoiding duplicate code maintenance
+
+**Note**: The webhook-utils.js files are intentionally different between the extension and cloud runner:
+- Extension version (`utils/webhook-utils.js`): Uses direct ES6 export syntax, optimized for browser environment
+- Cloud runner version (`cloud_runner/utils/webhook-utils.js`): Includes additional logging for debugging, uses export block at the end for Node.js compatibility
+
+## Component Architecture 

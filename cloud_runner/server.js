@@ -5,8 +5,8 @@ import puppeteer from 'puppeteer';
 import cors from 'cors';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { getSystemPrompt } from './utils/prompt-formatters.js';
-import { parseSAPIENTResponse } from './utils/sapient-parser.js';
+import { getSystemPrompt } from '../utils/prompt-formatters.js';
+import { parseSAPIENTResponse } from '../utils/sapient-parser.js';
 import { fireFieldWebhooks } from './utils/webhook-utils.js';
 
 const app = express();

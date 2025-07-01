@@ -12,8 +12,8 @@ import { v4 as uuidv4 } from 'uuid';
 import puppeteer from 'puppeteer';
 import cors from 'cors';
 import crypto from 'crypto';
-import { getSystemPrompt } from './utils/prompt-formatters.js';
-import { parseSAPIENTResponse } from './utils/sapient-parser.js';
+import { getSystemPrompt } from '../utils/prompt-formatters.js';
+import { parseSAPIENTResponse } from '../utils/sapient-parser.js';
 import { fireFieldWebhooks } from './utils/webhook-utils.js';
 
 // Request logger middleware

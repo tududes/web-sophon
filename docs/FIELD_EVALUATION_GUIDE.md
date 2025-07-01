@@ -224,6 +224,14 @@ Fields for form interaction:
 3. The LLM analyzes the image against each criteria
 4. Results are returned with true/false values and confidence scores
 
+### Independent Evaluation
+**Important**: Each screenshot is evaluated **independently** by the LLM. The system does not use previous evaluation results to influence the current analysis unless explicitly instructed in your field criteria. This ensures:
+- Fresh, unbiased analysis of each screenshot
+- No false positives from previous states
+- Accurate detection based only on current visual state
+
+To detect changes between evaluations, explicitly include comparison instructions in your field criteria (e.g., "Check if the price has increased compared to the previous evaluation")
+
 ### Expected Response Format
 ```json
 {
