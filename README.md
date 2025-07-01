@@ -37,7 +37,8 @@ WebSophon doesn't just watch—it understands. By defining fields of truth, you 
 - **Confidence Filtering**: Low-confidence TRUE results demoted to FALSE
 - **Smart Retry Logic**: Automatic retries for failed webhook calls
 
-### SAPIENT Protocol Support
+### SAPIENT Protocol Support (Semantic Agent Protocol for Intelligent Exchange of Natural Text)
+A new protocol that enables natural, human-like conversations between AI agents.
 - **Structured Responses**: AI responses in standardized format for reliability
 - **Natural Summaries**: Human-readable explanations alongside field results
 - **Multi-Model Support**: Works with GPT-4, Claude, Gemini, and others
