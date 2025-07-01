@@ -1564,7 +1564,8 @@ class CleanPopupController {
 
                 // When premium is unchecked, verify ALL prices are exactly 0
                 if (!includePremiumModels) {
-                    const pricing = model.pricing || {};
+                    // Pricing is nested under endpoint.pricing in the API response
+                    const pricing = model.endpoint?.pricing || model.pricing || {};
 
                     // Check all possible pricing fields to ensure they are exactly 0
                     const promptPrice = parseFloat(pricing.prompt || 0);
@@ -1599,7 +1600,9 @@ class CleanPopupController {
 
                 models.forEach(model => {
                     const option = document.createElement('option');
-                    const price = model.pricing?.prompt ? parseFloat(model.pricing.prompt) * 1000000 : 0;
+                    // Look for pricing in endpoint.pricing first, then fall back to model.pricing
+                    const pricing = model.endpoint?.pricing || model.pricing || {};
+                    const price = pricing.prompt ? parseFloat(pricing.prompt) * 1000000 : 0;
                     const priceString = price > 0 ? ` ($${price.toFixed(2)}/M)` : ' (Free)';
                     option.value = model.slug;
                     option.textContent = `${model.name} (${(model.context_length / 1000).toFixed(0)}k)${priceString}`;
