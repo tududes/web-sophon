@@ -1574,8 +1574,7 @@ export class MessageService {
                     success: true,
                     message: result.message,
                     clientId: result.clientId,
-                    quotas: result.quotas,
-                    config: result.config // Pass through configuration info from server
+                    quotas: result.quotas
                 };
             } else {
                 throw new Error(result.error || 'Cloud runner test failed');

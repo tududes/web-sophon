@@ -159,7 +159,6 @@ class CleanPopupController {
 
             // Cloud Runner
             cloudRunnerUrl: document.getElementById('cloudRunnerUrl'),
-            cloudRunnerDefaultModel: document.getElementById('cloudRunnerDefaultModel'),
             testCloudRunnerBtn: document.getElementById('testCloudRunnerBtn'),
             testCloudRunnerStatus: document.getElementById('testCloudRunnerStatus'),
 
@@ -282,10 +281,6 @@ class CleanPopupController {
 
         this.elements.cloudRunnerUrl?.addEventListener('input', () => {
             this.debouncedSaveCloudRunnerUrl();
-        });
-
-        this.elements.cloudRunnerDefaultModel?.addEventListener('input', () => {
-            this.debouncedSaveCloudRunnerDefaultModel();
         });
 
         this.elements.includePremiumModelsToggle?.addEventListener('change', async (e) => {
@@ -508,25 +503,6 @@ class CleanPopupController {
                 // Update quota display with latest data
                 if (testResponse.quotas) {
                     this.updateQuotaDisplay(testResponse.quotas);
-                }
-
-                // Check if cloud runner has configuration info
-                if (testResponse.config && testResponse.config.defaultLlmModel) {
-                    const cloudDefaultModel = testResponse.config.defaultLlmModel;
-                    const localDefaultModel = this.elements.cloudRunnerDefaultModel?.value || 'qwen/qwen2.5-vl-72b-instruct:free';
-
-                    // If cloud runner has a different default model than what's in the UI, inform the user
-                    if (cloudDefaultModel !== localDefaultModel) {
-                        console.log(`Cloud runner is using default model: ${cloudDefaultModel}`);
-
-                        // Update the local field to match cloud runner's configuration
-                        if (this.elements.cloudRunnerDefaultModel) {
-                            this.elements.cloudRunnerDefaultModel.value = cloudDefaultModel;
-                            await chrome.storage.local.set({ cloudRunnerDefaultModel: cloudDefaultModel });
-
-                            this.showToast(`ℹ️ Updated default model to match cloud runner: ${cloudDefaultModel}`, 'info', statusEl);
-                        }
-                    }
                 }
             } else {
                 throw new Error(testResponse.error || 'Test failed');
@@ -1524,10 +1500,9 @@ class CleanPopupController {
     async loadBasicSettings() {
         try {
             // Load LLM configuration (global)
-            const settingsData = await chrome.storage.local.get(['llmConfig_global', 'cloudRunnerUrl', 'cloudRunnerDefaultModel', 'includePremiumModels']);
+            const settingsData = await chrome.storage.local.get(['llmConfig_global', 'cloudRunnerUrl', 'includePremiumModels']);
             const llmConfig = settingsData.llmConfig_global || {};
             const cloudRunnerUrl = settingsData.cloudRunnerUrl || 'https://runner.websophon.ai';
-            const cloudRunnerDefaultModel = settingsData.cloudRunnerDefaultModel || 'qwen/qwen2.5-vl-72b-instruct:free';
             const includePremium = settingsData.includePremiumModels || false;
 
             if (this.elements.includePremiumModelsToggle) {
@@ -1546,9 +1521,6 @@ class CleanPopupController {
 
             if (this.elements.cloudRunnerUrl) {
                 this.elements.cloudRunnerUrl.value = cloudRunnerUrl;
-            }
-            if (this.elements.cloudRunnerDefaultModel) {
-                this.elements.cloudRunnerDefaultModel.value = cloudRunnerDefaultModel;
             }
 
             // Load theme
@@ -1691,8 +1663,18 @@ class CleanPopupController {
                         }
                     }
                 } else if (models.length > 0) {
-                    // Default to the first model if no valid model was saved
-                    select.value = models[0].slug;
+                    // For new users with no saved model, try to use a suggested default
+                    const suggestedDefault = 'qwen/qwen2.5-vl-72b-instruct:free';
+                    const defaultModel = models.find(m => m.slug === suggestedDefault);
+
+                    if (defaultModel) {
+                        select.value = suggestedDefault;
+                        console.log('Using suggested default model for new user:', suggestedDefault);
+                    } else {
+                        // Fall back to the first model if suggested default not available
+                        select.value = models[0].slug;
+                        console.log('Suggested default not available, using first model:', models[0].slug);
+                    }
                 }
             } else {
                 select.innerHTML = '<option value="">Could not load models</option>';
@@ -1779,15 +1761,6 @@ class CleanPopupController {
             const url = this.elements.cloudRunnerUrl?.value || '';
             chrome.storage.local.set({ cloudRunnerUrl: url });
             console.log('Cloud runner URL saved');
-        }, 500);
-    }
-
-    debouncedSaveCloudRunnerDefaultModel() {
-        clearTimeout(this.saveDebounceTimer);
-        this.saveDebounceTimer = setTimeout(() => {
-            const model = this.elements.cloudRunnerDefaultModel?.value || 'qwen/qwen2.5-vl-72b-instruct:free';
-            chrome.storage.local.set({ cloudRunnerDefaultModel: model });
-            console.log('Cloud runner default model saved');
         }, 500);
     }
 
