@@ -107,18 +107,23 @@ ${fields.map(field => `  "${field.name}": [boolean_true_or_false, confidence_0_t
 
 Example (DO NOT copy values, evaluate based on actual screenshot):
 
-::SAPIENT v:1.0 from:${modelName} to:websophon::
+::SAPIENT v:1.0 from:${modelName} to:websophon trace:${traceId}::
 I've analyzed the trading chart screenshot. The chart shows XAUTUS (Gold) with multiple technical indicators. I can see the price is at 3,278.60 with a cyan moving average line. The HEXGO POWER indicator at the bottom shows mixed signals with both red and green dots. However, I cannot clearly identify any TF buy/sell signals on the chart, which are required for entry conditions.
 
 ::DATA:response format:json::
 {
-  "long_entries": [false, 0.85],
-  "short_entries": [false, 0.80],
-  "long_exits": [false, 0.75],
-  "short_exits": [false, 0.75]
+  "long_entry": [false, 0.85],
+  "short_entry": [false, 0.80],
+  "long_exit": [false, 0.75],
+  "short_exit": [false, 0.75]
 }
 ::END:response::
 ::END:SAPIENT::
 
-Remember: Write your analysis naturally in the body. The array format is [boolean_result, confidence_level].`;
+Remember: 
+- Write your analysis naturally in the body
+- The array format is [boolean_result, confidence_level] where:
+  - boolean_result must be exactly true or false (not "true" as string)
+  - confidence_level must be a decimal between 0.0 and 1.0 (not percentage)
+- Use the exact field names provided - they are case-sensitive and must match exactly`;
 } 
