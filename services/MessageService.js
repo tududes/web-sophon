@@ -1122,7 +1122,7 @@ export class MessageService {
 
                             // Track the event with all data including field webhooks
                             const eventData = this.eventService.trackEvent(
-                                llmResponse.evaluation || llmResponse, // The LLM response evaluation
+                                llmResponse, // Pass the full response which includes both evaluation and summary
                                 domain,
                                 `https://${domain}`, // Provide a reasonable URL for cloud runs
                                 true,
